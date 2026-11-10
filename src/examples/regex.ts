@@ -1,9 +1,11 @@
 import { awkEscapeAt, sedEscapeAt } from '../ctlchars';
-import type { ShellFlavor } from '../embedded/regex';
+import type { Flavor } from '../embedded/regex';
+import type { PythonRegexOptions } from '../embedded/regex-python';
 import { pcreCharCode, pcreJs } from '../embedded/regex-escapes';
 import { wordTable } from '../wordtable';
 import { type Node, Parser } from './regexparse';
 import { longestExec, Refused, scriptRegex } from './regexguard';
+import { pythonToJs } from './regex-python';
 
 /** A POSIX or PCRE pattern translated to a JavaScript RegExp. */
 export interface JsRegex {
@@ -227,9 +229,9 @@ function pcreClassToJs(src: string, at: number): [string, number] | undefined {
 /**
  * Translate a regex to JavaScript syntax. Returns undefined for constructs JavaScript cannot
  * express (possessive quantifiers, atomic groups, equivalence classes…), so no example is made.
- * Python's `re` has no examples yet (docs/design/python-regex.md, section 6: its `\Z`, `$` and `.` are written out in full).
+ * Python's `re` (`python`: its flags) has its own translation, which writes `\Z`, `$` and `.` out in full (src/examples/regex-python.ts).
  */
-export function toJsRegex(src: string, flavor: ShellFlavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean; awk?: boolean; perlEnd?: boolean } = {}): JsRegex | undefined {
+export function toJsRegex(src: string, flavor: Flavor, opts: { ignoreCase?: boolean; sedEscapes?: boolean; awk?: boolean; perlEnd?: boolean; python?: PythonRegexOptions } = {}): JsRegex | undefined {
   if (opts.sedEscapes) {
     const plain = opts.awk ? awkCharacters(src) : sedCharacters(src);
     if (plain === undefined) return undefined;
@@ -253,7 +255,13 @@ export function toJsRegex(src: string, flavor: ShellFlavor, opts: { ignoreCase?:
   const open = () => { groups.push(out.length); out += '('; atomStart = -1; repeated = false; };
   const close = () => { atomStart = groups.pop() ?? -1; repeated = false; out += ')'; };
   const branch = () => { out += '|'; atomStart = -1; repeated = false; };
-  if (flavor === 'pcre') {
+  if (flavor === 'python') {
+    const py = opts.python && pythonToJs(src, opts.python);
+    if (!py) return undefined;
+    out = py.source;
+    flags = py.flags;
+    i = src.length;
+  } else if (flavor === 'pcre') {
     const inline = /^\(\?([imsx]+)\)/.exec(src);
     if (inline) {
       if (inline[1].includes('x')) return undefined;
@@ -400,8 +408,11 @@ export interface RegexExamples {
   nonMatching: string[];
 }
 
-/** Example lines that match (and nearby ones that do not), verified against the pattern itself. */
-export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
+/**
+ * Example lines that match (and nearby ones that do not), verified against the pattern itself. `accept`: which texts an example
+ * may show (Python's: ASCII without control characters, where JavaScript and Python read the classes alike).
+ */
+export function regexExamples(js: JsRegex, max = 3, accept: (text: string) => boolean = () => true): RegexExamples | undefined {
   const re = scriptRegex(js.source, js.flags);
   // Parser reads every regex JavaScript accepts, to the end, and throws nothing of its own: an error from it is a
   // bug, which shows.
@@ -416,7 +427,7 @@ export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
   const left = { steps: 100000 };
   for (let v = 0; v < 12 && matching.length < max; v++) {
     const text = gen(tree, v, [], left);
-    if (text === undefined || text === '' || /[\n\r]/.test(text) || matching.includes(text)) continue;
+    if (text === undefined || text === '' || /[\n\r]/.test(text) || matching.includes(text) || !accept(text)) continue;
     if (re.test(text)) matching.push(text);
   }
   if (!matching.length) return undefined;
@@ -433,7 +444,7 @@ export function regexExamples(js: JsRegex, max = 3): RegexExamples | undefined {
     base.slice(0, -1), base.slice(1), base.replace(/\d/, 'x'), base.replace(/[A-Za-z]/, '1'),
     js.flags.includes('i') ? '' : swapCase(base), base.replace(/[^A-Za-z0-9]/, ''), base + base.slice(-1), 'x' + base,
   ];
-  const nonMatching = [...new Set(mutations)].filter((m) => m !== '' && !re.test(m)).slice(0, 2);
+  const nonMatching = [...new Set(mutations)].filter((m) => m !== '' && accept(m) && !re.test(m)).slice(0, 2);
   return { matching, ...(inside !== undefined ? { inside } : {}), nonMatching };
 }
 

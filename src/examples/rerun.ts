@@ -70,6 +70,9 @@ export interface Interactive {
   result: RerunResult;
 }
 
+/** The label of the box of a regex example's strings, which the panel tests one by one. */
+export const testStringsLabel = (lang: Lang): string => (lang === 'ja' ? '試す文字列（1行ずつ判定し、一致した部分を色付け）' : 'Test strings (one per line; matches are highlighted)');
+
 /** Marks of what a stage reads (src/examples/marks.ts) as the box of its input highlights them. */
 const boxMarks = (m: StageMarks): Mark[][] => m.ranges.map((rs) => rs.map(([start, end]) => ({ start, end, group: 0 })));
 

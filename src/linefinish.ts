@@ -4,7 +4,7 @@
 // texts taken off them, the notes the caller works out with those, the examples the settings keep, the summary, the origin
 // given to the tokens and the labels their texts echo dropped, and the facts put on their tokens. What depends on the walk (the
 // sentence, `argv`, the reading tree of bash's layers) stays with the shell path.
-import type { ContextEntry, Example, ExplainOptions, LineExplanation, NoteAnchor, Span, Token, TokenOrigin } from './analyzer-types';
+import type { ContextEntry, Example, ExampleKind, ExplainOptions, LineExplanation, NoteAnchor, Span, Token, TokenOrigin } from './analyzer-types';
 import { pictureNote } from './ctlchars';
 import type { Lang } from './i18n';
 import { onceBy } from './lists';
@@ -74,12 +74,14 @@ export function finishLine(made: LineMade, opts: ExplainOptions, said: () => Lin
   return result;
 }
 
-/** Whether the settings show an example: examples are on, and its kind is not turned off. */
-export function wantsExample(opts: ExplainOptions, e: Example): boolean {
+/** Whether the settings show an example of a kind: examples are on, and the kind is not turned off. */
+export function wantsKind(opts: ExplainOptions, kind: ExampleKind | undefined): boolean {
   const o = opts.examples;
   if (!o) return true;
-  return o.enabled && !(e.kind && o.disabled.includes(e.kind));
+  return o.enabled && !(kind && o.disabled.includes(kind));
 }
+
+const wantsExample = (opts: ExplainOptions, e: Example): boolean => wantsKind(opts, e.kind);
 
 /** The examples the settings keep, each once, with a note on the control characters they show as symbols. */
 export function keptExamples(examples: readonly Example[], opts: ExplainOptions, lang: Lang): Example[] {

@@ -224,9 +224,11 @@ The python branch of `toJsRegex` writes every construct whose meaning differs ou
 - VERBOSE is stripped first.
 - `(?P<n>` becomes `(?<n>` (pcreToJs does this already); `(?P=n)` becomes `\k<n>`; `{,n}` becomes `{0,n}`.
 - `\A` becomes `(?<![\s\S])`, `\Z` and `\z` become `(?![\s\S])`.
-- `^` becomes `(?<![\s\S])`, or with `MULTILINE` `(?:(?<![\s\S])|(?<=\n))`; `$` becomes `(?=\n?(?![\s\S]))`, or with `MULTILINE` `(?=\n|(?![\s\S]))`. The `perlEnd` path maps `$` and `\Z` alike to `(?=\n?$)`; Python's `\Z` must not take it.
+- `^` becomes `(?<![\s\S])`, or with `MULTILINE` `(?<![^\n])`; `$` becomes `(?![^\n]|\n[\s\S])` (no character follows but a final newline), or with `MULTILINE` `(?![^\n])`. Each is a negative lookaround, so that a made-up text gets no character from it (a positive lookahead gives its text to `regexExamples`). The `perlEnd` path maps `$` and `\Z` alike to `(?=\n?$)`; Python's `\Z` must not take it.
 - `.` becomes `[^\n]`, or with `DOTALL` `[\s\S]`.
-- Refused: atomic groups, possessive quantifiers, conditionals, `\N{…}`, a backreference to a group that may not take part, and every option that is not known.
+- Named groups become numbered ones, and a backreference `(?:\1)`, so that a digit after it is no part of it.
+- Refused: atomic groups, possessive quantifiers, conditionals, `\N{…}`, a backreference to a group that may not take part, and every option that is not known; `re.L`; a group's own `(?i:…)` (JavaScript has one case flag); with `IGNORECASE`, any character past ASCII (Python folds KELVIN SIGN to `k`); a character past U+FFFF.
+- Where a call shows what groups hold (`findall`, `split`), a group under a repeat of more than once must be sure in each repetition, and the repetition not empty: JavaScript clears a repeated group's captures at each repetition and fails an empty one, where Python keeps the last (`re.findall(r'(?:(a)|b)+', 'ab')` is `['a']` in Python; no example).
 
 Made-up samples are ASCII without newlines, where Unicode `\d`, `\w`, `\s`, `\b` and case folding agree with JavaScript. When the subject argument is a string literal, it is the input, labelled as that argument (`streamLabel`, src/examples/source.ts). A literal subject that is not ASCII, or holds `\r`, U+2028 or U+2029, gives no example: there JavaScript and Python may part (`\w` on `é`, case folding). Otherwise the text is made up, and its label says so.
 
@@ -236,6 +238,9 @@ Per function:
 - `sub`, `subn`: an input and its output, for a template without escapes in #751, with `\1`, `\g<name>`, `\g<0>` from #752; none for a function as the replacement.
 - `findall`: the list Python gives: strings without groups or with one group (the group's text), tuples with two groups or more.
 - `split`: the pieces, with each group's text between them, and `None` for a group that did not take part: `re.split(r'(,)|(;)', 'a,b;c')` gives `['a', ',', None, 'b', None, ';', 'c']`.
+- `finditer`: none (an iterator).
+
+What a call gives back is shown as Python prints it (`repr`: a match object's `match=` cut at 50 characters, as Python's is), and `RE_CALLS` says what each function gives back (`returns`). `findall`, `split` and `sub` find the matches as Python's `sre` does: after an empty match, a match at the same place must not be empty, so `re.sub('x*', '-', 'abxd')` is `'-a-b--d-'`. A `count` or `maxsplit` written as a number is followed, and flags in its slot are their value. A made-up subject is two matches between words (`abc, def, xyz` for `,\s*`), or one at the start or the end of a word, where the words add no match. test/python-examples.test.ts holds the rows against the reference Python, and the calls that get no example.
 
 ## 7. Tests against python3
 

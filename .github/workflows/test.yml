@@ -574,8 +574,9 @@ jobs:
 
   python:
     # The Python host's lexer and the values of its string literals against the reference Python's own tokenize and ast
-    # (test/python-lexer.test.ts), and the patterns the regex reader's Python flavor refuses against its `re.compile`
-    # (test/regex-python-real.test.ts; docs/design/python-regex.md, section 7). Python (PSF licence) is only run as a separate
+    # (test/python-lexer.test.ts), the patterns the regex reader's Python flavor refuses against its `re.compile`
+    # (test/regex-python-real.test.ts; docs/design/python-regex.md, section 7), and the examples of the calls of `re` against what
+    # they give back (test/python-examples.test.ts). Python (PSF licence) is only run as a separate
     # program. The version is PYTHON_REFERENCE in src/python-reference.ts, which test/python-lexer.test.ts holds this to.
     name: Python
     runs-on: ubuntu-24.04
@@ -592,9 +593,9 @@ jobs:
         with:
           python-version: '3.15'
 
-      - name: Run test/python-lexer.test.ts and test/regex-python-real.test.ts
+      - name: Run test/python-lexer.test.ts, test/regex-python-real.test.ts and test/python-examples.test.ts
         env:
           BASH_EXPLAINER_PYTHON: ${{ steps.python.outputs.python-path }}
           # Fail instead of skipping when the reference Python is missing.
           BASH_EXPLAINER_PYTHON_REQUIRED: '1'
-        run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/python-lexer.test.ts test/regex-python-real.test.ts
+        run: npx mocha --no-config --node-option import=tsx --timeout 10000 test/python-lexer.test.ts test/regex-python-real.test.ts test/python-examples.test.ts

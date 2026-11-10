@@ -24,22 +24,29 @@ const PY_CALLS: Record<string, PyCall> = {
 };
 
 /**
- * The functions of Python's `re` that take a pattern (docs/design/python-regex.md, 5.1), by full name: their positional parameters
- * (`flags`, where the flags argument is), and what each adds to the pattern: an anchor at the start (`match`), or at both ends
- * (`fullmatch`). `prefixmatch` is a second name of `match` since Python 3.15.
+ * What a function of `RE_CALLS` gives back, which its example shows (src/examples/python-calls.ts): a match or `None` (`match`), a
+ * compiled pattern (`pattern`), the list of what each match captures (`list`), an iterator of matches (`iterator`), the pieces
+ * between the matches (`pieces`), the text with them replaced (`replaced`), and that with the count (`counted`).
  */
-interface ReCall { params: readonly ReParam[]; anchors?: 'start' | 'whole'; since?: string }
+export type ReReturns = 'match' | 'pattern' | 'list' | 'iterator' | 'pieces' | 'replaced' | 'counted';
+
+/**
+ * The functions of Python's `re` that take a pattern (docs/design/python-regex.md, 5.1), by full name: their positional parameters
+ * (`flags`, where the flags argument is), what each adds to the pattern: an anchor at the start (`match`), or at both ends
+ * (`fullmatch`), and what it gives back. `prefixmatch` is a second name of `match` since Python 3.15.
+ */
+interface ReCall { params: readonly ReParam[]; anchors?: 'start' | 'whole'; since?: string; returns: ReReturns }
 const RE_CALLS: Record<string, ReCall> = {
-  're.compile': { params: ['pattern', 'flags'] },
-  're.search': { params: ['pattern', 'string', 'flags'] },
-  're.match': { params: ['pattern', 'string', 'flags'], anchors: 'start' },
-  're.prefixmatch': { params: ['pattern', 'string', 'flags'], anchors: 'start', since: '3.15' },
-  're.fullmatch': { params: ['pattern', 'string', 'flags'], anchors: 'whole' },
-  're.findall': { params: ['pattern', 'string', 'flags'] },
-  're.finditer': { params: ['pattern', 'string', 'flags'] },
-  're.split': { params: ['pattern', 'string', 'maxsplit', 'flags'] },
-  're.sub': { params: ['pattern', 'repl', 'string', 'count', 'flags'] },
-  're.subn': { params: ['pattern', 'repl', 'string', 'count', 'flags'] },
+  're.compile': { params: ['pattern', 'flags'], returns: 'pattern' },
+  're.search': { params: ['pattern', 'string', 'flags'], returns: 'match' },
+  're.match': { params: ['pattern', 'string', 'flags'], anchors: 'start', returns: 'match' },
+  're.prefixmatch': { params: ['pattern', 'string', 'flags'], anchors: 'start', since: '3.15', returns: 'match' },
+  're.fullmatch': { params: ['pattern', 'string', 'flags'], anchors: 'whole', returns: 'match' },
+  're.findall': { params: ['pattern', 'string', 'flags'], returns: 'list' },
+  're.finditer': { params: ['pattern', 'string', 'flags'], returns: 'iterator' },
+  're.split': { params: ['pattern', 'string', 'maxsplit', 'flags'], returns: 'pieces' },
+  're.sub': { params: ['pattern', 'repl', 'string', 'count', 'flags'], returns: 'replaced' },
+  're.subn': { params: ['pattern', 'repl', 'string', 'count', 'flags'], returns: 'counted' },
 };
 
 /**
@@ -68,6 +75,9 @@ export function reCallOf(name: string): Pick<ReCall, 'anchors' | 'since'> {
   const { anchors, since } = RE_CALLS[name];
   return { ...(anchors ? { anchors } : {}), ...(since ? { since } : {}) };
 }
+
+/** What a function of `RE_CALLS` gives back. */
+export const reReturns = (name: string): ReReturns => RE_CALLS[name].returns;
 
 type PyPos = (off: number) => { line: number; col: number };
 
@@ -356,7 +366,8 @@ function literalSource(lx: PyFile, imports: PyImports, value: PyArg, at: (off: n
   while (h < value.holes.length) hole();
   // (The end of the text the reader reads: after the last character, or the start of the first literal's text when it is empty.)
   const after = text.length ? to[to.length - 1] : at(first.lit!.contentStart);
-  return { value: text, at: [...from, after], to, span: { start: at(first.start), end: at(last.end) }, ...(h ? { holes } : {}), ...(escapes.length ? { escapes } : {}) };
+  return { value: text, at: [...from, after], to, span: { start: at(first.start), end: at(last.end) }, ...(h ? { holes } : {}), ...(escapes.length ? { escapes } : {}),
+    ...(first.lit!.bytes ? { bytes: true as const } : {}) };
 }
 
 /**

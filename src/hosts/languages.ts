@@ -2,21 +2,24 @@
 // of Python's `re`. There is no shell tree, state or command around it, so no `Explainer`: the language's reader reads the text,
 // `placeEmbedded` places its tokens through the literal's map, and `finishLine` (src/linefinish.ts) finishes the line as it
 // finishes a shell line. `explainDocumentLine` (src/document.ts) calls it within the same boundary and budget as a shell line.
-import type { ExplainOptions, LineExplanation, NoteAnchor, Pos, Span, Token } from '../analyzer-types';
+import type { Example, ExplainOptions, LineExplanation, NoteAnchor, Pos, Span, Token } from '../analyzer-types';
 import { explainRegex, flavorName } from '../embedded/regex';
 import { PYTHON_SINCE } from '../embedded/regex-python';
-import { type EmbeddedToken, HOLES } from '../embedded/types';
+import { type EmbeddedToken, hasHole, HOLES } from '../embedded/types';
+import { exampleRun, notComputed } from '../examples/commands';
+import { pythonCallExample, type PyText } from '../examples/python-calls';
+import { toJsRegex } from '../examples/regex';
 import { fillHoles, holeSink, holesRead } from '../explain/holes';
 import { placeEmbedded } from '../explain/nodes';
 import type { Lang } from '../i18n';
 import { codeSpan, shorten } from '../label';
-import { finishLine, tokenErrors } from '../linefinish';
+import { finishLine, keptExamples, tokenErrors, wantsKind } from '../linefinish';
 import { basisGate, type Fact, fact, type Note, said } from '../messages';
 import { tokenSaid } from '../messages-tokens';
 import { noteOfFact, sayAt } from '../noteanchors';
 import { languageReading } from '../reading';
-import type { LanguageRegion, LiteralSource } from './index';
-import { reCallOf } from './python';
+import type { LanguageRegion, LiteralSource, ReParam } from './index';
+import { reCallOf, reReturns } from './python';
 import { flagsAsCount, patternOf } from './scripts';
 
 /** The explanations of each region, by the language and the options they were made with: each line of a region has the same. */
@@ -54,6 +57,8 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   const pitfalls = [...(pattern?.pitfalls ?? []), ...args.pitfalls];
   // (In the order of the text: a keyword argument may come before the pattern.)
   const items = [...(top ? [top] : []), ...tokens].sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
+  // (No example of a pattern Python refuses, nor of one with a part not known.)
+  const examples = source && top && wantsKind(opts, 'regex') && !hasHole(source.value) && !top.children.some(hasError) ? callExamples(region, source, lines, lang) : [];
   const anchors: NoteAnchor[] = [];
   const data = new Map<string, Note>();
   const ex = finishLine({ line: region.lines[0], items, own: items, rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
@@ -62,11 +67,37 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
     const facts = pitfalls.filter((p) => said([p.fact], opts.pitfalls).length);
     const notes = [...errors, ...facts.map((p) => sayAt(anchors, data, noteOfFact(p.fact), p.span))];
     const kept = facts.map((p) => basisGate(p.fact, opts.basis));
-    return { notes, noteInfo: notes.map((n) => basisGate(data.get(n)!, opts.basis)), facts: kept, anchors, marked: { facts: kept, anchors }, examples: [] };
+    return { notes, noteInfo: notes.map((n) => basisGate(data.get(n)!, opts.basis)), facts: kept, anchors, marked: { facts: kept, anchors }, examples: keptExamples(examples, opts, lang) };
   });
   ex.code = region.host.kind;
   if (opts.reading && top) ex.reading = languageReading(ex.items.find((t) => t.language)!, call.written, flavorName(region.flavor, lang));
   return ex;
+}
+
+const hasError = (t: Token): boolean => t.kind === 'error' || t.children.some(hasError);
+
+/**
+ * The example of the call (docs/design/python-regex.md, section 6), under its pattern: what it matches, or what it gives back for its
+ * subject (src/examples/python-calls.ts), with the pattern as JavaScript (`toJsRegex`), within the line's budget; none where the
+ * pattern or the call has what the example cannot say.
+ */
+function callExamples(region: LanguageRegion, source: LiteralSource, lines: readonly string[], lang: Lang): Example[] {
+  const title = lang === 'ja' ? '例' : 'Example';
+  return exampleRun('regex', () => {
+    const regex = toJsRegex(source.value, 'python', { python: region.options! });
+    if (!regex) return [];
+    const text = (role: ReParam): PyText | 'unknown' | undefined => {
+      const a = region.args.find((r) => r.role === role);
+      return a && (a.literal ? { value: a.literal.value, bytes: !!a.literal.bytes } : 'unknown');
+    };
+    // (`count` or `maxsplit`: a number written, or flags in its slot, whose value it is: `flagsAsCount`.)
+    const n = region.args.find((a) => a.role === 'count' || a.role === 'maxsplit');
+    const written = n && between(lines, n.span.start, n.span.end);
+    const count = !n ? 0 : n.flags && !n.flags.unknown.length ? n.flags.value : /^(?:0|[1-9]\d*)$/.test(written!) ? Number(written) : 'unknown';
+    const { name, written: call } = region.call;
+    const ex = pythonCallExample({ written: call, returns: reReturns(name), anchors: reCallOf(name).anchors, regex, bytes: region.options!.bytes, subject: text('string'), repl: text('repl'), count }, lang);
+    return ex ? [{ ...ex, anchor: source.span }] : [];
+  }, (id) => [{ ...notComputed('regex', title, lang, id), anchor: source.span }]);
 }
 
 /**

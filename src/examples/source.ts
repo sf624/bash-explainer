@@ -252,6 +252,15 @@ export function streamLabel(stream: Stream, lang: Lang, readBy?: string): string
 }
 
 /**
+ * The label of an input that is an argument of a function, not a stream (the subject of Python's `re.sub(p, r, string)`): its value
+ * as written, or a made-up one, which the label says.
+ */
+export function argumentLabel(param: string, known: boolean, lang: Lang): string {
+  const s = pick(lang);
+  return s('入力: ', 'Input: ') + (known ? s(`引数 \`${param}\``, `the argument \`${param}\``) : s(`引数 \`${param}\`（仮の文字列）`, `the argument \`${param}\` (a made-up string)`));
+}
+
+/**
  * What the stage before a pipe gives to read (`Piped`): its output; a sample of the layout it prints; the file it
  * copies; or else lines made up for the command, said to be so.
  */
