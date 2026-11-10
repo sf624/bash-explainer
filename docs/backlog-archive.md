@@ -1224,6 +1224,22 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `try:\n    import re\nexcept: pass\nre.search('a', s)`: the import is indented, so the text is not detected as Python.
   - A shell script with no shebang that holds a Python heredoc with `import re` and an `re.` call (`python3 - <<'EOF' … EOF`) is taken as Python.
 
+## From known values, step 2 (#790)
+
+### Markdown: a value set in one fence is read in the next
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `bug`.
+- **Reason:** Rare: a value of a fenced block used in a later block of the same Markdown file. `expansionValue` already carried values across fences before #821; the reading only makes it visible.
+- **Input and what is wrong:** In a `.md` file, a fence with `re='[a'`, then another fence with `grep -E "$re" f`: the second fence's line shows the value `[a`, reads it, and says an Error ("No `]` closes this `[`"). The blocks are separate snippets, which a reader runs apart: the value is not known there.
+
+### Values the model refuses that bash would pass as they are
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `missing-explanation`.
+- **Reason:** Rare forms; the model is right not to be sure in general, and the use keeps today's explanation.
+- **Input and what is wrong:**
+  - `re=' ^a'; grep -E $re f`: bash splits off the leading space and grep gets `^a`, but no value is shown and nothing is read.
+  - `re=(x y); re='^a'; grep -E "$re" f`: `re` is an array whose element 0 is `^a`, which `"$re"` gives; no value is shown and nothing is read.
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

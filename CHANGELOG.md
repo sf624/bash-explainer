@@ -6,7 +6,11 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- A variable the script sets is read in the language of the command that uses it: in `re='^[A-Z][0-9]+$'; grep -E "$re" ids.txt`, the value of `$re` gets the parts of the regex under its value, and the example, as `grep -E '^[A-Z][0-9]+$'` does. An error in the value (`re='[a'`) is an Error of the line; before, the value was shown but not read.
+- A variable the script sets is now read in the language of the command that uses it: after `re='^[A-Z][0-9]+$'`, `grep -E "$re" ids.txt` shows the parts of the regex and an example, as the literal pattern does. An error in the value (`re='[a'`) is an Error of the line.
+
+### Changed
+
+- The caveat on an unquoted value a command reads as data now says that bash (or the shell) reads it as a glob pattern before the command gets it, and the argument's row no longer repeats that. Before, the caveat, the row and the value's line each said "it is a glob pattern".
 
 ## 0.13.0
 

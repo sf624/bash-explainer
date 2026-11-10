@@ -19,6 +19,7 @@ import { main } from '../cli/main';
 import { runContained } from './support/contained';
 import { allTokens } from './support/explain';
 import { scanDirs } from './support/scan';
+import { globbedByBash, globParts } from '../src/semantics/chars';
 
 const parser = createUnbashParser();
 
@@ -239,6 +240,63 @@ describe('a known value read in the language of its command (known-values.md, st
       assert.match(valueToken(e)!.value!.said.text, /Unquoted, the shell also reads it as a glob pattern \(its `\*`, `\?`, `\[d\]` …\) before `grep` gets it/);
       const ja = new Analyzer('ja').explainLine(parser.parse("p='^a*b?c[d]e*'\ngrep $p f\n"), 1, 'sh');
       assert.match(valueToken(ja)!.value!.said.text, /シェルは `grep` に渡す前に値をグロブのパターンとしても読み（`\*`・`\?`・`\[d\]`など）/);
+    });
+
+    it('takes the parts that make a value a pattern as `globbedByBash` reads them', () => {
+      const table: [string, 'on' | 'off', string[]][] = [
+        ['^[A-Z][0-9]+$', 'off', ['[A-Z]', '[0-9]']], ['a*b?', 'off', ['*', '?']], ['\\*a', 'off', []], ['[!a]x[^b]', 'off', ['[!a]', '[^b]']],
+        ['[]a]', 'off', ['[]a]']], ['[[:alpha:]]', 'off', ['[[:alpha:]]']], ['[[:x', 'off', []], ['[a\\]]', 'off', ['[a\\]]']], ['[a/b]', 'off', []],
+        ['[a', 'off', []], ['+(a|b)', 'on', ['+(a|b)']], ['+(a|b)', 'off', []], ['*(a)b', 'on', ['*(a)']], ['*(a', 'on', ['*']], ['@(a', 'on', ['@(']],
+        ['!(a\\)b)', 'on', ['!(a\\)b)']], ['"[A-Z]"', 'off', ['[A-Z]']], ["'*'", 'off', ['*']],
+      ];
+      for (const [p, ext, parts] of table) {
+        assert.deepStrictEqual(globParts(p, ext), parts, p);
+        assert.strictEqual(parts.length > 0, globbedByBash(p, ext) === true, p);
+      }
+    });
+
+    it('the note names the shell that runs the script, as the value line does: sh and dash', () => {
+      for (const shell of ['sh', 'dash'] as const) {
+        const src = "re='^[A-Z][0-9]+$'\ngrep -E $re ids.txt\n";
+        const en = new Analyzer('en').explainLine(parser.parse(src), 1, shell);
+        assert.deepStrictEqual(en.notes.filter((n) => /glob pattern/.test(n)).map((n) => /the shell also reads it as a glob pattern \(its `\[A-Z\]`, `\[0-9\]`\) before `grep` gets it/.test(n)), [true], shell);
+        assert.match(valueToken(en)!.value!.said.text, /the shell also reads it/, shell);
+        const ja = new Analyzer('ja').explainLine(parser.parse(src), 1, shell);
+        assert.ok(ja.notes.some((n) => n.includes('シェルは `grep` に渡す前に値をグロブのパターンとしても読み（`[A-Z]`・`[0-9]`）')), shell);
+      }
+    });
+
+    // (The parts are those the word model globs: an extended glob with extglob on, and a quote, which is text in a value.)
+    for (const [src, parts] of [
+      ["shopt -s extglob\nre='+(a)'\ngrep -E $re f\n", '`+(a)`'],
+      ["re='\"[A-Z]\"'\ngrep $re f\n", '`[A-Z]`'],
+      ["re=\"'*'\"\ngrep $re f\n", '`*`'],
+    ]) {
+      it(`names the glob parts the word model sees: ${src.split('\n').at(-3)}`, () => {
+        const e = explain(src, src.split('\n').length - 2);
+        const said = `bash also reads it as a glob pattern (its ${parts}) before \`grep\` gets it`;
+        assert.ok(e.notes.some((n) => n.includes(said)), JSON.stringify(e.notes));
+        assert.ok(allTokens(e.items).some((t) => t.value?.said.text.includes(said)));
+        assert.ok(!JSON.stringify(e).includes('(its )'));
+      });
+    }
+
+    // (Decision 12 (b): the value line says it wherever a command reads the value as data, read in its language here or not.)
+    for (const use of ['sudo grep -E $re f', 'find . -exec grep -E $re {} +', 'command grep -E $re f', 'env grep -E $re f', 'xargs grep -E $re']) {
+      it(`the value line where the value is not read: ${use}`, () => {
+        const e = explain(`re='^[A-Z][0-9]+$'\n${use}\n`, 1);
+        const v = allTokens(e.items).find((t) => t.value)!;
+        assert.match(v.value!.said.text, /Unquoted, bash also reads it as a glob pattern \(its `\[A-Z\]`, `\[0-9\]`\) before `grep` gets it/);
+        assert.strictEqual(v.value!.said.readingLead, undefined);
+        assert.strictEqual(e.notes.filter((n) => /glob pattern/.test(n)).length, 1);
+      });
+    }
+
+    it('bats\' `run grep -E $re f`: no note there, so the row says the glob itself', () => {
+      const doc = openDocument("@test 'ids' {\n  re='^[A-Z][0-9]+$'\n  run grep -E $re ids.txt\n}\n", 'bats', (t) => parser.parse(t));
+      const e = explainDocumentLine(new Analyzer('en'), doc, 2, 'en', shellsOf(doc.lines, 'a.bats', undefined), {})!;
+      assert.ok(!e.notes.some((n) => /glob pattern/.test(n)));
+      assert.match(allTokens(e.items).find((t) => t.kind === 'argument' && t.label === '$re')!.explanation, /unquoted, `\$re` is a glob pattern, so a file name that matches it takes its place/);
     });
   });
 

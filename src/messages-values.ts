@@ -34,17 +34,28 @@ export interface ValueSaid {
   readingLead?: string;
 }
 
-/** Where the value is read in the language of its command (docs/design/known-values.md, 12): the command, and the parts of the value that make it a glob pattern. */
+/** Where a command reads the value as data, so a glob in it is said as bash's step before the command (docs/design/known-values.md, 12): the command, and the parts of the value that make it a glob pattern. */
 export interface ValueRead { command: string; globs: readonly string[] }
 
 /** How many glob parts of a value are named (`its [A-Z], [0-9]`). */
 const GLOBS_NAMED = 3;
 
-/** The glob parts of a value named in a sentence: "`[A-Z]`, `[0-9]`" (Japanese "`[A-Z]`・`[0-9]`"), the first few. */
-export function globsNamed(globs: readonly string[], ja: boolean): string {
-  const named = globs.slice(0, GLOBS_NAMED).map(codeSpan).join(ja ? '・' : ', ');
-  return globs.length > GLOBS_NAMED ? named + (ja ? 'など' : ' …') : named;
+/**
+ * The glob parts of a value named after "a glob pattern": " (its `[A-Z]`, `[0-9]`)" (Japanese "（`[A-Z]`・`[0-9]`）"), the first few;
+ * nothing where none is known.
+ */
+export function globsAside(globs: readonly string[], ja: boolean): string {
+  // (A guard: `globParts` names a part wherever `globbedByBash` says the value globs, test/known-values.test.ts.)
+  /* c8 ignore next */
+  if (!globs.length) return '';
+  const named = globs.slice(0, GLOBS_NAMED).map(codeSpan).join(ja ? '・' : ', ') + (globs.length > GLOBS_NAMED ? (ja ? 'など' : ' …') : '');
+  return ja ? `（${named}）` : ` (its ${named})`;
 }
+
+/** The text above the rows of a reading of a value that assumes no file name matches it (`ValueSaid.readingLead`). */
+export const readingLead = (lang: Lang, command: string): string => (lang === 'ja'
+  ? `以下は、一致するファイル名がないときに \`${command}\` が受け取る値の読み方`
+  : `Read below as \`${command}\` gets it where no file name matches`);
 
 /** The characters at the start and at the end of a shown text that are marks of a space. */
 export type SpaceEnds = readonly [lead: number, trail: number];
@@ -130,8 +141,8 @@ export function shownPiece(t: string, edges: { lead: boolean; trail: boolean }):
 
 /**
  * The texts of the value of an expansion, in `lang`; `bash`: false in a script of sh or dash (the shell runs it, not bash).
- * `read`: the command reads the value in a language of its own, so a glob in it is said as what bash does before the command
- * gets it (docs/design/known-values.md, 12), with the lead of the reading's rows.
+ * `read`: a command reads the value as data (the note `unquoted-value-as-data` is about it), so a glob in it is said as what bash
+ * does before the command gets it (docs/design/known-values.md, 12).
  */
 export function valueSaid(lang: Lang, v: ExpansionValue, bash = true, read?: ValueRead): ValueSaid {
   const ja = lang === 'ja';
@@ -154,9 +165,9 @@ export function valueSaid(lang: Lang, v: ExpansionValue, bash = true, read?: Val
     tails.push(ja ? '。クォートしていないので、ワイルドカードを含む単語が前後の文字列とつながったままグロブのパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
       : '. Unquoted, the word its wildcards end up in, with the text around it, is a glob pattern: bash matches it against file names when the line runs (not done here)');
   } else if (v.glob && read) {
-    const named = globsNamed(read.globs, ja);
-    tails.push(ja ? `。クォートしていないので、${bash ? 'bash ' : 'シェル'}は \`${read.command}\` に渡す前に値をグロブのパターンとしても読み（${named}）、実行するときにファイル名と照合する（ここでは照合しない）`
-      : `. Unquoted, ${bash ? 'bash' : 'the shell'} also reads it as a glob pattern (its ${named}) before \`${read.command}\` gets it, and matches it against file names when the line runs (not done here)`);
+    const named = globsAside(read.globs, ja);
+    tails.push(ja ? `。クォートしていないので、${bash ? 'bash ' : 'シェル'}は \`${read.command}\` に渡す前に値をグロブのパターンとしても読み${named}、実行するときにファイル名と照合する（ここでは照合しない）`
+      : `. Unquoted, ${bash ? 'bash' : 'the shell'} also reads it as a glob pattern${named} before \`${read.command}\` gets it, and matches it against file names when the line runs (not done here)`);
   } else if (v.glob) {
     tails.push(ja ? '。クォートしていないのでグロブのパターンとして働き、実行するときにファイル名と照合される（ここでは照合しない）'
       : `. Unquoted, it is a glob pattern: ${bash ? 'bash' : 'the shell'} matches it against file names when the line runs (not done here)`);
@@ -182,6 +193,5 @@ export function valueSaid(lang: Lang, v: ExpansionValue, bash = true, read?: Val
     ...(spaced ? { spaceLabel: blankWord(' ', ja) } : {}),
     ...(tail ? { tail } : {}),
     text,
-    ...(v.glob && read ? { readingLead: ja ? `以下は、一致するファイル名がないときに \`${read.command}\` が受け取る値の読み方` : `Read below as \`${read.command}\` gets it where no file name matches` } : {}),
   };
 }

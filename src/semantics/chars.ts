@@ -5,6 +5,7 @@
 // text, which every locale reads the same.
 import { evalArith } from '../arith';
 import { parseExpansion } from '../expansion';
+import type { Tri } from './shellstate';
 
 /**
  * The characters of IFS that bash counts as IFS whitespace: a run of them around a field is one separator, and they
@@ -68,6 +69,54 @@ export function globbedByBash(pattern: string, extglob: 'on' | 'off' | 'unknown'
     } else if (c === '\\') i++;
   }
   return maybe ? undefined : false;
+}
+
+/**
+ * The parts of `pattern` that make bash's pathname expansion take it as a pattern, as `globbedByBash` reads them, for the
+ * texts that name them (`^[A-Z][0-9]+$`: `[A-Z]` and `[0-9]`; `+(a)` with extglob on): an unescaped `*` or `?`, a bracket
+ * expression closed in the same name, and with extglob on an extended glob to its `)`. A quote is a plain character here:
+ * this is a value bash has expanded, whose quotes are text.
+ */
+export function globParts(pattern: string, extglob: Tri): string[] {
+  const out: string[] = [];
+  /** The index after the `)` that closes the `(` at `from`, or -1. */
+  const closing = (from: number): number => {
+    let depth = 0;
+    for (let j = from; j < pattern.length; j++) {
+      if (pattern[j] === '\\') j++;
+      else if (pattern[j] === '(') depth++;
+      else if (pattern[j] === ')' && --depth === 0) return j + 1;
+    }
+    return -1;
+  };
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') i++;
+    else if (c === '*' || c === '?') {
+      const end = extglob === 'on' && pattern[i + 1] === '(' ? closing(i + 1) : -1;
+      out.push(pattern.slice(i, end < 0 ? i + 1 : end));
+      if (end >= 0) i = end - 1;
+    } else if ('+@!'.includes(c) && pattern[i + 1] === '(' && extglob === 'on') {
+      // (One with no `)` is a pattern too, to `globbedByBash`: its `@(` is named.)
+      const end = closing(i + 1);
+      out.push(pattern.slice(i, end < 0 ? i + 2 : end));
+      i = (end < 0 ? i + 2 : end) - 1;
+    } else if (c === '[') {
+      // (A `]` first, or after `!` or `^`, is in the set; a class `[:alpha:]` is read whole; a `/` ends the name.)
+      let j = i + 1 + (pattern[i + 1] === '!' || pattern[i + 1] === '^' ? 1 : 0);
+      if (pattern[j] === ']') j++;
+      for (; j < pattern.length && pattern[j] !== ']' && pattern[j] !== '/'; j++) {
+        if (pattern[j] === '[' && pattern[j + 1] === ':') {
+          const k = pattern.indexOf(':]', j + 2);
+          if (k > 0) j = k + 1;
+        } else if (pattern[j] === '\\') j++;
+      }
+      if (pattern[j] !== ']') continue;
+      out.push(pattern.slice(i, j + 1));
+      i = j;
+    }
+  }
+  return out;
 }
 
 /**
