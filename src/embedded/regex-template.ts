@@ -4,7 +4,7 @@
 // items, which become the tokens. One reading serves both, so that the example applies what the tokens say.
 import type { Lang } from '../i18n';
 import { tokenSaid } from '../messages-tokens';
-import { pyRepr } from './regex-python';
+import { groupNameRefused, pyRepr, Refusal, Tokens } from './regex-python';
 import { type EmbeddedToken, hasHole, holeStop, holeToken, isHole } from './types';
 
 /** A part of a template as Python applies it: text, or the number of a group whose text goes there (0, the whole match). */
@@ -33,38 +33,6 @@ const ESCAPES: Readonly<Record<string, number>> = { a: 7, b: 8, f: 12, n: 10, r:
 
 const isDigit = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '9';
 const isOctal = (c: string | undefined): boolean => c !== undefined && c >= '0' && c <= '7';
-
-/** Python's refusal, thrown where its parser raises it; `at`, where a refusal of the tokenizer itself is (a backslash at the end). */
-class Refusal { constructor(readonly message: string, readonly raises: 're.error' | 'IndexError', readonly at?: number) {} }
-
-/**
- * The tokenizer of Python's `re._parser` over a template: `next` is the token after the last taken (a backslash with the character
- * after it, or one character), read one ahead, so that a backslash at the very end is refused as soon as it is reached.
- */
-class Tokens {
-  index = 0;
-  next: string | undefined;
-  constructor(readonly src: string) {}
-  /** Reads the next token: the first one, then each after the last taken. */
-  advance(): void {
-    const { src } = this;
-    if (this.index >= src.length) {
-      this.next = undefined;
-      return;
-    }
-    if (src[this.index] === '\\' && this.index + 1 >= src.length) throw new Refusal(`bad escape (end of pattern) at position ${src.length - 1}`, 're.error', src.length - 1);
-    this.next = src.slice(this.index, this.index + (src[this.index] === '\\' ? 2 : 1));
-    this.index += this.next.length;
-  }
-  get(): string | undefined {
-    const t = this.next;
-    this.advance();
-    return t;
-  }
-  /** Where the next token starts. */
-  tell(): number { return this.index - (this.next?.length ?? 0); }
-  error(message: string, offset = 0): Refusal { return new Refusal(`${message} at position ${this.tell() - offset}`, 're.error'); }
-}
 
 /**
  * The template `src` (the value of the literal; a field of an f-string is a hole) of a pattern with the groups `groups` (none where they
@@ -127,8 +95,8 @@ export function readTemplate(src: string, groups: TemplateGroups | undefined, by
           add({ start, end: s.tell(), kind: 'group', group: Number(index) });
           continue;
         }
-        if (bytes && /[^\x00-\x7f]/.test(name)) throw s.error(`bad character in group name ${asciiRepr(name)}`, name.length + 1);
-        if (!/^[\p{XID_Start}_]\p{XID_Continue}*$/u.test(name)) throw s.error(`bad character in group name ${pyRepr(name, false)}`, name.length + 1);
+        const bad = groupNameRefused(name, bytes);
+        if (bad) throw s.error(bad, name.length + 1);
         if (!groups) {
           add({ start, end: s.tell(), kind: 'group', name });
           continue;
@@ -183,9 +151,6 @@ export function readTemplate(src: string, groups: TemplateGroups | undefined, by
   const applies = !stopped && items.every((i) => i.kind !== 'error' && i.kind !== 'hole' && (i.kind !== 'group' || i.group !== undefined));
   return { items, ...(applies && groups ? { parts: partsOf(src, items) } : {}) };
 }
-
-/** A name in a message of a bytes template, as Python's `%a` writes it: a character past ASCII as `\xNN`. */
-const asciiRepr = (name: string): string => pyRepr(name, false).replace(/[\x80-\xff]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
 
 /** The parts Python applies, with the runs of text joined. */
 function partsOf(src: string, items: readonly Item[]): TemplatePart[] {

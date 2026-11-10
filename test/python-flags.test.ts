@@ -26,7 +26,7 @@ const options = (src: string) => extractShell('python', src).languages.map((r) =
 /** The flags each argument of each region gives: the full names, and their value. */
 const flagsOf = (src: string) => extractShell('python', src).languages.map((r) => r.args.map((a) => a.flags && [a.flags.names.map((n) => n.flag), a.flags.value]));
 const on = (o: Partial<PythonRegexOptions>): PythonRegexOptions => ({ ...NO_PYTHON_FLAGS, ...o });
-const unknown = (bytes = false): PythonRegexOptions => ({ ascii: 'unknown', ignorecase: 'unknown', multiline: 'unknown', dotall: 'unknown', verbose: 'unknown', locale: 'unknown', bytes });
+const unknown = (bytes = false): PythonRegexOptions => ({ ascii: 'unknown', ignorecase: 'unknown', multiline: 'unknown', dotall: 'unknown', verbose: 'unknown', locale: 'unknown', unicode: 'unknown', bytes });
 
 /** The texts of the tokens of a pattern read with `python`. */
 function said(pattern: string, python: Partial<PythonRegexOptions> = {}): string[] {
@@ -284,5 +284,31 @@ describe('Python regex: flags', () => {
     const src = path.join(__dirname, '..', 'src');
     const naming = /['"](?:ASCII|IGNORECASE|LOCALE|MULTILINE|DOTALL|VERBOSE|UNICODE|NOFLAG)['"]|^\s*(?:IGNORECASE|MULTILINE|DOTALL|VERBOSE|NOFLAG):/m;
     assert.deepStrictEqual(files(src).filter((f) => naming.test(fs.readFileSync(f, 'utf8'))).map((f) => path.relative(src, f)).sort(), ['embedded/regex-python.ts', 'messages-tokens-regex.ts']);
+  });
+});
+
+describe('Python regex: flags Python refuses with ValueError (#760)', () => {
+  const issues = (src: string) => documentIssues(open(src), 'en', {}, [], {}).map((i) => [i.code, i.severity, i.startLine, i.startCol, i.endCol]);
+
+  it('says an Error on the flag of the argument that makes it, with Python\'s message, and gives no example', () => {
+    const ex = explainPy("import re\nre.findall(r'a', 'a', re.A | re.U)\n", 1);
+    assert.deepStrictEqual(texts(ex.items).filter((t) => t.includes('ValueError')), [
+      're.U: `re.U` (`re.UNICODE`): Unicode matching, which a str pattern has already. Python\'s `re` refuses these flags ("ASCII and UNICODE flags are incompatible"; `ValueError`)']);
+    assert.deepStrictEqual(ex.examples, []);
+    assert.deepStrictEqual(issues("import re\nre.compile('a', re.L)\n").map((i) => i.slice(1)), [['error', 1, 16, 20]]);
+    assert.deepStrictEqual(issues("import re\nre.compile(rb'a', re.I | re.UNICODE)\n").map((i) => i.slice(1)), [['error', 1, 25, 35]]);
+    // (Flags not known, or a str pattern with `re.A` alone, are none; `re.L` with bytes is one.)
+    assert.deepStrictEqual(issues("import re\nre.compile('a', re.A | flags)\nre.compile('a', re.A)\nre.compile(rb'a', re.L)\n"), []);
+  });
+
+  it('says it at the inline flags where they make it, as Python does once it has read the pattern', () => {
+    const said = (p: string, python: Partial<PythonRegexOptions> = {}) => explainRegex(p, 'python', 'en', { tool: 'python', python: { ...NO_PYTHON_FLAGS, ...python } }).filter((t) => t.kind === 'error').map((t) => p.slice(t.start, t.end));
+    assert.deepStrictEqual(said('(?a)(?u)a'), ['(?u)']);
+    assert.deepStrictEqual(said('(?u)a', { ascii: true }), ['(?u)']);
+    assert.deepStrictEqual(said('(?L)a', { ascii: true, bytes: true }), ['(?L)']);
+    // (The argument says its own; a group's own flags go with any; a refusal of the parser comes first.)
+    assert.deepStrictEqual(said('(?a)a', { locale: true }), []);
+    assert.deepStrictEqual(said('(?u:x)', { ascii: true }), []);
+    assert.deepStrictEqual(said('(?a)(?u)\\e'), ['\\e']);
   });
 });

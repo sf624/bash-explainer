@@ -14,8 +14,8 @@ import { needPython, pythonReference } from './support/python';
 // The patterns the regex reader's flavor `python` refuses (docs/design/python-regex.md, section 3), against the reference
 // Python's `re.compile`, in one process (test/support/python-re.py): each row has Python's message, or none, and so does the
 // reader. The rows are those this flavor reads: the escapes, references to groups, what is left open, and lookbehinds of more
-// than one width (its compiler's refusal, which has no position). Python's other refusals (a group name twice…) come with #760;
-// `FLAGGED` has the rows of the flags (#749).
+// than one width (its compiler's refusal, which has no position); `FLAGGED` has the rows of the flags (#749). The validity
+// differential over every refusal and warning, with generated rows, is test/regex-python-validity.test.ts (#760).
 
 const VALID = [
   '^\\d+(?P<frac>\\.\\d+)?$', '\\Z', '\\z', '\\A\\b\\B', '[\\b]', '\\v[\\v]', '\\0', '\\012', '\\141', '[\\101]', '[\\0]', '(a)\\1', '(a)(b)\\2', '\\x41',

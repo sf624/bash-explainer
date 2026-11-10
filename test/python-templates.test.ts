@@ -46,7 +46,8 @@ describe('Python regex: the replacement template', () => {
   it('checks no group where the pattern\'s are not known, and applies nothing', () => {
     const t = readTemplate('\\7\\g<n>', undefined, false);
     assert.deepStrictEqual([t.items, t.parts], [[{ start: 0, end: 2, kind: 'group', group: 7 }, { start: 2, end: 7, kind: 'group', name: 'n' }], undefined]);
-    assert.deepStrictEqual(texts(explainPy('import re\nre.sub(r\'(?P<é>a)\', r\'\\2\', s)\n', 1).items).filter((t) => t.includes('refuses')), []);
+    // (A pattern's groups are known wherever no field of an f-string may add one: Python's reader reads every group, `(?P<é>…)` too.)
+    assert.deepStrictEqual(texts(explainPy('import re\nre.sub(r\'(?P<é>a)\', r\'\\2\', s)\n', 1).items).filter((t) => t.includes('refuses')).length, 1);
   });
 
   it('claims a field of an f-string as text of the template, and stops where its value would be read with an escape', () => {
@@ -109,9 +110,10 @@ describe('Python regex: the replacement on the line of `re.sub`', () => {
     const refused = (src: string) => texts(explainPy(`import re\n${src}\n`, 1).items).filter((t) => t.includes('refuses'));
     assert.deepStrictEqual(refused("re.sub(rf'({x})', r'\\2', s)"), []);
     assert.deepStrictEqual(refused("re.sub(rf'{re.escape(x)}(a)', r'\\2', s)").length, 1);
-    // (A group by name, where the groups are not known, is said by its name only; a blank between two groups is named.)
+    // (A group by name is said with its number where the groups are known, by its name only where they are not; a blank between two
+    // groups is named.)
     assert.deepStrictEqual(texts(explainPy("import re\nre.sub(r'(?P<é>a)(?P<n>b)', r'\\g<n> \\1', s)\n", 1).items).slice(-3), [
-      '\\g<n>: what the group `n` matched (nothing where the group did not take part)', ': The text ` ` (a space), put in as it is',
+      '\\g<n>: what the group `n` (group 2) matched (nothing where the group did not take part)', ': The text ` ` (a space), put in as it is',
       '\\1: what group 1 matched (nothing where the group did not take part)']);
     // (A replacement with a field and no backslash is a template too, as the value may hold one.)
     assert.match(texts(explainPy("import re\nre.sub(r'a', f'{x}', s)\n", 1).items).join('\n'), /^f'\{x\}': The replacement of `re.sub`: it takes the place of each match\n\{x\}: The value of `\{x\}` goes into the replacement/m);

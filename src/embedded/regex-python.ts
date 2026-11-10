@@ -12,17 +12,17 @@ export type FlagState = boolean | 'unknown';
  * What the flags of a Python pattern turn on (docs/design/python-regex.md, 5.2): from the call's flags argument, then from the
  * pattern's inline flags (`(?i)`, `(?i:…)`). `bytes`: the pattern is a bytes literal (`rb'…'`), whose classes are ASCII.
  */
-export interface PythonRegexOptions { ascii: FlagState; ignorecase: FlagState; multiline: FlagState; dotall: FlagState; verbose: FlagState; locale: FlagState; bytes: boolean }
+export interface PythonRegexOptions { ascii: FlagState; ignorecase: FlagState; multiline: FlagState; dotall: FlagState; verbose: FlagState; locale: FlagState; unicode: FlagState; bytes: boolean }
 
 /** The options a flag of Python's `re` turns on. */
 export type PythonOption = Exclude<keyof PythonRegexOptions, 'bytes'>;
 
 /** No flags, in a str pattern: what a call with no flags argument compiles. */
-export const NO_PYTHON_FLAGS: PythonRegexOptions = { ascii: false, ignorecase: false, multiline: false, dotall: false, verbose: false, locale: false, bytes: false };
+export const NO_PYTHON_FLAGS: PythonRegexOptions = { ascii: false, ignorecase: false, multiline: false, dotall: false, verbose: false, locale: false, unicode: false, bytes: false };
 
 /**
  * The flags of Python's `re` (3.15): the long name, the short one, the letter of an inline flag, the value, and the option each
- * turns on. `UNICODE` is what a str pattern has already, `DEBUG` prints the compiled pattern, `NOFLAG` (3.11) is none. The
+ * turns on. `UNICODE` is what a str pattern has already (only its conflicts with the others are read: `pythonFlagsRefused`), `DEBUG` prints the compiled pattern, `NOFLAG` (3.11) is none. The
  * extractor reads the names (src/hosts/python.ts), the reader the letters; the catalog says what each does (`python-regex-flag`).
  */
 export const PYTHON_FLAGS = [
@@ -32,7 +32,7 @@ export const PYTHON_FLAGS = [
   { name: 'MULTILINE', short: 'M', letter: 'm', value: 8, option: 'multiline' },
   { name: 'DOTALL', short: 'S', letter: 's', value: 16, option: 'dotall' },
   { name: 'VERBOSE', short: 'X', letter: 'x', value: 64, option: 'verbose' },
-  { name: 'UNICODE', short: 'U', letter: 'u', value: 32 },
+  { name: 'UNICODE', short: 'U', letter: 'u', value: 32, option: 'unicode' },
   { name: 'DEBUG', value: 128 },
   { name: 'NOFLAG', value: 0 },
 ] as const satisfies readonly { name: string; short?: string; letter?: string; value: number; option?: PythonOption }[];
@@ -49,7 +49,25 @@ export const PYTHON_SINCE = {
   positionalCount: '3.13',
   /** A backslash a string that is not raw keeps, as it starts no escape (`"\\d"`), warns (SyntaxWarning; a DeprecationWarning before). */
   invalidEscape: '3.12',
+  /** `\z`, the end of the text (an error before). */
+  endZ: '3.14',
 } as const;
+
+/**
+ * The `ValueError` Python's `re` raises for flags that do not go together, once it has read the pattern (`fix_flags` of its
+ * `re._parser`): the flags of the call's argument and the global inline flags (`(?a)`), by whether the pattern is bytes. None where a
+ * flag it rests on is not known.
+ */
+export function pythonFlagsRefused(py: PythonRegexOptions): { message: string; flags: readonly PythonFlag[] } | undefined {
+  if (!py.bytes) {
+    if (py.locale === true) return { message: 'cannot use LOCALE flag with a str pattern', flags: ['LOCALE'] };
+    if (py.ascii === true && py.unicode === true) return { message: 'ASCII and UNICODE flags are incompatible', flags: ['ASCII', 'UNICODE'] };
+    return undefined;
+  }
+  if (py.unicode === true) return { message: 'cannot use UNICODE flag with a bytes pattern', flags: ['UNICODE'] };
+  if (py.locale === true && py.ascii === true) return { message: 'ASCII and LOCALE flags are incompatible', flags: ['ASCII', 'LOCALE'] };
+  return undefined;
+}
 
 /** A flag of Python's `re`, by its long name. */
 export type PythonFlag = (typeof PYTHON_FLAGS)[number]['name'];
@@ -338,4 +356,51 @@ export function pyRepr(value: string | undefined, bytes: boolean): string {
     else out += ch;
   }
   return `${bytes ? 'b' : ''}${q}${out}${q}`;
+}
+
+/** Python's refusal, thrown where its parser raises it; `at`, where a refusal of the tokenizer itself is (a backslash at the end). */
+export class Refusal { constructor(readonly message: string, readonly raises: 're.error' | 'IndexError', readonly at?: number) {} }
+
+/**
+ * The tokenizer of Python's `re._parser` over a template or a pattern: `next` is the token after the last taken (a backslash with the
+ * character after it, or one character), read one ahead, so that a backslash at the very end is refused as soon as it is reached.
+ * `seek` starts it at an offset (the regex reader reads a group's head with it: src/embedded/regex-python-read.ts).
+ */
+export class Tokens {
+  index = 0;
+  next: string | undefined;
+  constructor(readonly src: string) {}
+  /** Reads the next token: the first one, then each after the last taken. */
+  advance(): void {
+    const { src } = this;
+    if (this.index >= src.length) {
+      this.next = undefined;
+      return;
+    }
+    if (src[this.index] === '\\' && this.index + 1 >= src.length) throw new Refusal(`bad escape (end of pattern) at position ${src.length - 1}`, 're.error', src.length - 1);
+    this.next = src.slice(this.index, this.index + (src[this.index] === '\\' ? 2 : 1));
+    this.index += this.next.length;
+  }
+  get(): string | undefined {
+    const t = this.next;
+    this.advance();
+    return t;
+  }
+  /** Where the next token starts. */
+  tell(): number { return this.index - (this.next?.length ?? 0); }
+  seek(index: number): void {
+    this.index = index;
+    this.advance();
+  }
+  error(message: string, offset = 0): Refusal { return new Refusal(`${message} at position ${this.tell() - offset}`, 're.error'); }
+}
+
+/**
+ * Why Python refuses a group's name (`checkgroupname` of its `re._parser`), or undefined: one that is no identifier, or in a bytes
+ * pattern or template (`bytes`) one past ASCII, which its message writes as `%a` does (`\xNN`).
+ */
+export function groupNameRefused(name: string, bytes: boolean): string | undefined {
+  if (bytes && /[^\x00-\x7f]/.test(name)) return `bad character in group name ${pyRepr(name, false).replace(/[\x80-\xff]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`)}`;
+  if (!/^[\p{XID_Start}_]\p{XID_Continue}*$/u.test(name)) return `bad character in group name ${pyRepr(name, false)}`;
+  return undefined;
 }

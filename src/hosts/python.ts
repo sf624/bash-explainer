@@ -320,7 +320,7 @@ function reCall(lx: PyFile, imports: PyImports, p: ReAt, pos: PyPos, of?: { name
     call: { written: p.name, name: p.full, span },
     args,
     ...(pattern ? { options: {
-      ascii: state('ascii'), ignorecase: state('ignorecase'), multiline: state('multiline'), dotall: state('dotall'), verbose: state('verbose'), locale: state('locale'),
+      ascii: state('ascii'), ignorecase: state('ignorecase'), multiline: state('multiline'), dotall: state('dotall'), verbose: state('verbose'), locale: state('locale'), unicode: state('unicode'),
       bytes: pattern.literals[0].token.lit!.bytes,
     } } : {}),
   };
