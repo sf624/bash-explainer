@@ -9,37 +9,106 @@ import { PYTHON_SINCE } from '../embedded/regex-python';
 import { readTemplate, type Template, type TemplateGroups, templateTokens } from '../embedded/regex-template';
 import { type EmbeddedToken, hasHole, HOLES } from '../embedded/types';
 import { exampleRun, notComputed } from '../examples/commands';
+import { withinOwnLine } from '../examples/regexguard';
 import { pythonCallExample, type PyText } from '../examples/python-calls';
 import { toJsRegex } from '../examples/regex';
 import { fillHoles, holeSink, holesRead } from '../explain/holes';
 import { placeEmbedded } from '../explain/nodes';
 import { type Lang, lineLabel } from '../i18n';
 import { codeSpan, shorten } from '../label';
-import { pushAll } from '../lists';
-import { finishLine, keptExamples, tokenErrors, wantsKind } from '../linefinish';
+import { onceBy, pushAll } from '../lists';
+import { finishLine, keptExamples, titledExamples, tokenErrors, wantsKind } from '../linefinish';
 import { basisGate, type Fact, fact, type Note, said } from '../messages';
 import { tokenSaid } from '../messages-tokens';
 import { noteOfFact, sayAt } from '../noteanchors';
-import { languageReading } from '../reading';
+import { languageReading, languageReadings } from '../reading';
+import { KIND_ROLES } from '../roles';
 import type { CallArgument, LanguageRegion, LiteralSource, ReParam } from './index';
 import { reCallOf, reReturns } from './python';
-import { flagsAsCount, literalOf, patternOf } from './scripts';
-
-/** The explanations of each region, by the language and the options they were made with: each line of a region has the same. */
-const made = new WeakMap<LanguageRegion, Map<string, LineExplanation>>();
+import { flagsAsCount, literalOf, patternOf, spanWithin } from './scripts';
 
 /**
- * The explanation of `line` of `region`, a part of the document whose lines are `lines`. A part over several lines is explained
- * once, whole, and each of its lines has the same tokens and anchors, so that its problems are each said once (`noteIssues`).
+ * A call explained: its line's explanation, and for a line it shares with other calls, its token (on the call, from its name to its
+ * `)`) and the tokens that go under it.
  */
-export function explainLanguageLine(region: LanguageRegion, lines: readonly string[], line: number, lang: Lang, opts: ExplainOptions): LineExplanation {
+interface CallMade { ex: LineExplanation; call: Token; parts: readonly Token[] }
+
+/** The explanations of each region, by the language and the options they were made with: each line of a region has the same. */
+const made = new WeakMap<LanguageRegion, Map<string, CallMade>>();
+
+/** The explanations of each line that calls share (`together`), by the language and the options. */
+const shared = new WeakMap<readonly LanguageRegion[], Map<string, LineExplanation>>();
+
+/**
+ * The explanation of `line`, whose parts are `regions` (every call that has the line, in the order written: `hostPartAt`), of a
+ * document whose lines are `lines`. A part over several lines is explained once, whole, and each of its lines has the same tokens
+ * and anchors, so that its problems are each said once (`noteIssues`). A line of several calls has each call's (`together`).
+ */
+export function explainLanguageLine(regions: readonly LanguageRegion[], lines: readonly string[], line: number, lang: Lang, opts: ExplainOptions): LineExplanation {
+  const key = JSON.stringify([lang, opts]);
+  if (regions.length === 1) {
+    const { ex } = callMade(regions[0], lines, key, lang, opts);
+    return ex.line === line ? ex : { ...ex, line };
+  }
+  let byKey = shared.get(regions);
+  if (!byKey) shared.set(regions, (byKey = new Map()));
+  let ex = byKey.get(key);
+  if (!ex) byKey.set(key, (ex = together(regions, regions.map((r) => callMade(r, lines, key, lang, opts)), lines, line, lang)));
+  return ex;
+}
+
+/**
+ * The explanation of a call, made once. Each call has a budget of its own, of the line's size (`withinOwnLine`): what it shows does
+ * not depend on which of its lines asked first, nor on the calls beside it on that line (docs/design/line-budget.md).
+ */
+function callMade(region: LanguageRegion, lines: readonly string[], key: string, lang: Lang, opts: ExplainOptions): CallMade {
   let byKey = made.get(region);
   if (!byKey) made.set(region, (byKey = new Map()));
-  const key = JSON.stringify([lang, opts]);
-  let ex = byKey.get(key);
-  if (!ex) byKey.set(key, (ex = explained(region, lines, lang, opts)));
-  return ex.line === line ? ex : { ...ex, line };
+  let m = byKey.get(key);
+  if (!m) byKey.set(key, (m = withinOwnLine(() => explained(region, lines, lang, opts))));
+  return m;
 }
+
+/**
+ * A line of several calls (`re.sub(r'a', 'b', re.sub(r'c', 'd', s))`, `P.match(s) or Q.match(s)`), as a shell line of several
+ * commands: a token for each call, with its own tokens under it and a call written in its arguments too, in the order written; each
+ * call's examples, titled with the call (`titledExamples`), and its notes, facts and anchors, the same objects as on its other lines.
+ */
+function together(regions: readonly LanguageRegion[], each: readonly CallMade[], lines: readonly string[], line: number, lang: Lang): LineExplanation {
+  const roots: Token[] = [];
+  const calls: Token[] = [];
+  const open: Token[] = [];
+  for (const m of each) {
+    const t: Token = { ...m.call, children: [...m.parts] };
+    // (The calls come in the order written: one inside another starts after it, and ends before it does.)
+    while (open.length && !spanWithin(open[open.length - 1].span, t.span)) open.pop();
+    (open.length ? open[open.length - 1].children : roots).push(t);
+    open.push(t);
+    calls.push(t);
+  }
+  for (const t of calls) t.children.sort(byStart);
+  const notes: string[] = [];
+  const noteInfo: Note[] = [];
+  for (const { ex } of each) {
+    ex.notes.forEach((n, i) => {
+      if (notes.includes(n)) return;
+      notes.push(n);
+      noteInfo.push(ex.noteInfo[i]);
+    });
+  }
+  const facts = onceBy(each.flatMap((m) => m.ex.facts ?? []), (f) => f.text);
+  const anchors = each.flatMap((m) => m.ex.anchors ?? []);
+  const examples = each.flatMap((m, i) => titledExamples(lang, m.ex.examples.map((e) => ({ ...e, target: shorten(between(lines, regions[i].call.span.start, regions[i].call.span.end), 40) }))));
+  const readings = each.flatMap((m) => (m.ex.reading ? [m.ex.reading] : []));
+  const first = regions.reduce((l, r) => Math.min(l, r.lines[0]), line);
+  return {
+    line, summary: each.map((m) => m.ex.summary).join(' ; '), items: roots, context: [{ label: flavorName(regions[0].flavor, lang), line: first }],
+    notes, noteInfo, ...(facts.length ? { facts } : {}), ...(anchors.length ? { anchors } : {}), examples, code: regions[0].host.kind,
+    ...(readings.length ? { reading: readings.length === 1 ? readings[0] : languageReadings(readings) } : {}),
+  };
+}
+
+const byStart = (a: Token, b: Token): number => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character;
 
 const samePos = (a: Pos, b: Pos): boolean => a.line === b.line && a.character === b.character;
 
@@ -52,7 +121,7 @@ function between(lines: readonly string[], a: Pos, b: Pos): string {
 /** A pitfall of the call or of its strings, at its place. */
 type Pitfall = { fact: Fact; span: Span };
 
-function explained(region: LanguageRegion, lines: readonly string[], lang: Lang, opts: ExplainOptions): LineExplanation {
+function explained(region: LanguageRegion, lines: readonly string[], lang: Lang, opts: ExplainOptions): CallMade {
   const { call } = region;
   // (The pattern: the call's literal, or for a method that of its `re.compile`, whose tokens stay on that line: a top token at the
   // method's name says where it comes from.)
@@ -66,12 +135,14 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   const tokens = args.tokens;
   const pitfalls = [...(pattern?.pitfalls ?? []), ...args.pitfalls];
   // (In the order of the text: a keyword argument may come before the pattern.)
-  const items = [...(top ? [top] : []), ...tokens].sort((a, b) => a.span.start.line - b.span.start.line || a.span.start.character - b.span.start.character);
+  const items = [...(top ? [top] : []), ...tokens].sort(byStart);
+  // (The call's token, for a line it shares: a method's is its own top token, on the whole call.)
+  const callToken: Token | undefined = region.compiled ? undefined : { kind: 'command', label: call.written, span: call.span, children: [], explanation: tokenSaid(lang, 'python-regex-call', { call: call.written, name: call.name }) };
   // (No example of a pattern Python refuses, nor of one with a part not known.)
   const examples = source && top && wantsKind(opts, 'regex') && !hasHole(source.value) && !read!.tokens.some(hasError) ? callExamples(region, source, top.span, template, lines, lang) : [];
   const anchors: NoteAnchor[] = [];
   const data = new Map<string, Note>();
-  const ex = finishLine({ line: region.lines[0], items, own: items, rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
+  const ex = finishLine({ line: region.lines[0], items, own: callToken ? [callToken, ...items] : items, rested: [], context: [{ label: region.label[lang === 'ja' ? 0 : 1], line: region.lines[0] }], origin: 'embedded' }, opts, () => {
     const errors = tokenErrors(lang, items, (n, span) => sayAt(anchors, data, n, span));
     // (The pitfalls of the call are catalog facts, through the gates of `notes.pitfalls` and `notes.basis`, as a shell line's.)
     const facts = pitfalls.filter((p) => said([p.fact], opts.pitfalls).length);
@@ -81,7 +152,10 @@ function explained(region: LanguageRegion, lines: readonly string[], lang: Lang,
   });
   ex.code = region.host.kind;
   if (opts.reading && pattern) ex.reading = languageReading(ex.items.find((t) => t.language)!, call.written, flavorName(region.flavor, lang));
-  return ex;
+  if (callToken) return { ex, call: { ...callToken, role: KIND_ROLES.command }, parts: ex.items };
+  // (A method's top token is the first, at its name: `items` are in the order written.)
+  const [method, ...parts] = ex.items;
+  return { ex, call: { ...method, span: call.span }, parts };
 }
 
 const hasError = (t: { kind: string; children: readonly { kind: string; children: readonly unknown[] }[] }): boolean =>

@@ -1,5 +1,6 @@
 // The shells of a host file: which regions of its shell code one shell runs, and the tree that shell reads (for the
 // explanations, the problems and the colours).
+import type { Pos, Span } from '../analyzer-types';
 import type { Shell } from '../shellfeatures';
 import type { BashParser, SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
@@ -77,12 +78,15 @@ export function regionAt(extracted: Extracted, line: number): ShellRegion | unde
 
 const regionsByLine = new WeakMap<Extracted, Map<number, ShellRegion>>();
 
-/** What a line of a host document is part of: shell code (a `ShellRegion`), or a part in another language (a `LanguageRegion`). */
-export type HostPart = { kind: 'shell'; region: ShellRegion } | { kind: 'language'; region: LanguageRegion };
+/**
+ * What a line of a host document is part of: shell code (a `ShellRegion`), or parts in another language: the `LanguageRegion`s that
+ * have the line, each call on it, in the order written.
+ */
+export type HostPart = { kind: 'shell'; region: ShellRegion } | { kind: 'language'; regions: readonly LanguageRegion[] };
 
 /**
- * The part of a host document that `line` is in (none: the host's own text): its shell region, else its part in another language.
- * The one reader of both lists (docs/design/python-regex.md, 2.3): a line holds one part, and a shell region keeps a line it shares.
+ * The part of a host document that `line` is in (none: the host's own text): its shell region, else its parts in another language
+ * (`LanguageRegion.lines`). The one reader of both lists (docs/design/python-regex.md, 2.3): a shell region keeps a line it shares.
  */
 export function hostPartAt(extracted: Extracted, line: number): HostPart | undefined {
   const region = regionAt(extracted, line);
@@ -90,14 +94,20 @@ export function hostPartAt(extracted: Extracted, line: number): HostPart | undef
   let byLine = languagesByLine.get(extracted);
   if (!byLine) {
     byLine = new Map();
-    for (const r of extracted.languages) for (const l of r.lines) byLine.set(l, r);
+    for (const r of extracted.languages) {
+      for (const l of r.lines) {
+        const on = byLine.get(l);
+        if (on) on.push(r);
+        else byLine.set(l, [r]);
+      }
+    }
     languagesByLine.set(extracted, byLine);
   }
-  const language = byLine.get(line);
-  return language && { kind: 'language', region: language };
+  const regions = byLine.get(line);
+  return regions && { kind: 'language', regions };
 }
 
-const languagesByLine = new WeakMap<Extracted, Map<number, LanguageRegion>>();
+const languagesByLine = new WeakMap<Extracted, Map<number, LanguageRegion[]>>();
 
 /** The literal of the argument of a region's call that binds `role`, if it is string literals only. */
 export const literalOf = (region: LanguageRegion, role: ReParam): LiteralSource | undefined => region.args.find((a) => a.role === role)?.literal;
@@ -111,12 +121,21 @@ export const patternOf = (region: LanguageRegion): LiteralSource | undefined => 
  */
 export const flagsAsCount = (a: CallArgument): boolean => (a.role === 'count' || a.role === 'maxsplit') && !!a.flags?.value && !a.flags.unknown.length;
 
+/** Whether `inner` lies within `outer`, their ends included: a call of a part in another language in the arguments of another. */
+export function spanWithin(outer: Span, inner: Span): boolean {
+  const le = (a: Pos, z: Pos): boolean => a.line < z.line || (a.line === z.line && a.character <= z.character);
+  return le(outer.start, inner.start) && le(inner.end, outer.end);
+}
+
 /** Whether a host document has anything to explain: shell code, or a part in another language. */
 export function hasParts(extracted: Extracted): boolean {
   return extracted.regions.length > 0 || extracted.languages.length > 0;
 }
 
-/** How many lines of a host document are parts in another language: lines of code, which the budget of a line counts (`withinLine`). */
+/**
+ * How many lines of a host document are parts in another language: lines of code, which the budget of a line counts (`withinLine`).
+ * A line two calls share counts twice, as each call is explained with a budget of its own (`explainLanguageLine`).
+ */
 export function languageLines(extracted: Extracted): number {
   return extracted.languages.reduce((n, r) => n + r.lines.length, 0);
 }

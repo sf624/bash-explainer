@@ -98,6 +98,20 @@ const EXAMPLES: Row[] = [
   String.raw`re.findall(r'(a|b)(c|d)', s)`, String.raw`re.sub(r'(a)(\1)', r'\2\1', s)`, String.raw`re.findall(r'(?:a|b)(c)', s)`,
 ];
 
+/**
+ * Lines of two calls (#813): the line, whose last line has both, and each call as Python runs it for its example (`s` where the line
+ * gives it what it does not know: a call in its arguments). Each gets its example, in the order written.
+ */
+const TWO: [line: string, calls: [string, string]][] = [
+  [String.raw`x = re.sub(r'a+', '-', re.sub(r'\d', 'a', s))`, [String.raw`re.sub(r'a+', '-', s)`, String.raw`re.sub(r'\d', 'a', s)`]],
+  [String.raw`ok = re.findall(r'\d+', 'a1b22') or re.split(r',', 'a,b,c', 1)`, [String.raw`re.findall(r'\d+', 'a1b22')`, String.raw`re.split(r',', 'a,b,c', 1)`]],
+  [String.raw`ok = re.match(r'[a-z]+', s) and re.fullmatch(r'\d{2}', s)`, [String.raw`re.match(r'[a-z]+', s)`, String.raw`re.fullmatch(r'\d{2}', s)`]],
+  [String.raw`A = re.compile(r'a\d'); B = re.compile(r'(b)c', re.I)`, [String.raw`re.compile(r'a\d')`, String.raw`re.compile(r'(b)c', re.I)`]],
+  [compiled(String.raw`r'\d+'`, String.raw`Q = re.compile(r'o')` + '\n' + String.raw`P.findall('a1b22') or Q.sub('0', 'foo')`),
+    [compiled(String.raw`r'\d+'`, String.raw`P.findall('a1b22')`), String.raw`Q = re.compile(r'o')` + '\n' + String.raw`Q.sub('0', 'foo')`]],
+  [String.raw`y = re.sub(r'(\w)(\w)', r'\2\1',` + '\n' + String.raw`  'abcd') or re.search(r'x$', s)`, [String.raw`re.sub(r'(\w)(\w)', r'\2\1', 'abcd')`, String.raw`re.search(r'x$', s)`]],
+];
+
 /** Calls that get no example, each for its reason. */
 const REFUSED: [call: string, why: string][] = [
   [String.raw`re.search(r'(?>a)b', s)`, 'an atomic group'], [String.raw`re.search(r'a++', s)`, 'a possessive quantifier'],
@@ -153,6 +167,8 @@ describe('Python regex: the examples of the calls of `re`', () => {
 
   it('gives an example for each call of the rows that compare with Python', () => {
     assert.deepStrictEqual(EXAMPLES.map((r) => (typeof r === 'string' ? r : r[0])).filter((call) => examplesOf(call).length !== 1), []);
+    // (A line of two calls: one for each, its title naming the call.)
+    assert.deepStrictEqual(TWO.filter(([line]) => examplesOf(line).filter((e) => e.title.startsWith('Example for `')).length !== 2).map(([line]) => line), []);
   });
 
   it('shows the subject and what the call gives back, each labelled, under the pattern', () => {
@@ -282,9 +298,12 @@ describe('Python regex: the examples of the calls of `re` against the reference 
   let got: { version: string; results: (string | boolean[])[] };
   before(function () {
     needPython(this, ref);
-    asked = EXAMPLES.filter((r) => typeof r === 'string' || atLeast(r[1])).map((r) => {
-      const call = typeof r === 'string' ? r : r[0];
-      const [ex] = examplesOf(call);
+    // (Each row's example, and each example of a line of two calls with the call alone.)
+    const rows: [string, Example][] = [
+      ...EXAMPLES.filter((r) => typeof r === 'string' || atLeast(r[1])).map((r): [string, Example] => [typeof r === 'string' ? r : r[0], examplesOf(typeof r === 'string' ? r : r[0])[0]]),
+      ...TWO.flatMap(([line, calls]) => examplesOf(line).map((ex, i): [string, Example] => [calls[i], ex])),
+    ];
+    asked = rows.map(([call, ex]) => {
       const bytes = /re\.\w+\(r?b/.test(call);
       if (ex.sections[0].label === 'Strings that match (examples)') {
         const [yes, no = { lines: [] }] = ex.sections;

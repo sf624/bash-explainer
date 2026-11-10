@@ -203,22 +203,10 @@ function stageText(n: SyntaxNode): string {
   return shorten(end ? n.text.slice(0, kids[end - 1].endIndex - n.startIndex) : n.text, 40);
 }
 
-/** Whether the line runs several commands: each example's title then names the one it is for (`titledExamples`). */
+/** Whether the line runs several commands: each example's title then names the one it is for (`titledExamples`, src/linefinish.ts). */
 export function runsSeveral(root: SyntaxNode, line: number): boolean {
   return onLine(root, ['command', 'extended_test', 'arithmetic_command'], line)
     .filter((c) => intersects(c, line) && !assignmentsOnly(c)).length >= 2;
-}
-
-/** The examples, each with the command it is for in its title. */
-export function titledExamples(cx: Explainer, examples: readonly Example[]): readonly Example[] {
-  return examples.map((e) => {
-    if (!e.target) return e;
-    const target = `\`${e.target}\``;
-    const title = cx.lang === 'ja'
-      ? e.title.replace(/^例/, () => `${target} の例`)
-      : e.title.replace(/^Example/, () => `Example for ${target}`);
-    return { ...e, title };
-  });
 }
 
 /**

@@ -31,11 +31,11 @@ import { KIND_ROLES } from './roles';
 import { argvLines } from './argvline';
 import { lineSentence, problemCodes } from './linesentence';
 import { isKept } from './tokenkept';
-import { finishLine, keptExamples } from './linefinish';
+import { finishLine, keptExamples, titledExamples } from './linefinish';
 import { LineExplainer, type LineInit, type Walk } from './explain/context';
 import { intersects, isBlockLike, onLine, summaryOf } from './explain/nodes';
 import { arrayKind, resolve, syntaxFaultOf } from './explain/reads';
-import { runsSeveral, titledExamples } from './explain/examples';
+import { runsSeveral } from './explain/examples';
 import { commandsSaid, factsSaid, wholeOf } from './explain/whole';
 import { explain, flatten } from './explain/dispatch';
 import { continuationNotes, errexitStopNotes, extglobPitfalls, pipeSubshellPitfalls, statusNotes, syntaxErrorNotes, tokenErrorNotes, unmatchedGlobPitfalls } from './explain/line-notes';
@@ -142,7 +142,7 @@ export class Analyzer {
       const anchorsOfLine = (apart ? cx.anchors.slice(walkedAnchors) : cx.anchors).filter((a) => said.has(a.text));
       const lineFacts = factsSaid(factsOfLine, said, opts.basis);
       const info = (texts: readonly string[]) => texts.map((n) => basisGate(cx.noteOf(n), opts.basis));
-      const examplesOf = (examples: readonly Example[], several: boolean) => keptExamples(several ? titledExamples(cx, examples) : examples, opts, this.lang);
+      const examplesOf = (examples: readonly Example[], several: boolean) => keptExamples(several ? titledExamples(this.lang, examples) : examples, opts, this.lang);
       const several = runsSeveral(root, line);
       const wholeSummary = new Map(cx.wholes.map((w) => [w.token, w.summary]));
       // (Each token's role and the facts about it, now that every kind is final; those of a finished token from its statement it has.)

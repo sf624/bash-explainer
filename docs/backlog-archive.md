@@ -1188,10 +1188,7 @@ Each is a value the explainer does not take where bash has it, never a wrong one
   - `re.sub(r'(a)', '<\12>', s)` warns that the string makes a character and says to write it raw, but raw `\12` is "invalid group reference 12" (one group); the same for `'\1'` with a pattern without groups. (`bug`)
   - Two Errors where Python stops at the first: `re.sub(r'(a))', r'\2', s)` says the pattern's and the template's; so does `P = re.compile(r'(a))')` then `P.sub(r'\2', s)`.
   - The line of a method says nothing where Python raises TypeError for an argument the method does not take: `P.search(s, flags=re.I)`, `P.sub('x', s, pos=1)`.
-  - Two compiles on one line (`A = re.compile(r'a'); B = re.compile(r'b')`): `B` is linked, but its method's line shows the pattern of `A` (the line's), and an Error in the pattern of `B` is shown nowhere. (`bug`)
   - With `endpos`, the row of `fullmatch` still says "matched against the whole string" (`P.fullmatch(s, 0, 3)` matches `s[:3]`).
-
-Not a rare corner: two calls on one line, of which the line explains only one, are tracked in #813. A line of a pattern's literals goes to the call written first (`re.sub(r'a', 'b', re.sub(r'c', 'd', s))` explains the outer); a line with no pattern, such as one of methods, to the call that starts last (`P.match(s) or Q.match(s)` explains only `Q.match`; `claimLines`, src/hosts/python.ts).
 
 ## From the shell-behaviour table (#756)
 

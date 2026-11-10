@@ -83,6 +83,21 @@ export function wantsKind(opts: ExplainOptions, kind: ExampleKind | undefined): 
 
 const wantsExample = (opts: ExplainOptions, e: Example): boolean => wantsKind(opts, e.kind);
 
+/**
+ * The examples, each with what it is for in its title (`Example.target`), on a line of several: the commands of a shell line
+ * (`runsSeveral`, src/explain/examples.ts), the calls of a line of a part in another language (src/hosts/languages.ts).
+ */
+export function titledExamples(lang: Lang, examples: readonly Example[]): Example[] {
+  return examples.map((e) => {
+    if (!e.target) return e;
+    const target = `\`${e.target}\``;
+    const title = lang === 'ja'
+      ? e.title.replace(/^例/, () => `${target} の例`)
+      : e.title.replace(/^Example/, () => `Example for ${target}`);
+    return { ...e, title };
+  });
+}
+
 /** The examples the settings keep, each once, with a note on the control characters they show as symbols. */
 export function keptExamples(examples: readonly Example[], opts: ExplainOptions, lang: Lang): Example[] {
   const s = (ja: string, en: string) => (lang === 'ja' ? ja : en);

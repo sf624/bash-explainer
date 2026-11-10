@@ -130,9 +130,9 @@ describe('Python regex: the methods of a compiled pattern', () => {
     assert.deepStrictEqual(linked("def f(s):\n    P = re.compile(r'a')\n    def g():\n        return P.match(s)\n    return P.split(s)\n"), [['P.match', 2], ['P.split', 2]]);
     assert.deepStrictEqual(linked("class C:\n    def m(self, s):\n        P = re.compile(r'a')\n        return P.search(s)\nasync def f(s):\n    Q = re.compile(r'b')\n    return Q.search(s)\n"), [['P.search', 3], ['Q.search', 6]]);
     assert.deepStrictEqual(linked("P = re.compile(r'a');\nif s in t:\n    P.search(s)\nP.groups(s)\n"), [['P.search', 1]]);
-    // (After a `;` too; on the line of the compile, the line is the compile's.)
+    // (After a `;` too, and on the line of the compile, which has both calls: #813.)
     assert.deepStrictEqual(linked("x = 1; P = re.compile(r'a')\nP.search(s)\n"), [['P.search', 1]]);
-    assert.deepStrictEqual(linked("P = re.compile(r'a'); P.search(s)\n"), []);
+    assert.deepStrictEqual(linked("P = re.compile(r'a'); P.search(s)\n"), [['P.search', 1]]);
     // (The blocks as their lines nest them: a function of one line, blocks that end together, one that ends with the file.)
     assert.deepStrictEqual(linked("def f(s): P = re.compile(r'a'); return P.search(s)\nP.search(s)\n"), []);
     assert.deepStrictEqual(linked("def f(s):\n    class C:\n        def m(self):\n            P = re.compile(r'a')\n            return P.search(s)\n    return P.search(s)\nP.search(s)\n"), [['P.search', 4]]);

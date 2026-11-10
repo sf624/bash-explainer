@@ -65,25 +65,29 @@ The region is the call, not the pattern: the flags argument, the subject (#751) 
 
 Rejected: a `ShellRegion` with a `language` field. Each of the readers above would need a test to skip it, and a new reader would get it wrong by default. Rejected too: writing the pattern into the shell text as a made-up command (`grep -P '…'`). The tree, bash-ast's test and the reading tree would then claim that bash reads it.
 
-A line holds at most one part. Where a shell region and a pattern share a line (`if re.match(p, x): os.system('ls')`), the shell region keeps the line and the pattern is not explained. That is rare; docs/guide/limitations.md says it.
+A line holds one shell region, or the calls in another language on it. Where a shell region and a pattern share a line (`if re.match(p, x): os.system('ls')`), the shell region keeps the line and the pattern is not explained. That is rare; docs/guide/limitations.md says it.
 
 A call's lines are not all its own, since calls nest and a shell region may be an argument. The region holds the list of lines it has (`lines`), decided once by the extractor (`claimLines`, src/hosts/python.ts), each call in the order written:
 
-1. A line of a shell region stays the shell's (`re.sub(r'a', 'b',` above `subprocess.run('ls', shell=True))`: the second line is shell code, the first and the last the call's).
-2. A line of a pattern's literals is that call's. When two patterns share a line, the first written keeps it, and a call whose pattern has a line taken by rule 1 or 2 is no region.
-3. Every other line of a call goes to the innermost call kept that holds it: the one that starts last, as calls nest. So `x = re.sub(r'a', 'b',` above `re.sub(r'c', 'd', s))` shows `r'a'` on its first line and `r'c'` on its second, and a call of one statement keeps all its lines (`y = re.findall(r'\d+',` above `text)` shows the pattern on both).
+1. A line of a shell region stays the shell's (`re.sub(r'a', 'b',` above `subprocess.run('ls', shell=True))`: the second line is shell code, the first and the last the call's), and a call whose pattern has such a line is no region.
+2. A line of a pattern's literals is that call's. Every call whose pattern is on a line has it (`re.sub(r'a', 'b', re.sub(r'c', 'd', s))`: both, #813).
+3. Every other line of a call is its own where no call inside it holds that line: the innermost calls that hold it have it, and calls side by side share it (`P.match(s) or Q.match(s)`: both). So `x = re.sub(r'a', 'b',` above `re.sub(r'c', 'd', s))` shows `r'a'` on its first line and `r'c'` on its second, and a call of one statement keeps all its lines (`y = re.findall(r'\d+',` above `text)` shows the pattern on both).
 
-`hostPartAt` and the line count of the budget (`languageLines`) read `lines`; nothing else decides which call a line is.
+`hostPartAt` and the line count of the budget (`languageLines`) read `lines`; nothing else decides which calls a line has. `hostPartAt` gives every call that has the line, in the order written.
+
+A line of several calls is explained as a shell line of several commands (`explainLanguageLine`, src/hosts/languages.ts): each call has a token, from its name to its `)` (a method's is its own token, `PAT.sub`), with its pattern, template and arguments under it, and a call in its arguments too, in the order written. The line's context is the language ("Python regex"). Each example names its call in its title (`titledExamples`, src/linefinish.ts, as on a shell line of several commands). The notes, facts and anchors are each call's, the same objects as on its other lines, so `noteIssues` says each once. The reading tree has one root over the calls' readings. A line of one call has no such token: its context names the call.
+
+Each call is explained once, with a budget of its own of the line's size (`withinOwnLine`): what it shows depends neither on which of its lines asked first nor on the calls beside it. `languageLines` counts a line once for each call that has it, so the document's bound holds.
 
 A call whose pattern is not string literals is a region only where it has a fact of the call (section 5.3: flags in the slot of `count`): `patternOf` gives no pattern there, and the region has no `options`. It has no pattern lines, so it takes lines by rule 3 only. A method of a compiled pattern (#752) will be such a region too: its pattern is that of the `re.compile` it is linked to, not an argument.
 
 ### 2.3 One lookup per line
 
-`hostPartAt(extracted, line)` (src/hosts/scripts.ts, beside `regionAt`) gives the shell region or the language region of a line, read once per `Extracted` like `regionAt`. (`partAt` is taken: src/ui/hoverParts.ts, the tokens at a position.) `regionAt` stays shell only. `hasShell` becomes "has something to explain": regions or languages. It is one function, and the context key and the semantic tokens read it as they do today. Python keeps its own colours (`OWN_SEMANTIC_KINDS`), so a pattern gets no semantic tokens from us, and `documentSpans` keeps reading shell regions only.
+`hostPartAt(extracted, line)` (src/hosts/scripts.ts, beside `regionAt`) gives the shell region or the language regions of a line (every call that has it), read once per `Extracted` like `regionAt`. (`partAt` is taken: src/ui/hoverParts.ts, the tokens at a position.) `regionAt` stays shell only. `hasShell` becomes "has something to explain": regions or languages. It is one function, and the context key and the semantic tokens read it as they do today. Python keeps its own colours (`OWN_SEMANTIC_KINDS`), so a pattern gets no semantic tokens from us, and `documentSpans` keeps reading shell regions only.
 
 ### 2.4 The seam in `explainDocumentLine`
 
-`explainDocumentLine` asks `hostPartAt`. A language region goes to `explainLanguageLine` (src/hosts/languages.ts) inside the same `contained` boundary and the same `withinLine` call as a shell region. So a bug in it leaves a line that says so, and its examples draw on the line's one budget.
+`explainDocumentLine` asks `hostPartAt`. The language regions of a line go to `explainLanguageLine` (src/hosts/languages.ts) inside the same `contained` boundary and the same `withinLine` call as a shell region. So a bug in it leaves a line that says so, and its examples draw on the line's one budget.
 
 The budget's share is by the number of code lines of the document (`shareOf`, src/examples/regexguard.ts, line-budget.md), and it counts today the code lines of `doc.tree.root.text`: the shell text, where a pattern's lines are blank. A document-wide bound must count every line that can spend: the share counts the lines of the language regions too. `withinLine` takes the document's count of code lines from `ShellDocument` (made once in `openDocument`: the shell code lines plus the lines of `Extracted.languages`), so every product computes the same share. A shell line of a Python file with patterns gets a smaller share than before; nothing else changes.
 
@@ -106,7 +110,7 @@ Step 2 moves these out of `Analyzer.explained` (src/analyzer.ts) into one functi
 - **Context.** One entry, the region's label at its first line, as a host region has.
 - **Reading tree.** One root in the layer `language` (kind `language`, reader the function, `re.search`), named with `flavorName` ("Python regex", `ReadingNode.hostLanguage`), with the nodes src/reading.ts makes of embedded tokens today. Its role text at depth 2 is its own (`about.hostLanguage`, src/ui/texts.ts): no word, command or shell is around it. There is no bash layer. src/reading.ts exports the function that makes a language's nodes from its tokens; `readingTree` and the language line both call it.
 - **Not made:** no sentence ("In short"), no `argv`, no `notPosix`: they are about bash's reading.
-- **Several lines.** The explanation is made once per region and kept (a `WeakMap` on the region). Each line of the region returns the same tokens and anchors, so `noteIssues` reports each anchor once, as it does for a shell statement over several lines.
+- **Several lines.** The explanation is made once per region and kept (a `WeakMap` on the region). Each line of the region returns the same tokens and anchors (a line it shares with other calls, the same objects among theirs: 2.2), so `noteIssues` reports each anchor once, as it does for a shell statement over several lines.
 
 ### 2.6 Holes without an `Explainer`
 

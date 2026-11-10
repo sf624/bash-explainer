@@ -253,8 +253,10 @@ describe('Python regex: flags', () => {
       assert.strictEqual(explainPy("import re\nre.sub(pat, '', s, re.I)\n", 1, 'en', { reading: true }).reading, undefined);
       // (No such fact, no region: the pattern is not read.)
       assert.deepStrictEqual(extractShell('python', "import re\nre.sub(pat, '', s)\nre.sub(pat, '', s, re.I | x)\nre.search(pat, s, re.I)\n").languages, []);
-      // (On a line of another call's pattern, it has no line.)
-      assert.deepStrictEqual(extractShell('python', "import re\nre.sub(r'a', 'b', re.sub(pat, '', s, re.I))\n").languages.map((r) => r.lines), [[1]]);
+      // (On a line of another call's pattern, it has the line too: #813.)
+      assert.deepStrictEqual(extractShell('python', "import re\nre.sub(r'a', 'b', re.sub(pat, '', s, re.I))\n").languages.map((r) => r.lines), [[1], [1]]);
+      // (A line of a shell region is none of its lines.)
+      assert.deepStrictEqual(extractShell('python', "import re, os\nos.system('ls') or re.sub(pat, '', s, re.I)\n").languages, []);
     });
 
     it('is said for flags passed by keyword too, without the deprecation of the slot', () => {
