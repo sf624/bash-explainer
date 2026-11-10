@@ -27,7 +27,7 @@ const dir = path.join(base, 'src', 'explain');
  *               stage's command (`FILTERS[stage.cmd]`): `nl: runCat` added to it fails here as a new text. Not caught: a `Map` of names to
  *               functions, a registry filled at run time (`REG[name] = fn`) and a lookup by a key of another name (`FILTERS[c]`).
  *   decision    what to show or whether to run, decided from a command's name (`xargs`, the inert `cat` and `tee`, `echo` as a source).
- * Left out of the scan of src/examples/: the language interpreters (jq, jqsample, jqvalues, awk, sed, perlrun, perllex, yaml, regex, regexparse), which simulate a language, where a
+ * Left out of the scan of src/examples/: the language interpreters (jq, jqsample, jqvalues, awk, sed, perlrun, perllex, yaml, regex and its Python part regex-python, regexparse), which simulate a language, where a
  * name such as `sed` or `date` is a word of that language and not a command's fact.
  */
 interface KnownName { file: string; text: string; count: number; kind: 'not-a-name' | 'registry' | 'decision'; reason: string }
@@ -71,7 +71,7 @@ const explainFiles = (): string[] => (fs.existsSync(dir) ? fs.readdirSync(dir).f
 const files = (): string[] => [...explainFiles(), ...OUTSIDE];
 
 /** The language interpreters of src/examples/, which the names guard leaves out (see KNOWN_NAMES). */
-const LANGUAGES = ['jq', 'jqsample', 'jqvalues', 'awk', 'sed', 'perlrun', 'perllex', 'yaml', 'regex', 'regexparse'].map((n) => `${n}.ts`);
+const LANGUAGES = ['jq', 'jqsample', 'jqvalues', 'awk', 'sed', 'perlrun', 'perllex', 'yaml', 'regex', 'regex-python', 'regexparse'].map((n) => `${n}.ts`);
 const examplesDir = path.join(base, 'src', 'examples');
 /** The `.ts` files under a directory, recursively, in path order. */
 const tsFilesUnder = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1)).flatMap((e) => (e.isDirectory() ? tsFilesUnder(path.join(d, e.name)) : /\.ts$/.test(e.name) ? [path.join(d, e.name)] : []));

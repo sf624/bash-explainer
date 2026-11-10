@@ -22,7 +22,7 @@ import { sectionMarks, type StageMarks } from '../examples/marks';
 import { MAX_SHOWN_LINES, pipedOutput, type Stage } from '../examples/pipeline';
 import { type JsRegex, regexExamples } from '../examples/regex';
 import { type NotComputedId, scriptRegex } from '../examples/regexguard';
-import type { InputBox, Interactive, RerunSpec } from '../examples/rerun';
+import { type InputBox, type Interactive, type RerunSpec, testStringsLabel } from '../examples/rerun';
 import { globMatches, type GlobMode, type GlobOpts, hasGlobstar, isGlob } from '../examples/shellwords';
 import * as sources from '../examples/source';
 import { sourceRun, type SourceRun } from '../examples/runners';
@@ -87,7 +87,7 @@ function regexExampleOf(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' |
   cx.example({ kind: 'regex',
     title: mode === 'inverted' ? cx.s('例（`-v` なので一致しない行が表示される）', 'Example (with `-v`, lines that do not match are printed)') : cx.s('例', 'Example'),
     sections: sections.filter((s) => s.lines.length),
-    interactive: interactive(cx, { kind: 'regex', regex: js, mode }, [{ label: cx.s('試す文字列（1行ずつ判定し、一致した部分を色付け）', 'Test strings (one per line; matches are highlighted)'), lines: [...yes, ...no] }]),
+    interactive: interactive(cx, { kind: 'regex', regex: js, mode }, [{ label: testStringsLabel(cx.lang), lines: [...yes, ...no] }]),
   });
 }
 

@@ -81,12 +81,12 @@ export interface HostSubstitution {
 /**
  * The value of string literals of a host file, as a language's reader reads it, and where each of its characters is in the file:
  * `at[i]`, the place of its first source character, and `to[i]`, the end of its source range. `at` has one more entry, the end of
- * the literals' text. `span`: the literals, prefixes and quotes included. A replacement field of an f-string stands in `value` as a
+ * the literals' text. `span`: the literals, prefixes and quotes included; `bytes`: they are bytes literals (`b'…'`). A replacement field of an f-string stands in `value` as a
  * hole character (`isHole`, src/embedded/types.ts) over the field's source, and `holes` has it by that character (a pattern's
  * only: docs/design/python-regex.md, 4.3). `escapes`: the characters, by their index in `value`, that the strings write in a way
  * a regex reads otherwise (`StringEscapeRisk`).
  */
-export interface LiteralSource { value: string; at: Pos[]; to: Pos[]; span: Span; holes?: Readonly<Record<string, LiteralHole>>; escapes?: readonly { at: number; risk: StringEscapeRisk }[] }
+export interface LiteralSource { value: string; at: Pos[]; to: Pos[]; span: Span; holes?: Readonly<Record<string, LiteralHole>>; escapes?: readonly { at: number; risk: StringEscapeRisk }[]; bytes?: true }
 
 /** A field of an f-string: as written (`{prefix}`), and whether its value is text with every character special in a regex escaped (`{re.escape(x)}`). */
 export interface LiteralHole { written: string; escaped: boolean }
