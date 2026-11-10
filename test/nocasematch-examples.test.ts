@@ -31,6 +31,8 @@ const rows: Row[] = [];
 for (const [state, nocase] of [[ON, true], [OFF, false]] as const) {
   for (const re of ERE) {
     rows.push({ src: `${state}; [[ $ans =~ ${re} ]]`, test: (s) => `[[ $s =~ ${re} ]]`, nocase });
+    // (The value of a variable, read as the regex: the same example.)
+    for (const ref of ['$re', '${re}']) rows.push({ src: `${state}; re='${re}'; [[ $ans =~ ${ref} ]]`, test: (s) => `re='${re}'; [[ $s =~ ${ref} ]]`, nocase });
   }
   for (const g of GLOB) {
     rows.push({ src: `${state}; [[ $ans == ${g} ]]`, test: (s) => `[[ $s == ${g} ]]`, nocase });
@@ -75,7 +77,7 @@ describe('examples under nocasematch', () => {
   });
 
   it('`Y` is not listed as a non-match of `^(y|yes)$` once nocasematch is on', () => {
-    for (const src of ['shopt -s nocasematch; [[ $ans =~ ^(y|yes)$ ]]', 'shopt -s nocasematch; [[ $ans =~ ^"y"es?$ ]]']) {
+    for (const src of ['shopt -s nocasematch; [[ $ans =~ ^(y|yes)$ ]]', 'shopt -s nocasematch; [[ $ans =~ ^"y"es?$ ]]', "shopt -s nocasematch; re='^(y|yes)$'; [[ $ans =~ $re ]]"]) {
       const ex = exampleLines(src)!;
       assert.ok(!ex.no.includes('Y') && !ex.no.includes('YES'), src);
     }
@@ -84,6 +86,8 @@ describe('examples under nocasematch', () => {
   it('where nocasematch may be on, or is not known, there is no example', () => {
     for (const src of [
       'if c; then shopt -s nocasematch; fi; [[ $ans =~ ^(y|yes)$ ]]',
+      'if c; then shopt -s nocasematch; fi; re=\'^(y|yes)$\'; [[ $ans =~ $re ]]',
+      'if c; then shopt -s nocasematch; fi; re=\'^(y|yes)$\'; [[ $ans =~ ${re} ]]',
       'if c; then shopt -s nocasematch; fi; [[ $ans == y* ]]',
       'if c; then shopt -s nocasematch; fi; case $ans in y*) :;; esac',
     ]) assert.strictEqual(exampleLines(src), undefined, src);
