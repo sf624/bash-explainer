@@ -172,6 +172,9 @@ export function hashEntry(newer: CommandEntry, outcomes: readonly HashOutcome[])
 // ---------------------------------------------------------------------------------------------------
 // Persistent maps: a change copies one bucket, and a merge visits only the buckets that differ.
 
+/** How the values of one name in two maps merge (`NameMap.merge`); it must depend on its arguments only, and change nothing. */
+type Merger<V> = (k: string, x: V | undefined, y: V | undefined) => V;
+
 const BUCKETS = 32;
 const bucketOf = (k: string): number => {
   let h = 0;
@@ -179,9 +182,90 @@ const bucketOf = (k: string): number => {
   return (h >>> 0) % BUCKETS;
 };
 
+/**
+ * A bucket of several maps merged as `NameMap.merge` merges them, left to right, a name when it is first read
+ * (`NameMap.mergeAll`). The values are those of the pairwise merge, and the same objects where it keeps one; each
+ * is made once. Its sources are its own list, dropped once every name is merged.
+ */
+class LazyBucket<V> implements ReadonlyMap<string, V> {
+  private sources: readonly (ReadonlyMap<string, V> | undefined)[] | undefined;
+  /** The names read so far, those in no source too. */
+  private readonly memo = new Map<string, V | undefined>();
+  private full: Map<string, V> | undefined;
+  private names: number | undefined;
+
+  constructor(sources: readonly (ReadonlyMap<string, V> | undefined)[], private readonly f: Merger<V>) {
+    this.sources = [...sources];
+  }
+
+  get(k: string): V | undefined {
+    if (this.full) return this.full.get(k);
+    if (this.memo.has(k)) return this.memo.get(k);
+    // (As `NameMap.merge` does at each step: the value kept where the two are the same object, else merged.)
+    const sources = this.sources!;
+    let v = sources[0]?.get(k);
+    for (let i = 1; i < sources.length; i++) {
+      const y = sources[i]?.get(k);
+      if (v !== y) v = this.f(k, v, y);
+    }
+    this.memo.set(k, v);
+    return v;
+  }
+
+  has(k: string): boolean {
+    return this.get(k) !== undefined;
+  }
+
+  get size(): number {
+    if (this.full) return this.full.size;
+    if (this.names === undefined) {
+      const names = new Set<string>();
+      for (const s of this.sources!) for (const k of s?.keys() ?? []) names.add(k);
+      this.names = names.size;
+    }
+    return this.names;
+  }
+
+  /** Every name merged, in the order of the pairwise merge: each source's names, at their first place. */
+  private all(): Map<string, V> {
+    if (this.full) return this.full;
+    const m = new Map<string, V>();
+    for (const s of this.sources!) for (const k of s?.keys() ?? []) if (!m.has(k)) m.set(k, this.get(k)!);
+    this.full = m;
+    this.sources = undefined;
+    this.memo.clear();
+    return m;
+  }
+
+  entries(): MapIterator<[string, V]> {
+    return this.all().entries();
+  }
+
+  keys(): MapIterator<string> {
+    return this.all().keys();
+  }
+
+  values(): MapIterator<V> {
+    return this.all().values();
+  }
+
+  [Symbol.iterator](): MapIterator<[string, V]> {
+    return this.all().entries();
+  }
+
+  forEach(f: (v: V, k: string, m: ReadonlyMap<string, V>) => void): void {
+    for (const [k, v] of this.all()) f(v, k, this);
+  }
+}
+
 /** An immutable map of names; one that shares buckets with another is cheap to compare and merge with it. */
 export class NameMap<V> implements ReadonlyMap<string, V> {
-  private constructor(private readonly buckets: readonly (ReadonlyMap<string, V> | undefined)[], readonly size: number) {}
+  private constructor(private readonly buckets: readonly (ReadonlyMap<string, V> | undefined)[], private counted: number | undefined) {}
+
+  /** How many names it has (a map merged on read counts its buckets when asked). */
+  get size(): number {
+    return (this.counted ??= this.buckets.reduce((n, b) => n + (b?.size ?? 0), 0));
+  }
 
   static empty<V>(): NameMap<V> {
     return new NameMap<V>(new Array(BUCKETS).fill(undefined), 0);
@@ -272,8 +356,21 @@ export class NameMap<V> implements ReadonlyMap<string, V> {
     return new NameMap(buckets, size);
   }
 
+  /**
+   * `maps` merged as `merge` merges them in turn, left to right, but each name only when it is first read (a bucket
+   * they all share is kept as it is): the values are the same, and a reader of a few names pays for those only.
+   */
+  static mergeAll<V>(maps: readonly NameMap<V>[], f: Merger<V>): NameMap<V> {
+    const first = maps[0];
+    if (maps.every((m) => m === first)) return first;
+    return new NameMap(first.buckets.map((_, i) => {
+      const sources = maps.map((m) => m.buckets[i]);
+      return sources.every((s) => s === sources[0]) ? sources[0] : new LazyBucket(sources, f);
+    }), undefined);
+  }
+
   /** The two maps merged with `f` for the names whose values are not the same object. */
-  static merge<V>(a: NameMap<V>, b: NameMap<V>, f: (k: string, x: V | undefined, y: V | undefined) => V): NameMap<V> {
+  static merge<V>(a: NameMap<V>, b: NameMap<V>, f: Merger<V>): NameMap<V> {
     if (a === b) return a;
     let size = 0;
     const buckets = a.buckets.map((x, i) => {
@@ -621,24 +718,58 @@ function mergeTrap(a: TrapState | undefined, b: TrapState | undefined): TrapStat
   return { state: 'unknown', at: newer.at, ...(script ? { script } : {}), ...unread };
 }
 
+/** How the entries of each kind merge (`merge`, `mergeOnRead`), in the order of `ShellState`'s maps. */
+function mergers(posix: boolean): { readonly [K in Kind]: Merger<Entry<K>> } {
+  return {
+    set: (k, x, y) => mergeOption('set', k, x, y, posix),
+    shopt: (k, x, y) => mergeOption('shopt', k, x, y, posix),
+    variables: (k, x, y) => mergeVariable(k, x, y),
+    functions: (_k, x, y) => mergeFunction(x, y),
+    aliases: (_k, x, y) => mergeAlias(x, y),
+    disabled: (_k, x, y) => mergeAlias(x, y),
+    hashed: (_k, x, y) => mergeHashed(x, y),
+    traps: (_k, x, y) => mergeTrap(x, y),
+  };
+}
+const MERGERS = { off: mergers(false), on: mergers(true) };
+
+/** The maps of a state, each made by `f` for its kind. */
+function eachKind(m: { readonly [K in Kind]: Merger<Entry<K>> }, f: <K extends Kind>(kind: K, merger: Merger<Entry<K>>) => NameMap<Entry<K>>): Pick<ShellState, Kind> {
+  return Object.fromEntries((Object.keys(m) as Kind[]).map((k) => [k, f(k, m[k] as Merger<Entry<typeof k>>)])) as unknown as Pick<ShellState, Kind>;
+}
+
+type Scalars = Pick<ShellState, 'status' | 'errexitWhy' | 'opaque'>;
+
+/** The status, `errexitWhy` and `opaque` after two paths. */
+function mergeScalars(a: Scalars, b: Scalars): Scalars {
+  return {
+    ...(a.status === b.status && a.status !== undefined ? { status: a.status } : {}),
+    ...mergeErrexitWhy(a.errexitWhy, b.errexitWhy),
+    ...(a.opaque || b.opaque ? { opaque: true as const } : {}),
+  };
+}
+
 /** The state after one of several paths, when any of them may have been taken. */
 export function merge(states: ShellState[], posix = false): ShellState {
   // (A path that never gets here adds nothing; when none does, the result never gets here either.)
   const paths = states.filter((s) => !s.unreachable);
   if (!paths.length) return states[0];
-  return paths.reduce((a, b) => (a === b ? a : {
-    set: NameMap.merge(a.set, b.set, (k, x, y) => mergeOption('set', k, x, y, posix)),
-    shopt: NameMap.merge(a.shopt, b.shopt, (k, x, y) => mergeOption('shopt', k, x, y, posix)),
-    variables: NameMap.merge(a.variables, b.variables, (k, x, y) => mergeVariable(k, x, y)),
-    functions: NameMap.merge(a.functions, b.functions, (_k, x, y) => mergeFunction(x, y)),
-    aliases: NameMap.merge(a.aliases, b.aliases, (_k, x, y) => mergeAlias(x, y)),
-    disabled: NameMap.merge(a.disabled, b.disabled, (_k, x, y) => mergeAlias(x, y)),
-    hashed: NameMap.merge(a.hashed, b.hashed, (_k, x, y) => mergeHashed(x, y)),
-    traps: NameMap.merge(a.traps, b.traps, (_k, x, y) => mergeTrap(x, y)),
-    ...(a.status === b.status && a.status !== undefined ? { status: a.status } : {}),
-    ...mergeErrexitWhy(a.errexitWhy, b.errexitWhy),
-    ...(a.opaque || b.opaque ? { opaque: true as const } : {}),
-  }));
+  const m = MERGERS[posix ? 'on' : 'off'];
+  return paths.reduce((a, b) => (a === b ? a : { ...eachKind(m, (k, f) => NameMap.merge(a[k] as NameMap<Entry<typeof k>>, b[k] as NameMap<Entry<typeof k>>, f)), ...mergeScalars(a, b) }));
+}
+
+/**
+ * `merge`, with each name of the maps merged when it is first read (`NameMap.mergeAll`): the same values, and a
+ * reader of a few names pays for those only. For the states a node ran with (`Walker.runAt`): a reader asks for a
+ * few names of each, and keeps the result.
+ */
+export function mergeOnRead(states: readonly ShellState[], posix = false): ShellState {
+  // (`filter` makes the list its own: the caller's may change after.)
+  const paths = states.filter((s) => !s.unreachable);
+  if (!paths.length) return states[0];
+  if (paths.every((s) => s === paths[0])) return paths[0];
+  const scalars = paths.slice(1).reduce<Scalars>(mergeScalars, paths[0]);
+  return { ...eachKind(MERGERS[posix ? 'on' : 'off'], (k, f) => NameMap.mergeAll(paths.map((s) => s[k] as NameMap<Entry<typeof k>>), f)), ...scalars };
 }
 
 /** `st` without a reason for errexit from a `$( )`. */

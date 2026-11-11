@@ -12,7 +12,7 @@ import { commandName } from '../effects';
 import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
 import {
-  attribute, EMPTY, type Entry, type FunctionState, type Kind, environmentHas, merge, NameMap, option,
+  attribute, EMPTY, type Entry, type FunctionState, type Kind, environmentHas, merge, mergeOnRead, NameMap, option,
   POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withStatus,
 } from '../shellstate';
 import type { Scripts } from '../state';
@@ -54,7 +54,7 @@ export class Walker {
   /** The walks of function bodies, and their reuse (./reuse.ts). */
   readonly reuse = new WalkReuse(this);
 
-  /** The states each node was run with (more than one in a loop or a function called more than once); merged by `runAt`, which costs much: `has` asks only whether the walk ran a node. */
+  /** The states each node was run with (more than one in a loop or a function called more than once); merged by `runAt` (each name when it is read: `mergeOnRead`); `has` asks only whether the walk ran a node. */
   readonly runStates = new Map<SyntaxNode, ShellState[]>();
   /** The `set` commands, with the options they turn on or off (on any walk). */
   readonly setWrites = new Map<SyntaxNode, Map<string, 'on' | 'off'>>();
@@ -215,7 +215,7 @@ export class Walker {
   /** The state `n` runs with: the merge of those it was run with. */
   runAt(n: SyntaxNode): ShellState | undefined {
     const states = this.runStates.get(n);
-    if (states && states.length > 1) states.splice(0, states.length, merge(states, this.posix));
+    if (states && states.length > 1) states.splice(0, states.length, mergeOnRead(states, this.posix));
     return states?.[0];
   }
 
