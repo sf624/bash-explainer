@@ -1,5 +1,5 @@
 import { blankName } from './messages-values';
-import { type Lang, lineListLabel, type Text } from './i18n';
+import { type Lang, lineRunsLabel, type Text } from './i18n';
 import { flavorName } from './embedded/flavors';
 import { LANGUAGE_NAMES } from './embedded/names';
 import type { Flavor } from './embedded/regex-state';
@@ -17,28 +17,50 @@ export const REGEX_VALUE_SPECIAL = {
 };
 
 /**
- * A command that reads a known value in a language, for the texts of its assignment (`assignment-value-read`): the language,
- * with the regex flavour of the command where it reads a regex; the command as written, with its options (`grep -E`); the lines
- * that read it so; whether that holds only where no file name matches the value (`glob`: a value that is a glob pattern).
+ * The commands that read a known value in one language and flavour, for the texts of its assignment (`assignment-value-read`):
+ * the language, with the regex flavour where it is a regex; each command as written, once (`grep -E`); the lines that read it
+ * so; those where it holds only where no file name matches the value (`globLines`: a value that is a glob pattern).
  */
-export interface ValueReader { lang: EmbeddedLang; flavor?: Flavor | 'fixed'; by: string; lines: readonly number[]; glob?: boolean }
+export interface ValueReader { lang: EmbeddedLang; flavor?: Flavor | 'fixed'; by: readonly string[]; lines: readonly number[]; globLines?: readonly number[] }
 
-/** How many lines of a reader its text names: past them, how many more (`lineListLabel`). */
-const LINES_SHOWN = 3;
+/** How many lines, commands and readers a text names: past them, how many more (`lineRunsLabel`, `capped`). */
+const SHOWN = 3;
 
 const readerName = (r: ValueReader, lang: Lang): string => (r.flavor ? flavorName(r.flavor, lang) : LANGUAGE_NAMES[r.lang][lang]);
 
 /** `readerName` among Japanese words: a blank between it and the kana where it starts or ends with a Latin letter (`sed スクリプト`, `Perl`). */
 const jaName = (r: ValueReader): string => readerName(r, 'ja').replace(/^(?=[A-Za-z])/, ' ').replace(/(?<=[A-Za-z])$/, ' ');
 
-const readerLines = (r: ValueReader, lang: Lang): string => lineListLabel(lang, r.lines, LINES_SHOWN) + (r.glob
-  ? lang === 'ja' ? '。一致するファイル名がないとき' : ', where no file name matches it' : '');
+/** The lines of a reader, with those where it holds only where no file name matches the value. */
+function readerLines(r: ValueReader, lang: Lang): string {
+  const lines = lineRunsLabel(lang, r.lines, SHOWN);
+  const glob = r.globLines;
+  if (!glob) return lines;
+  const all = glob.length === r.lines.length;
+  if (lang === 'ja') return `${lines}。${all ? '' : `${lineRunsLabel('ja', glob, SHOWN)} は`}一致するファイル名がないとき`;
+  return `${lines}, ${all ? '' : `on ${lineRunsLabel('en', glob, SHOWN)} `}where no file name matches it`;
+}
 
-/** A name of a language with its article: none for a name of things (`escapes`, `option letters`), arithmetic or Perl. */
-const withArticle = (name: string): string => (/s$|^(arithmetic|Perl)$/.test(name) ? name : `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`);
+/** `a`, `a and b`, `a, b and c`; past `SHOWN` of them, the first and how many more (`a, b, c and 2 more`; `a・b・c ほか 2 つ`). */
+function capped(items: readonly string[], lang: Lang): string {
+  const shown = items.slice(0, SHOWN);
+  const more = items.length - shown.length;
+  if (lang === 'ja') return shown.join('・') + (more ? ` ほか ${more} つ` : '');
+  const all = more ? [...shown, `${more} more`] : shown;
+  return all.length === 1 ? all[0] : `${all.slice(0, -1).join(', ')} and ${all.at(-1)}`;
+}
 
-/** Two items or more: `a and b`, `a, b and c`, with `sep` and `last` between them. */
-const listed = (items: readonly string[], sep: string, last: string): string => items.slice(0, -1).join(sep) + last + items.at(-1)!;
+/** The commands of a reader, each as code. */
+const commands = (r: ValueReader, lang: Lang): string => capped(r.by.map(codeSpan), lang);
+
+/** The commands of a reader before a Japanese particle: a blank after code (`\`grep\` が`), none after kana (`ほか 5 つが`). */
+const jaCommands = (r: ValueReader): string => commands(r, 'ja').replace(/(?<=`)$/, ' ');
+
+/** A name of a language with its article: none for a name of things (`escapes`, `option letters`), arithmetic or Perl; `a umask`. */
+const withArticle = (name: string): string => (/s$|^(arithmetic|Perl)$/.test(name) ? name : `${/^[aeio]/i.test(name) ? 'an' : 'a'} ${name}`);
+
+/** The lines of the readers past `SHOWN`, in order: said in one, as how many more ways. */
+const linesPast = (readers: readonly ValueReader[]): number[] => [...new Set(readers.slice(SHOWN).flatMap((r) => r.lines))].sort((a, b) => a - b);
 
 /** What a value does in an unquoted word of a bazel query expression: a character no such word holds ends the word. */
 const QUERY_WORD_END = [
@@ -293,21 +315,25 @@ export const ARGV_TEXTS = {
       `bash has already removed the backslash: ${list}`];
   }),
   /**
-   * `re='^[A-Z]+$'`, whose uses read the value in a language (docs/design/known-values.md, 6.2): each command as written that reads
-   * it, in what (its regex flavour, or the language), on which lines (`reads`); and those that find an error in it (`errors`), which
-   * their own lines say.
+   * `re='^[A-Z]+$'`, whose uses read the value in a language (docs/design/known-values.md, 6.2): in what (its regex flavour, or the
+   * language), by which commands as written, on which lines (`reads`), the first three of each and of the readers; and those that
+   * find an error in it (`errors`), which their own lines say.
    */
   'assignment-value-read': tokenText<{ reads: readonly ValueReader[]; errors: readonly ValueReader[] }>(({ reads, errors }) => {
+    const more = reads.length > SHOWN ? linesPast(reads) : undefined;
+    const shown = reads.slice(0, SHOWN);
+    const jaMore = more ? `、ほか ${reads.length - SHOWN} 通り（${lineRunsLabel('ja', more, SHOWN)}）` : '';
     const ja = [
-      reads.length === 1 ? `${codeSpan(reads[0].by)} が${jaName(reads[0])}として読む（${readerLines(reads[0], 'ja')}）`
-        : reads.length ? `${reads.map((r) => `${codeSpan(r.by)} が${jaName(r)}として（${readerLines(r, 'ja')}）`).join('、')}読む` : '',
-      ...errors.map((r) => `${lineListLabel('ja', r.lines, LINES_SHOWN)} の ${codeSpan(r.by)} は${jaName(r)}として読み、エラーになる`),
+      reads.length === 1 ? `${jaCommands(reads[0])}が${jaName(reads[0])}として読む（${readerLines(reads[0], 'ja')}）`
+        : reads.length ? `${shown.map((r) => `${jaCommands(r)}が${jaName(r)}として（${readerLines(r, 'ja')}）`).join('、')}${jaMore}読む` : '',
+      ...errors.map((r) => `${lineRunsLabel('ja', r.lines, SHOWN)} の ${jaCommands(r)}は${jaName(r)}として読み、エラーになる`),
     ];
-    const one = (r: ValueReader): string => `${withArticle(readerName(r, 'en'))} by ${codeSpan(r.by)}`;
+    const one = (r: ValueReader): string => `${withArticle(readerName(r, 'en'))} by ${commands(r, 'en')}`;
+    const items = [...shown.map((r) => `${one(r)} (${readerLines(r, 'en')})`), ...(more ? [`in ${reads.length - SHOWN} more ways (${lineRunsLabel('en', more, SHOWN)})`] : [])];
     const en = [
       reads.length === 1 ? `read as ${one(reads[0])}, ${readerLines(reads[0], 'en')}`
-        : reads.length ? `read as ${listed(reads.map((r) => `${one(r)} (${readerLines(r, 'en')})`), ', as ', ' and as ')}` : '',
-      ...errors.map((r) => `${codeSpan(r.by)} reads it as ${withArticle(readerName(r, 'en'))} on ${lineListLabel('en', r.lines, LINES_SHOWN)} and finds an error there`),
+        : reads.length ? `read as ${items.slice(0, -1).join(', as ')} and ${more ? '' : 'as '}${items.at(-1)}` : '',
+      ...errors.map((r) => `${commands(r, 'en')} ${r.by.length === 1 ? 'reads' : 'read'} it as ${withArticle(readerName(r, 'en'))} on ${lineRunsLabel('en', r.lines, SHOWN)} and ${r.by.length === 1 ? 'finds' : 'find'} an error there`),
     ];
     return [ja.filter(Boolean).join('。'), en.filter(Boolean).join('; ')];
   }),

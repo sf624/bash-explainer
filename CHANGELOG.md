@@ -6,7 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### New
 
-- A variable the script sets is now read in the language of the command that uses it: after `re='^[A-Z][0-9]+$'`, `grep -E "$re" ids.txt` shows the parts of the regex and an example, as the literal pattern does. The assignment line shows the same parts and names the command and line that read the value ("read as an extended regex (ERE) by `grep -E`, line 2"). An error in the value (`re='[a'`) is an Error of the line that uses it.
+- A variable the script sets is now read in the language of the command that uses it: after `re='^[A-Z][0-9]+$'`, `grep -E "$re" ids.txt` shows the parts of the regex and an example, as the literal pattern does. The assignment line shows those parts too, and which commands and lines read the value.
 
 ### Changed
 

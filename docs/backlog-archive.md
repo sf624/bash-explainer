@@ -1280,6 +1280,25 @@ Found in the review of #824. The first and the third predate it.
 - **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `contradiction` in a rare combination.
 - **Input and what is wrong:** `export x; echo "$x"`: Meaning gives `$x` the value `""`, but `x` may come from the environment with a value (lowercase names are only unlikely there).
 
+## From known values, step 5 (#790)
+
+Found in the review of #825.
+
+### Shells across Markdown fences
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `contradiction` in a rare combination.
+- **Input and what is wrong:** a ```` ```bash ```` fence sets `re='^a'`, and a ```` ```zsh ```` or ```` ```posix ```` fence uses it (`grep -E "$re" f`, `[[ $1 =~ $re ]]`). The assignment names lines whose uses show no reading, and once "by `[[ =~ ]]` (line 11)" where `[[` is not POSIX sh. `assignedReading` (src/explain/embedded.ts) reads the use with the asking line's `cx.shell`, `cx.state` and `lookupOf(cx)`, not those of the use's region.
+
+### A value written with `$'…'` or joined to a substitution
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `bug` (display).
+- **Input and what is wrong:** `u=$'^a\\tb'; grep "$u" f`, `r=$(true)^c; grep "$r" f`: the reading's rows on the assignment overlap the rows the string already has (the escapes of `$'…'`, the substitution). Main does the same for a prompt string, `PS1=$'\\u@\\h'`.
+
+### One command with many uses of the same variable
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `performance`.
+- **Input and what is wrong:** `v='^a'; grep -e "$v" -e "$v" … f` with the word N times is quadratic: 4.8 s at N=4000 on the assignment line, and 18.8 s on the use's line (from step 2: each use finds its word among the command's words).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

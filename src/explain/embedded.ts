@@ -27,7 +27,7 @@ import { holedContent, type Literal, literalContent, literalOfMapped, removedBac
 import { ancestor, field, hasError, type SyntaxNode } from '../syntax/tree';
 import { commandReading, lookupKey } from '../semantics/commandread';
 import { docLine, type StateModel } from '../semantics/state';
-import { copyingWord, knownCopy, valueUses } from '../semantics/values';
+import { copyingWord, knownCopy, plainCopy, valueUses } from '../semantics/values';
 import { finishedApart, saysProblemIn } from '../linefinish';
 import type { ValueReader } from '../messages-tokens-argv';
 import { type CommandContext, type CommandRead, type Explainer, memoKey } from './context';
@@ -181,7 +181,7 @@ export function regexRightOf(n: SyntaxNode): SyntaxNode | undefined {
 }
 
 /** A use of an assignment's value (`valueUses`), as its own line reads the value: the reading, who reads it and as what, and its line. */
-interface ValueUse { made: ValueReadingMade; reader: Omit<ValueReader, 'lines' | 'glob'>; line: number }
+interface ValueUse { made: ValueReadingMade; reader: { lang: EmbeddedLang; flavor?: ValueReader['flavor']; by: string }; line: number }
 
 /**
  * The use `part` (an expansion `valueUses` gives) as the line of its command reads the value (docs/design/known-values.md, 6.2):
@@ -209,8 +209,14 @@ function valueUse(cx: Explainer, part: SyntaxNode): ValueUse | undefined {
   const c: CommandContext = { cmd: found.parse.command, args: nodes, parse: found.parse, nodes, spec: found.spec, onModel: true };
   const made = commandValueReading(cx, c, word, lang);
   if (!made) return undefined;
-  // (The command as written, with the options before the word, each once: `grep -E -e` of `grep -E -e "$a" -e "$a"`.)
-  const by = shorten([field(cmd, 'name')!.text, ...new Set(found.before.map((i) => nodes[i].text))].join(' '));
+  // (The command as written: its name and the options before the word, each with its value in a word of its own, each once; a
+  // value that is a copy of a variable left out: `grep -m 1 -E`, `sed -n -f x -e`, `grep -E -e` of `grep -E -e "$a" -e "$a"`.)
+  const pieces: string[] = [];
+  for (const { word: i, role } of found.before) {
+    if (role.role !== 'value') pieces.push(nodes[i].text);
+    else if (!plainCopy(nodes[i])) pieces[pieces.length - 1] += ' ' + nodes[i].text;
+  }
+  const by = shorten([field(cmd, 'name')!.text, ...new Set(pieces)].join(' '));
   return { made, reader: { lang, ...(lang === 'regex' ? { flavor: regexFlavorOf(c, index) } : {}), by }, line };
 }
 
@@ -225,17 +231,20 @@ export function assignedReading(cx: Explainer, value: SyntaxNode): { tokens: Tok
   const uses = (valueUses(cx.state).get(value) ?? []).flatMap((p) => valueUse(cx, p) ?? []);
   if (!uses.length) return undefined;
   const failed = new Set(uses.filter((u) => saysProblemIn(u.made.tokens)));
+  // (One reader per language and flavour, with each command once, and its lines: those where it holds only where no file
+  // name matches the value too. The uses come in the order of the text, so a line read twice, `-e "$a" -e "$a"`, is the last one.)
   const readers = (list: readonly ValueUse[]): ValueReader[] => {
-    const out = new Map<string, ValueReader & { lines: number[] }>();
+    const out = new Map<string, { lang: EmbeddedLang; flavor?: ValueReader['flavor']; by: Set<string>; lines: number[]; globLines: number[] }>();
+    const add = (lines: number[], line: number): void => { if (lines.at(-1) !== line) lines.push(line); };
     for (const u of list) {
-      const glob = u.made.assumes === 'no-match';
-      const key = JSON.stringify([u.reader, glob]);
-      const r = out.get(key);
-      // (The uses come in the order of the text: a line read twice, `-e "$a" -e "$a"`, is the last one.)
-      if (!r) out.set(key, { ...u.reader, lines: [u.line], ...(glob ? { glob } : {}) });
-      else if (r.lines.at(-1) !== u.line) r.lines.push(u.line);
+      const key = JSON.stringify([u.reader.lang, u.reader.flavor]);
+      let r = out.get(key);
+      if (!r) out.set(key, (r = { lang: u.reader.lang, ...(u.reader.flavor ? { flavor: u.reader.flavor } : {}), by: new Set(), lines: [], globLines: [] }));
+      r.by.add(u.reader.by);
+      add(r.lines, u.line);
+      if (u.made.assumes === 'no-match') add(r.globLines, u.line);
     }
-    return [...out.values()];
+    return [...out.values()].map(({ by, globLines, ...r }) => ({ ...r, by: [...by], ...(globLines.length ? { globLines } : {}) }));
   };
   const ok = uses.filter((u) => !failed.has(u));
   const note = cx.text('assignment-value-read', { reads: readers(ok), errors: readers([...failed]) });
