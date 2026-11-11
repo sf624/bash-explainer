@@ -22,7 +22,7 @@ const PROBES: Record<BehaviourId, string> = {
   globIgnore: 'GLOBIGNORE=ab; set -- a*; [ $# = 2 ]',
   badNameStops: '[ "$(unset 1a 2>/dev/null; echo x)" != x ]',
   localOutsideStops: '[ "$(local v 2>/dev/null; echo x)" != x ]',
-  localInherit: 'x=1; f() { local x; [ "${x-u}" = 1 ] || return 1; x=2; }; f && [ "$x" = 1 ]',
+  localUnset: 'x=1; f() { local x; [ "${x-u}" != u ] || return 1; x=2; }; f && [ "$x" = 1 ]',
   lastStageShell: 'echo x | read v; [ "$v" = x ]',
 };
 

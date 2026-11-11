@@ -6,11 +6,12 @@
 // texts of `eval`, `trap` and `alias` it can read), not a list of the ways a value may change unseen:
 //
 // - A variable is trusted when every command that may write it is a plain assignment (`x=w`, `x+=w`, or `local`,
-//   `declare`, `typeset`, `export`, `readonly` of `x=w` with no option but -r, -x and -g), and its name appears in no
-//   arithmetic text (where bash may assign it), in no other builtin that takes names, in no array, nameref, `${x:=w}`,
-//   function a trap or a callback may run, nor in the text of an `eval`, `trap` or `alias`. Positional parameters and
-//   the variables bash sets itself never are. A value that a declaration reads again as a compound assignment
-//   (`declare -a 'a=([u=2]=1)'`) is read as one, as text the walk does not run (`compoundValue`).
+//   `declare`, `typeset`, `export`, `readonly` of `x=w` with no option but -r, -x and -g) or one the walk follows as it
+//   does those (`Write.followed`: `unset x`, a bare `local x`, `read x`, `for x in`, `printf -v x`, `mapfile x`), and
+//   its name appears in no arithmetic text (where bash may assign it), in no other builtin that takes names, in no
+//   array, nameref, `${x:=w}`, function a trap or a callback may run, nor in the text of an `eval`, `trap` or `alias`.
+//   Positional parameters and the variables bash sets itself never are. A value that a declaration reads again as a
+//   compound assignment (`declare -a 'a=([u=2]=1)'`) is read as one, as text the walk does not run (`compoundValue`).
 // - Nothing is trusted (`blind`) when the script holds a construct whose row in the allow-list (src/semantics/allow.ts;
 //   docs/design/trust-allow-list.md) is `all`, or one the table does not have: what the walk does not follow, or the
 //   scan cannot read (`source`, `eval` or `trap` of text not known, a command name not known, indirection, an option
@@ -43,7 +44,7 @@ import type { BashVersion } from '../bashversion';
 import { coprocName, field, fields, hasError, nameText, substitutionForm, type SyntaxNode, wordBraces } from '../syntax/tree';
 import type { CommandSpec } from '../argv/spec';
 import { bracedWords, braceValues } from './brace';
-import { BUILTINS, builtinRow, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, nodeRow, type Row } from './allow';
+import { BUILTINS, builtinRow, writesFollowed, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, nodeRow, type Row } from './allow';
 import { plainName, aliasOf, aliasTexts, builtinParse, builtinRead, callbacks, commandName, commandWords, DECLARATIONS, setOptionWrites, variableWrites, wordName } from './effects';
 import { type Deferred, type DeferredPlan, deferredReadings, unknownWords } from './deferred';
 import { STATEMENTS } from './env';
@@ -189,10 +190,10 @@ class Scan {
    * `program`: a prefix assignment of a program (`LANG=de_DE.UTF-8 sort`), which changes its environment only.
    * `scalar`: the write never makes the variable an array (`Write.scalar`).
    */
-  private write(name: string, w: Where, plain: boolean, value: Value, how: { nameref?: boolean; program?: boolean; scalar?: boolean } = {}): void {
+  private write(name: string, w: Where, plain: boolean, value: Value, how: { nameref?: boolean; program?: boolean; scalar?: boolean; followed?: boolean } = {}): void {
     if (!how.program) this.variableRow(name, value);
     const list = this.writes.get(name) ?? [];
-    list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(how.nameref ? { nameref: true } : {}), ...(how.scalar ? { scalar: true } : {}) });
+    list.push({ plain, value, fn: w.fn, foreign: w.foreign, ...(how.nameref ? { nameref: true } : {}), ...(how.scalar ? { scalar: true } : {}), ...(how.followed ? { followed: true } : {}) });
     this.writes.set(name, list);
   }
 
@@ -273,15 +274,15 @@ class Scan {
 
   /**
    * A variable a builtin sets, named `text` by the word `word` (undefined: a name not known here); `scalar`: not as an
-   * array (`read x`, not `read -a x`), unless the name has a subscript.
+   * array (`read x`, not `read -a x`), unless the name has a subscript; `followed`: without one (`Write.followed`).
    */
-  private named(text: string | undefined, word: SyntaxNode, w: Where, value: Value, scalar: boolean): void {
+  private named(text: string | undefined, word: SyntaxNode, w: Where, value: Value, scalar: boolean, followed: boolean): void {
     const m = text === undefined ? null : /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(text);
     if (!m) {
       if (text === undefined) this.blindFor('a builtin is given a variable name not known');
       return;
     }
-    this.write(m[1], w, false, value, { scalar: scalar && m[2] === undefined });
+    this.write(m[1], w, false, value, { scalar: scalar && m[2] === undefined, followed: followed && m[2] === undefined });
     // (An unset gives no text to read as arithmetic.)
     if (value !== 'none') this.assigned(m[1], undefined, word, w);
     if (m[2] !== undefined) this.subscripts.push({ array: m[1], text: m[2], owner: this.owner(word), where: w });
@@ -369,7 +370,7 @@ class Scan {
         if (variable) {
           // (Each word, once expanded: a glob or an expansion gives text not known; `select`, what the user types.)
           const values = fields(n, 'value').map((v): Value => (staticWordValue(v) !== undefined ? this.value(v) : 'unknown'));
-          this.write(variable.text, w, false, n.type === 'select_statement' || !values.length ? 'unknown' : joined(values), { scalar: true });
+          this.write(variable.text, w, false, n.type === 'select_statement' || !values.length ? 'unknown' : joined(values), { scalar: true, followed: nodeRow(n).effect.kind === 'followed' });
           this.assigned(variable.text, undefined, n, w);
         }
         break;
@@ -599,9 +600,9 @@ class Scan {
           // (`local x`, `declare x` in a function: a new variable, with no value; `export x` and `readonly x` change no
           // value. Outside a function, or with -g or -I, `declare x` keeps the value it had, maybe one from the environment:
           // `declare n; (( n ))` runs `n='y=5'` from there. A trap's action may run in any function, or none.)
-          // (`declare -I x` makes the local variable start with the value of the one it hides.)
+          // (`declare -I x` starts with the value it hides. The walk follows a new one with no option but -r and -x.)
           const local = w.fn !== undefined && (!w.foreign || w.now) && !on.includes('g') && !on.includes('I') && builtin !== 'export' && builtin !== 'readonly';
-          this.write(name, w, false, local ? 'none' : 'kept', { scalar: !m[2] && !explicit });
+          this.write(name, w, false, local ? 'none' : 'kept', { scalar: !m[2] && !explicit, followed: local && plain && !m[2] });
         }
       }
       if (on.includes('i')) this.integers.add(name);
@@ -617,7 +618,7 @@ class Scan {
       this.changed(w);
       return;
     }
-    for (const r of parse.roles) if (r.role.role === 'operand') this.named(wordName(words[r.word]), words[r.word], w, 'none', true);
+    for (const r of parse.roles) if (r.role.role === 'operand') this.named(wordName(words[r.word]), words[r.word], w, 'none', true, true);
   }
 
   /**
@@ -676,9 +677,10 @@ class Scan {
   private builtinWords(c: SyntaxNode, name: string, args: SyntaxNode[], spec: CommandSpec, hosted: CommandSpec | undefined, w: Where, fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined): void {
     const read = builtinRead(name, args, this.shell, spec, fieldsOf);
     const { parse } = read;
-    // The variables it sets, and the functions it runs later, as its spec says (src/semantics/effects.ts).
+    // The variables it sets (some the walk follows: `writesFollowed`), and the functions it runs later, as its spec says (src/semantics/effects.ts).
+    const followed = !hosted && writesFollowed(name, optionRoles(parse).map((o) => o.flag), this.shell);
     for (const v of variableWrites(spec, read, this.shell)) {
-      if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown', v.sets === 'string' || v.sets === 'job-id');
+      if (v.node) this.named(v.name, v.node, w, v.sets === 'job-id' ? 'number' : 'unknown', v.sets === 'string' || v.sets === 'job-id', followed);
       else this.write(v.name!, w, false, 'unknown');
     }
     for (const f of callbacks(read)) this.callback(f);
@@ -976,7 +978,7 @@ export function scriptTrust(root: SyntaxNode, strings: StringTrees, host = NO_HO
   return {
     blind: undefined,
     variable: (name) => trusted.get(name) ?? trusted.set(name, NAME.test(name) && !changedUnseen(name) && !scan.arith.has(name) && !unseen.has(name)
-      && !scan.refTargets.has(name) && (scan.writes.get(name) ?? []).every((w) => w.plain)).get(name)!,
+      && !scan.refTargets.has(name) && (scan.writes.get(name) ?? []).every((w) => w.plain || w.followed)).get(name)!,
     closed: (name) => !scan.exportAll && !scan.exported.has(name) && !scan.callbacks.has(name),
     copied: (n) => {
       const names = scan.copied.get(n);

@@ -10,6 +10,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- A variable's value ("Value here, from the script"), and the readings of a known value, now also show where the script elsewhere unsets the variable, declares it with a bare `local re`, or sets it with `for`, `read`, `printf -v` or `mapfile`: `f() { local re; re='^a'; grep -E "$re" g; }` is read. Before, one such command anywhere in the script hid every value of the variable.
 - The caveat on an unquoted value a command reads as data now says that bash (or the shell) reads it as a glob pattern before the command gets it, and the argument's row no longer repeats that. Before, the caveat, the row and the value's line each said "it is a glob pattern".
 
 ### Fixed

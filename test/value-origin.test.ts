@@ -66,8 +66,21 @@ const ROWS: readonly Row[] = [
   { script: 'p=a; export p; readonly p; use 1 "$p"', origins: { 1: 'p=a' } },
   { script: 'declare p=a; declare -i n=5; use 1 "$p"; use 2 "$n"', origins: { 1: 'p=a', 2: null } },
   { script: 'declare -l p=a; use 1 "$p"', origins: { 1: null } },
-  // `unset`: the trust does not rely on `p` in this script (src/semantics/trust.ts), so `expansionValue` gives no value of it.
-  { script: 'p=a; unset p; use 1 "$p"; p=b; use 2 "$p"', origins: { 1: null, 2: null } },
+  // Writes the walk follows, though not plain (`Write.followed`): `unset`, a bare `local`, `for`, `read`, `printf -v`,
+  // `mapfile`. A use they do not reach keeps its origin; one they reach has none.
+  { script: 'p=a; unset p; use 1 "$p"; p=b; use 2 "$p"', origins: { 1: null, 2: 'p=b' } },
+  { script: 're=\'^a\'; use 1 "$re"; unset re; use 2 "$re"', origins: { 1: "re='^a'", 2: null } },
+  { script: 'f() { local re; re=\'^a\'; use 1 "$re"; }; f; f', origins: { 1: "re='^a'" } },
+  { script: 're=\'^a\'; use 1 "$re"; f() { local re; }', origins: { 1: "re='^a'" } },
+  { script: 're=\'^a\'; f() { local re; use 1 "$re"; re=b; use 2 "$re"; }; f; use 3 "$re"', origins: { 1: null, 2: 're=b', 3: "re='^a'" } },
+  { script: 're=\'^a\'; use 1 "$re"; for re in x; do use 2 "$re"; done; use 3 "$re"', origins: { 1: "re='^a'", 2: null, 3: null } },
+  { script: 'for x in a; do x=z; done; use 1 "$x"; for y in a b; do y=c; use 2 "$y"; done; use 3 "$y"', origins: { 1: 'x=z', 2: 'y=c', 3: 'y=c' } },
+  { script: 'p=a; use 1 "$p"; read -r p <<< x; use 2 "$p"; q=a; use 3 "$q"; printf -v q %s b; use 4 "$q"; m=a; use 5 "$m"; mapfile -t m <<< b; use 6 "$m"',
+    origins: { 1: 'p=a', 2: null, 3: 'q=a', 4: null, 5: 'm=a', 6: null } },
+  // (Dynamic scope: a function sees the local of the one that calls it; `unset` of a caller's local shows the global again.)
+  { script: 're=g; h() { use 1 "$re"; }; f() { local re=l; h; }; f; h', origins: { 1: null } },
+  { script: 'f() { local re; g; use 1 "$re"; }; g() { unset re; }; re=a; f; use 2 "$re"', origins: { 1: 're=a', 2: 're=a' } },
+  { script: 'f() { g() { local re; re=b; use 1 "$re"; }; g; use 2 "$re"; }; re=a; f', origins: { 1: 're=b', 2: 're=a' } },
   // A prefix assignment: the command's words are expanded before it; a function sees it.
   { script: 'p=a; p=b use 1 "$p"', origins: { 1: 'p=a' } },
   { script: 'p=a; p=b :; use 1 "$p"; q=a; q=b eval :; use 2 "$q"', origins: { 1: 'p=a', 2: 'q=a' } },

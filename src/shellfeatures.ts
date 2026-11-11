@@ -314,8 +314,9 @@ export const SHELL_BEHAVIOURS = {
   badNameStops: { differs: 'daz' },
   // `local` outside a function is an error that ends the shell (bash: status 1, and the script goes on). (The shells without a `local` of their own are not here.)
   localOutsideStops: { differs: 'da' },
-  // `local x` starts with the value of the `x` it hides (bash's `localvar_inherit`, off by default). (ksh93's `local` makes no local variable: `typesetScope`.)
-  localInherit: { differs: 'd' },
+  // `local x` starts unset, as bash's does with `localvar_inherit` off (the default): dash's starts with the value of the `x` it hides, zsh's empty.
+  // (ksh93's `local` makes no local variable: `typesetScope`.)
+  localUnset: { differs: 'dz' },
   // The last stage of a pipeline runs in the shell itself, so `echo x | read v` sets `v` (bash: in a subshell, unless `lastpipe` is on and job control off).
   lastStageShell: { differs: 'kz' },
 } as const satisfies Record<string, ShellBehaviour>;

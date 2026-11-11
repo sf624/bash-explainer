@@ -249,6 +249,27 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
       'declare a[1]', 'o=%s; [ -t 0 ] && o=x; a=1; printf $o "$a" "$a"']) assert.strictEqual(blind(src), undefined, src);
   });
 
+  // (What bash gives at the uses is checked by the rows `values#local-bare`, `values#unset-after-use`,
+  // `values#for-loop-variable` and the others, and by test/decisions.test.ts.)
+  it('trusts a variable whose other writes the walk follows (`Write.followed`), and not one it does not', () => {
+    const trusts = (src: string, shell?: 'sh' | 'zsh'): boolean => shellState(parser.parse(src), shell).trusts('v');
+    const followed = ['v=1; unset v', 'unset -v v', 'f() { local v; }; v=1', 'f() { local -r v; }', 'f() { declare -x v; }', 'f() { typeset v; }', 'v=1; for v in a; do :; done',
+      'read -r v', 'printf -v v %s a', 'mapfile -t v', 'readarray v', 'command read v'];
+    // (Outside a function `declare v` keeps a value, maybe the environment's; `unset 'v[0]'` unsets a scalar `v`, which the walk does not.)
+    const not = ["v=1; unset 'v[0]'", 'declare v', 'f() { local -i v; }', 'f() { declare -g v; }', 'select v in a; do break; done', 'getopts a v', 'wait -p v', "read 'v[1]'",
+      "f() { local 'v[1]'; }"];
+    assert.deepStrictEqual(followed.filter((s) => !trusts(s)), []);
+    assert.deepStrictEqual(not.filter((s) => trusts(s)), []);
+    // dash has no `mapfile`, which the walk then does not run.
+    assert.deepStrictEqual([trusts('mapfile v', 'sh'), trusts('read v', 'sh')], [false, true]);
+    // A bare `local v` starts unset in bash, and the walk says so; dash's keeps the value, zsh's is empty (`localUnset`,
+    // test/shell-behaviours.test.ts): there the walk takes it as not known.
+    const src = 'v=1; f() { local v; [ -z "${v+s}" ] && :; }; f';
+    const tree = parser.parse(src);
+    const outcome = (shell?: 'sh' | 'zsh'): string | undefined => shellState(tree, shell).condition(descendants(tree.root, ['list']).pop()!)?.outcome;
+    assert.deepStrictEqual([outcome(), outcome('sh'), outcome('zsh'), bash(`${src} && echo y`).trim()], ['true', undefined, undefined, 'y']);
+  });
+
   it('takes a function defined after `shopt -so allexport` as exported, as after `set -a`', () => {
     // (bash exports it: another bash sees it. Before the allow-list, the scan read `set -a` but not `shopt -so`.)
     assert.strictEqual(bash("shopt -so allexport; f() { :; }; bash -c 'declare -F f'"), 'f\n');

@@ -861,7 +861,7 @@ describe('shell state: conditions (docs/design/semantics.md, 4.14)', () => {
     assert.strictEqual(decided('n=0; while [ "$n" -gt 0 ]; do :; done', 'while_statement'), 'false n=0');
     assert.strictEqual(decided('for ((;;)); do break; done', 'c_style_for_statement'), 'true');
     assert.strictEqual(decided('u=; [ -z "$u" ] || :', 'list'), 'true u=');
-    assert.strictEqual(decided('unset u; [ -z "$u" ] || :', 'list'), undefined);
+    assert.strictEqual(decided('unset u; [ -z "$u" ] || :', 'list'), 'true u=null');
     assert.strictEqual(decided('false; [ $? = 1 ] && :', 'list'), 'true ?=1');
     // Not decided: the environment, files, a name the script has not set, other shells, a part still missing.
     assert.strictEqual(decided('[ "$HOME" = / ] && :', 'list'), undefined);
@@ -1037,12 +1037,16 @@ describe('shell state: what decisions trust (src/semantics/trust.ts, docs/design
   });
   it('does not trust a variable that something else may write, wherever it is in the script', () => {
     for (const write of ['(( x = 2 ))', 'let x=2', 'echo $(( x ))', 'a[x]=1', 'echo ${a[x]}', 's=abc; echo ${s:x}', '[[ x -eq 1 ]]', 'declare -i n; n=x',
-      'read x', 'read -a x', 'mapfile x', 'printf -v x 1', 'getopts a x', 'wait -p x', 'unset x', "unset 'x[0]'", 'declare -n r=x', 'declare -i x=1',
-      'declare -l x=a', 'f() { local x; }; f', 'x[0]=1', 'x=(1)', 'x+=(1)', ': ${x:=1}', ': ${x=1}', 'for x in 1; do :; done', 'select x in 1; do break; done',
+      'getopts a x', 'wait -p x', "unset 'x[0]'", 'declare -n r=x', 'declare -i x=1', 'declare -l x=a', 'x[0]=1', 'x=(1)', 'x+=(1)', ': ${x:=1}', ': ${x=1}',
+      'select x in 1; do break; done',
       'coproc x { :; }', 'exec {x}>/dev/null', "trap 'x=2' INT", "trap 'x=2' EXIT", "eval 'x=2'", "alias a='x=2'", 'f() { x=2; }; trap f INT',
       'f() { x=2; }; complete -F f c', 'f() { g; }; g() { x=2; }; trap f INT', 'f() { x=2; }; mapfile -C f a', '[[ -v a[x] ]]', '[ -v "a[x]" ]',
-      "test -v 'a[x]'", "declare -n 'r=x'", 'for x in a b; do :; done', 'x=(1 "$@")']) {
+      "test -v 'a[x]'", "declare -n 'r=x'", 'x=(1 "$@")']) {
       assert.strictEqual(decided(`x=1; [ "$x" = 1 ] && :; ${write}`), undefined, write);
+    }
+    // A write the walk follows (`Write.followed`) is no such write: the condition it does not reach is decided.
+    for (const write of ['read x', 'read -a x', 'mapfile x', 'printf -v x 1', 'unset x', 'f() { local x; }; f', 'for x in 1; do :; done', 'for x in a b; do :; done']) {
+      assert.strictEqual(decided(`x=1; [ "$x" = 1 ] && :; ${write}`), 'true x=1', write);
     }
     // (A variable readonly with no value is not set: that is trusted too.)
     assert.strictEqual(decided('readonly u; [ -z "$u" ] || :'), 'true u=null');

@@ -462,10 +462,10 @@ export class WalkBuiltins {
         frame.saved.set(name, hidden);
         // It keeps the export attribute of the one it hides, and no other (bash's make_local_variable). (With
         // localvar_inherit, it starts with the value and attributes of the one it hides: not followed. So does dash's
-        // `local`, and sh may be dash: `local IFS` keeps the IFS of the caller there.)
+        // `local`, and sh may be dash: `local IFS` keeps the IFS of the caller there. zsh's starts empty.)
         const x = hidden?.attrs.x;
         // (So does `declare -I`, and `local -I`.)
-        const inherit = asBash('localInherit', this.w.shell) !== 'yes' || on.includes('I') ? 'unknown' : option(st, 'shopt', 'localvar_inherit');
+        const inherit = asBash('localUnset', this.w.shell) !== 'yes' || on.includes('I') ? 'unknown' : option(st, 'shopt', 'localvar_inherit');
         // (Also that of the environment's, when the script has not set it: `exportFromEnvironment`.)
         const kept: Record<string, Attribute> = !hidden ? { x: exportFromEnvironment(name, n) } : x && (x.state !== 'off' || x.environment) ? { x: { ...x, at: n } } : {};
         st = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: kept, at: n });

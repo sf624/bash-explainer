@@ -160,7 +160,7 @@
     {"file":"src/semantics/walk/conditions.ts","fn":"unsetStatus","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/traps.ts","fn":"trapSignals","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/walker.ts","fn":"command","kind":"node-type","count":6,"row":"W-P4"},
-    {"file":"src/semantics/walk/walker.ts","fn":"forStatement","kind":"helper","count":1,"row":"W-L1"},
+    {"file":"src/semantics/walk/forloop.ts","fn":"forStatement","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/walker.ts","fn":"program","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/written.ts","fn":"writtenValue","kind":"helper","count":3,"row":"W-T1"},
     {"file":"src/semantics/written.ts","fn":"writtenValue","kind":"node-type","count":9,"row":"W-T1"},
@@ -633,7 +633,7 @@
       ]
     },
     {
-      "file": "src/semantics/walk/walker.ts",
+      "file": "src/semantics/walk/forloop.ts",
       "reason": "recursion into substitutions and arithmetic, or a walk of the tree",
       "uses": [
         {"fn":"forStatement","kind":"node-type","count":4}

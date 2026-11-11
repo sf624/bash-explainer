@@ -2857,8 +2857,10 @@
     "shell": "dash",
     "requires": "dash",
     "none": {
-      "a": "dash's `local x` keeps the value of the `x` it hides (1); bash's starts unset; `local x` makes `x` not trusted",
-      "c": "`local x` with no value: `x` is not trusted"
+      "a": "dash's `local x` keeps the value of the `x` it hides (1); bash's starts unset: not known in dash"
+    },
+    "origins": {
+      "c": "x=1"
     },
     "facts": {
       "a": [
@@ -4477,6 +4479,245 @@
       "a": [
         [
           "2"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "local-bare",
+    "manual": "3.3",
+    "snippet": "f() { local re; @PROBE:a@ \"${re-u}\"; re='^a'; @PROBE:b@ \"$re\"; }; re=g; f; @PROBE:c@ \"$re\"; f; h() { local re; }; @PROBE:d@ \"$re\"",
+    "note": "a bare `local` in a function makes an unset local, gone when the function returns; one in a function no call reaches changes nothing",
+    "origins": {
+      "b": "re='^a'",
+      "c": "re=g",
+      "d": "re=g"
+    },
+    "facts": {
+      "a": [
+        [
+          "u"
+        ],
+        [
+          "u"
+        ]
+      ],
+      "b": [
+        [
+          "^a"
+        ],
+        [
+          "^a"
+        ]
+      ],
+      "c": [
+        [
+          "g"
+        ]
+      ],
+      "d": [
+        [
+          "g"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "local-bare-dynamic",
+    "manual": "3.3",
+    "snippet": "re=g; h() { @PROBE:a@ \"${re-u}\"; }; f() { local re; h; k; @PROBE:b@ \"$re\"; }; k() { unset re; }; f; h; @PROBE:c@ \"$re\"",
+    "note": "dynamic scope: a function called from one with a local sees the local; `unset` of a caller's local shows the global again",
+    "none": {
+      "a": "`h` runs with the local of `f` and with the global: two values"
+    },
+    "origins": {
+      "b": "re=g",
+      "c": "re=g"
+    },
+    "facts": {
+      "a": [
+        [
+          "u"
+        ],
+        [
+          "g"
+        ]
+      ],
+      "b": [
+        [
+          "g"
+        ]
+      ],
+      "c": [
+        [
+          "g"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "unset-after-use",
+    "manual": "4.2",
+    "snippet": "re='^a'; @PROBE:a@ \"$re\"; unset re; @PROBE:b@ \"${re-u}\"; re=b; @PROBE:c@ \"$re\"",
+    "origins": {
+      "a": "re='^a'",
+      "c": "re=b"
+    },
+    "facts": {
+      "a": [
+        [
+          "^a"
+        ]
+      ],
+      "b": [
+        [
+          "u"
+        ]
+      ],
+      "c": [
+        [
+          "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "for-loop-variable",
+    "manual": "3.2.5.1",
+    "snippet": "re='^a'; @PROBE:a@ \"$re\"; for re in x; do @PROBE:b@ \"$re\"; done; @PROBE:c@ \"$re\"; for re in a b; do @PROBE:d@ \"$re\"; done; @PROBE:e@ \"$re\"; for re in a; do re=z; done; @PROBE:f@ \"$re\"; for re in a b; do unset re; done; @PROBE:g@ \"${re-u}\"",
+    "note": "the loop variable is each word in turn, then keeps what the last pass left it",
+    "none": {
+      "d": "each pass gives another word"
+    },
+    "origins": {
+      "a": "re='^a'",
+      "f": "re=z"
+    },
+    "facts": {
+      "a": [
+        [
+          "^a"
+        ]
+      ],
+      "b": [
+        [
+          "x"
+        ]
+      ],
+      "c": [
+        [
+          "x"
+        ]
+      ],
+      "d": [
+        [
+          "a"
+        ],
+        [
+          "b"
+        ]
+      ],
+      "e": [
+        [
+          "b"
+        ]
+      ],
+      "f": [
+        [
+          "z"
+        ]
+      ],
+      "g": [
+        [
+          "u"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "read-after-use",
+    "manual": "4.2",
+    "snippet": "p=a; @PROBE:a@ \"$p\"; read -r p <<< x; @PROBE:b@ \"$p\"",
+    "none": {
+      "b": "what `read` reads is not followed"
+    },
+    "origins": {
+      "a": "p=a"
+    },
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "b": [
+        [
+          "x"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "printf-v-after-use",
+    "manual": "4.2",
+    "snippet": "p=a; @PROBE:a@ \"$p\"; printf -v p %s b; @PROBE:b@ \"$p\"",
+    "none": {
+      "b": "what `printf -v` writes is not followed"
+    },
+    "origins": {
+      "a": "p=a"
+    },
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "b": [
+        [
+          "b"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "mapfile-after-use",
+    "manual": "4.2",
+    "snippet": "p=a; @PROBE:a@ \"$p\"; mapfile -t p <<< b; @PROBE:b@ \"$p\"; q=a; @PROBE:c@ \"$q\"; readarray -t q <<< b; @PROBE:d@ \"$q\"",
+    "none": {
+      "b": "an array's value is not followed",
+      "d": "an array's value is not followed"
+    },
+    "origins": {
+      "a": "p=a",
+      "c": "q=a"
+    },
+    "facts": {
+      "a": [
+        [
+          "a"
+        ]
+      ],
+      "b": [
+        [
+          "b"
+        ]
+      ],
+      "c": [
+        [
+          "a"
+        ]
+      ],
+      "d": [
+        [
+          "b"
         ]
       ],
       "status": 0

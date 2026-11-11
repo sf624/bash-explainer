@@ -8,6 +8,7 @@
 // (test/fixtures/probes/*.json, by its `id`), a construct of the decisions' generator (test/support/decisions.ts, by its
 // key in `GENERATED`), or a test of a test file (by its title); test/allow-list.test.ts checks that each names exactly
 // one, and that every set is complete against bash.
+import { builtinIn, type Shell } from '../shellfeatures';
 import { field, type NodeType, type SyntaxNode } from '../syntax/tree';
 
 /** What a construct may change. */
@@ -74,8 +75,9 @@ export const SYNTAX: Readonly<Record<NodeType, Row>> = {
   function_definition: followed(['env#function-call', 'generator: function definition']),
   // (The patterns after `;&` and `;;&`: expanded in the state after the list before them.)
   case_statement: followed(['generator: case']),
-  // The loop variable; `select`'s is what the user types.
-  for_statement: names(),
+  // The loop variable: each word in turn, then the last unless the body changed it (src/semantics/walk/forloop.ts);
+  // `select`'s is what the user types (and REPLY).
+  for_statement: followed(['values#for-loop-variable', 'generator: for in']),
   select_statement: names(),
   // The coprocess's array and its `_PID`.
   coproc_statement: names(),
@@ -151,7 +153,9 @@ const BUILTIN_ROWS: Readonly<Record<string, BuiltinRowOf>> = {
   // They change nothing a value or a decision reads. (`echo`, `printf`, `:`, `true` and `false` print or ignore a word
   // that looks like an option.)
   ':': builtin(none(), none()), true: builtin(none(), none()), false: builtin(none(), none()),
-  echo: builtin(none(), none()), printf: builtin(none(), none()),
+  echo: builtin(none(), none()),
+  // (`printf -v x`: the variable gets a value not known, `Write.followed`.)
+  printf: builtin(none(), none(), { '-v': followed(['values#printf-v-after-use', 'generator: printf -v']) }),
   pwd: builtin(none()), type: builtin(none()), help: builtin(none()), times: builtin(none()), caller: builtin(none()),
   dirs: builtin(none()), disown: builtin(none()), suspend: builtin(none()), logout: builtin(none()),
   ulimit: builtin(none(), undefined, { '-n': LIMITS, '-u': LIMITS }),
@@ -164,7 +168,9 @@ const BUILTIN_ROWS: Readonly<Record<string, BuiltinRowOf>> = {
   jobs: builtin(none(), undefined, { '-x': blinds('`jobs -x` runs a command in this shell') }),
   // PWD, OLDPWD and DIRSTACK; the positional parameters (never trusted).
   cd: builtin(names()), pushd: builtin(names()), popd: builtin(names()), shift: builtin(names()),
-  read: builtin(names()), mapfile: builtin(names(), undefined, MAPFILE_CALLBACK), readarray: builtin(names(), undefined, MAPFILE_CALLBACK),
+  // The variables they name get a value not known (`Write.followed`); REPLY and MAPFILE by default are bash's.
+  read: builtin(followed(['values#read-after-use', 'generator: read'])),
+  mapfile: builtin(followed(['values#mapfile-after-use']), undefined, MAPFILE_CALLBACK), readarray: builtin(followed(['values#mapfile-after-use']), undefined, MAPFILE_CALLBACK),
   getopts: builtin(names()),
   // Jumps (a count not known takes both paths).
   exit: builtin(followed(['status#exit-status', 'generator: exit'])), return: builtin(followed(['status#return-status', 'generator: return'])),
@@ -172,9 +178,9 @@ const BUILTIN_ROWS: Readonly<Record<string, BuiltinRowOf>> = {
   // `x=w` with no option but -r, -x and -g; names for the other options; the nameref rule for -n; all for a name not known,
   // and for an option the spec does not know.
   declare: builtin(followed(['values#declare-export-readonly'])), typeset: builtin(followed(['state#declare-attributes'])),
-  local: builtin(followed(['values#local-shadow', 'generator: local'])), export: builtin(followed(['values#declare-export-readonly', 'generator: export'])),
+  local: builtin(followed(['values#local-shadow', 'values#local-bare', 'generator: local'])), export: builtin(followed(['values#declare-export-readonly', 'generator: export'])),
   readonly: builtin(followed(['values#declare-export-readonly'])),
-  unset: builtin(followed(['values#unset-ifs', 'generator: unset'])),
+  unset: builtin(followed(['values#unset-ifs', 'values#unset-after-use', 'generator: unset'])),
   let: builtin(followed(['status#let-assign', 'generator: let'])),
   // The string the walk reads; else all.
   eval: builtin(followed(['values#eval-string'])),
@@ -312,6 +318,16 @@ export function nodeRow(n: SyntaxNode): Row {
 export const PROGRAM: BuiltinRow = { effect: NONE, unknownOption: { effect: NONE } };
 /** The row of a builtin (`PROGRAM` for a name of the dictionary that is no builtin of bash). */
 export const builtinRow = (name: string): BuiltinRow => rowOf(BUILTINS, name, () => PROGRAM);
+
+/**
+ * Whether the walk follows the variables the builtin `name` sets, given the options `flags` (`Write.followed`): its
+ * row, or the row of one of those options, is `followed` (`read x`, `printf -v x`), and every shell the script may run
+ * in has the builtin (the walk takes `mapfile` in `sh` as no builtin, since dash has none).
+ */
+export function writesFollowed(name: string, flags: readonly string[], shell: Shell | undefined): boolean {
+  const row = builtinRow(name);
+  return builtinIn(name, shell) && (row.effect.kind === 'followed' || flags.some((f) => row.options?.[f]?.effect.kind === 'followed'));
+}
 
 /** The row of an option of `set -o` or `shopt` (`table`), turned on or off (one the table does not have trusts nothing). */
 export function optionRow(table: Readonly<Record<string, OptionRow>>, name: string, on: boolean): Row {

@@ -66,6 +66,9 @@ export const GENERATED: Readonly<Record<string, RegExp>> = {
   export: /\bexport \w/,
   unset: /\bunset /,
   let: /\blet \w/,
+  'for in': /\bfor \w+ in /,
+  read: /\bread (?:-r )?\w/,
+  'printf -v': /\bprintf -v \w/,
   // Options.
   'set -e': /\bset -e(?=[;\s)]|$)/,
   'set -u': /\bset -u(?=[;\s)]|$)/,

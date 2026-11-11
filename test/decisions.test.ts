@@ -84,6 +84,35 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
     }
   });
 
+  // A variable whose writes are plain assignments or writes the walk follows (`unset`, a bare `local`, `for`, `read`,
+  // `printf -v`, `mapfile`: `Write.followed` in src/semantics/writechecks.ts) is trusted: a condition a write that gives
+  // a value not known reaches is not decided, and one it does not reach is, with and without calls, in nested functions.
+  it('makes none that bash contradicts on a variable whose unset, bare local or loop the walk follows', async function () {
+    this.timeout(60_000);
+    const test = (v: string): string => `⟦s:1⟧if ⟦p:1⟧[ "$${v}" = 1 ]⟦c:1⟧; then : M2; else : M3; fi`;
+    // (Each with the test at the end of the script, or where `@` is.)
+    const decides = [
+      'v=1; f() { local v; v=2; }; f', 'f() { local v; }; v=1', 'v=1; for v in 1; do :; done', 'for v in 2; do v=1; done', 'for v in 2 3; do :; done',
+      'v=2; unset v; v=1', 'v=1; g() { :; }; f() { local v; g; }; f', 'v=1; f() { g() { local v; v=3; }; g; }; f', 'v=1; read -r v <<< 2; v=1',
+      'v=1; printf -v v %s 2; v=1', 'v=2; f() { local v; v=1; @; }; f', 'v=1; f() { local v; @; }; f', 'v=1; k() { unset v; }; f() { local v=2; k; @; }; f',
+      'f() { local v; for v in 1; do @; done; }; f', 'v=1; f() { local v; }; f; mapfile -t w <<< 2',
+    ];
+    // (A value not known reaches the test, or two values do.)
+    const undecided = [
+      'v=1; read -r v <<< 1', 'v=1; [ -t 0 ] && unset v', 'v=1; printf -v v %s 1', 'v=1; mapfile -t v <<< 1', 'v=1; for v in 1 2; do [ -t 0 ] && break; done',
+      'v=1; h() { @; }; f() { local v; h; }; f; h', 'v=1; f() { local v; read -r v <<< 1; @; }; f', 'v=1; for v in 1 2; do @; done',
+    ];
+    const list: Script[] = [...decides, ...undecided].map((s) => ({ text: s.includes('@') ? `${s.replace('@', test('v'))}; : M4` : `${s}; ${test('v')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] }));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decisions-'));
+    try {
+      const results = await checkAll(list, dir, 4);
+      assert.deepStrictEqual(results.flatMap((r, i) => r.problems.map((p) => `${p}\n${forModel(list[i].text).src}`)), []);
+      assert.deepStrictEqual(results.map((r, i) => `${r.decided > 0} ${list[i].text}`), list.map((x, i) => `${i < decides.length} ${x.text}`));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // A word of a builtin whose value the script gives (`x=-e; set $x`) is read as the fields bash gives it, by the
   // trust scan (for each value the script writes, and none) and by the walk: an option there is an option.
   it('makes none that bash contradicts where a builtin gets the fields of a variable', async function () {
