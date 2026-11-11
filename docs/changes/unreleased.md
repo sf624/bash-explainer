@@ -43,3 +43,4 @@ A variable keeps its value where the model already follows its other writes (#82
 ### Functions called with a prefix assignment
 
 - A call such as `MODE=a helper "$1"` was worked out again at every call, so a chain of functions that each call the next twice this way doubled the work at each level: 18 levels (about 55 lines) took 18 s. A call made again from the same state now reuses the first one, as a call without a prefix assignment does, and the chain takes a few milliseconds. On nvm.sh, the most states a line was explained with went from 356 to 21.
+- Such a call now counts towards the four walks of a function, as a plain call does: a function called from more than four different states has its later calls guessed (what the body changes is taken as not known).

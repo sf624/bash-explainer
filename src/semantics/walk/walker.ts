@@ -13,7 +13,7 @@ import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env'
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
 import {
   attribute, EMPTY, type Entry, type FunctionState, type Kind, environmentHas, merge, NameMap, option,
-  POSIX_ON, reached, type ShellState, sameState, sourcesApart, tri, type Tri, unreachable, type VariableState, withStatus,
+  POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withStatus,
 } from '../shellstate';
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
@@ -26,7 +26,8 @@ import { WalkConditions } from './conditions';
 import { WalkExpansions } from './expansions';
 import { kept, temporaries, temporary } from './temporaries';
 import { forStatement } from './forloop';
-import { inScope, leaveFrame, ofCall, restoredFor, sameSaved } from './scopes';
+import { inScope, leaveFrame, ofCall } from './scopes';
+import { WalkReuse } from './reuse';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
@@ -40,27 +41,8 @@ const POSIX_SHELLS = new Set<Shell>(['sh', 'dash', 'ash', 'yash', 'ksh', 'mksh']
 /** The statements whose failure stops the shell under `set -e` (a compound command stops in the command that fails). */
 const ERREXIT_STOPS = new Set(['command', 'extended_test', 'arithmetic_command', 'subshell', 'pipeline']);
 
-/** How many times a function body is walked with different states before the rest of its calls are guessed. */
-const WALKS_PER_FUNCTION = 4;
 /** How deep calls are followed (deeper ones are guessed). */
 const CALL_DEPTH = 64;
-
-/**
- * A walk of a function body: the state it was called with (`entry`, with the call's prefix assignments) and what its
- * frame hid (`saved`), the state after it, the modes it was made in (`how`, see `reuseKey`), the states where an error
- * in it ended or may end the line, what it changed, and the bodies it ran (itself, and those it called).
- */
-interface Walk {
-  entry: ShellState; saved: ReadonlyMap<string, VariableState | undefined>; exit: ShellState; how: string;
-  aborts: ShellState[]; maybes: ShellState[]; changed: ReadonlySet<string>; inside: ReadonlySet<SyntaxNode>;
-}
-
-/** Whether a state the walk gives after the call (its end, or where an error ends the line) holds the word its entry gave `name`. */
-function wordAfter(walk: Walk, name: string): boolean {
-  const word = walk.entry.variables.get(name)?.source;
-  for (const st of [walk.exit, ...walk.aborts, ...walk.maybes]) if (st.variables.get(name)?.source === word) return true;
-  return false;
-}
 
 /** The walk of a tree (`program`), with its parts. */
 export class Walker {
@@ -69,6 +51,8 @@ export class Walker {
   readonly builtins = new WalkBuiltins(this);
   readonly aliases = new WalkAliases(this);
   readonly expansions = new WalkExpansions(this);
+  /** The walks of function bodies, and their reuse (./reuse.ts). */
+  readonly reuse = new WalkReuse(this);
 
   /** The states each node was run with (more than one in a loop or a function called more than once); merged by `runAt`, which costs much: `has` asks only whether the walk ran a node. */
   readonly runStates = new Map<SyntaxNode, ShellState[]>();
@@ -105,14 +89,10 @@ export class Walker {
   readonly ends: ShellState[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   aliasHost: SyntaxNode | undefined;
-  /** The walks of each function body (a call with the same entry and frame reuses one, `walkOrReuse`). */
-  private readonly walks = new Map<SyntaxNode, Walk[]>();
-  /** The bodies each walk being made has run (`Walk.inside`). */
-  private readonly insides: Set<SyntaxNode>[] = [];
   /** What the walks of each function body changed (from the start: what an earlier walk of the script found, `seed`'s). */
   readonly changes = new Map<SyntaxNode, Set<string>>();
   /**
-   * The calls not walked (recursive, too deep, past `WALKS_PER_FUNCTION`), each with how many changes of the body it
+   * The calls not walked (recursive, too deep, past `WALKS_PER_FUNCTION` of ./reuse.ts), each with how many changes of the body it
    * took as unknown: a body that changes more by the end of the walk (`x=2` after the recursive call of
    * `g() { …; g; return; fi; x=2; }`) makes the walk short (`short`).
    */
@@ -148,10 +128,10 @@ export class Walker {
   readonly live = new Set<SyntaxNode>();
 
   /**
-   * The function definitions whose body a call did not walk (more entry states than `WALKS_PER_FUNCTION`, a recursive
+   * The function definitions whose body a call did not walk (more entry states than `WALKS_PER_FUNCTION` of ./reuse.ts, a recursive
    * or too deep call) and the loops whose passes did not settle: the conditions in them are not decided.
    */
-  private readonly unwalked = new Set<SyntaxNode>();
+  readonly unwalked = new Set<SyntaxNode>();
   /**
    * The function bodies called from a place where what the walks found may not hold (`g` in
    * `rc() { …; rc; return; fi; g; }`: the recursive call, not walked, runs `g`): see `everywhere`.
@@ -204,7 +184,7 @@ export class Walker {
     return this.widened.some((w) => this.changes.get(w.def)!.size > w.size);
   }
 
-  /** How many times an `unset` showed what a caller's frame hides (src/semantics/walk/scopes.ts, `revealed`). */
+  /** How many times an `unset` showed what a caller's frame hides (src/semantics/walk/scopes.ts, `revealed`), or `declare -g` wrote it. */
   reveals = 0;
 
   put<K extends Kind>(st: ShellState, kind: K, name: string, value: Entry<K> | undefined): ShellState {
@@ -311,13 +291,13 @@ export class Walker {
       for (const defs of this.functionDefs.values()) {
         for (const def of defs) {
           const at = this.runAt(def);
-          if (!at || this.walks.has(def)) continue;
+          if (!at || this.reuse.walks.has(def)) continue;
           found = true;
           // (It may be called from outside the script, with any values: its conditions are not decided.)
           this.unwalked.add(def);
           const { since, proc } = this.changeAtDefinition.get(def) ?? { since: Infinity, proc: undefined }; // (None where bash stops at it.)
           const after = new Set([...this.lastChange].filter(([, i]) => i > since).map(([k]) => k));
-          this.walks.set(def, []);
+          this.reuse.walks.set(def, []);
           this.outside++;
           this.walkBody(def, widen(this, at, after, { since, proc }), { def, saved: new Map(), proc });
           this.outside--;
@@ -507,7 +487,7 @@ export class Walker {
   }
 
   /** The line or the `${ …; }` an error here would end (see `abort`): none in a subshell, or outside the script's walk. */
-  private unitTarget(): Extract<Target, { kind: 'unit' | 'substitution' }> | undefined {
+  unitTarget(): Extract<Target, { kind: 'unit' | 'substitution' }> | undefined {
     for (let i = this.targets.length - 1; i >= 0; i--) {
       const t = this.targets[i];
       if (t.kind === 'subshell') return undefined;
@@ -978,7 +958,7 @@ export class Walker {
     // (`$?` in the body is not followed: the walks are remembered by the state without it.)
     st = withStatus(st, undefined);
     // (A body that only one no call reached calls: its conditions are not decided either, see `uncalled`.)
-    if (this.outside && !this.walks.has(def)) this.unwalked.add(def);
+    if (this.outside && !this.reuse.walks.has(def)) this.unwalked.add(def);
     const site = this.aliasHost ?? this.node!;
     const sites = this.calls.get(def) ?? new Map<SyntaxNode, boolean>();
     if (!this.silent) {
@@ -1002,88 +982,9 @@ export class Walker {
         entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry, false, true), name, 'x', a);
         entry = { ...entry, variables: entry.variables.with(name, { ...entry.variables.get(name)!, scope: { depth: this.frames.length + 1, temporary: true } }) };
       }
-      exit = this.walkOrReuse(def, st, entry, frame);
+      exit = this.reuse.call(def, st, entry, frame);
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
-  }
-
-  /**
-   * The state after the body of `def` runs from `entry` with `frame` (what the call's prefix assignments hide, `x=1 f`;
-   * `st`: the state before them). A walk made from the same entry, with the same frame and in the same modes, is reused
-   * (each state once: a body that calls a function twice would otherwise double the walks at each level of calls,
-   * `f2() { f1; f1; }`, `f2() { x=1 f1; x=1 f1; }`); past `WALKS_PER_FUNCTION` walks, the body's changes are not known.
-   */
-  private walkOrReuse(def: SyntaxNode, st: ShellState, entry: ShellState, frame: Frame): ShellState {
-    const walks = this.walks.get(def) ?? [];
-    if (!this.silent) this.walks.set(def, walks);
-    const how = this.reuseKey();
-    const seen = walks.find((w) => w.how === how && (w.entry === entry || sameState(w.entry, entry)) && sameSaved(w.saved, frame.saved));
-    // (A walk reused gives again the states where an error in it ended the line, see `abort`, and makes its changes
-    // again here, for what collects them: a loop, the body that calls it, a trap's action.)
-    const unit = this.unitTarget();
-    if (seen) {
-      // (It holds the value words of its own entry: those that differ here are no origin of a value, `valueOrigin`. The
-      // word of a prefix assignment stays in the bodies the walk ran, unless a state it gives after the call holds it.
-      // What the call restores is this call's.)
-      for (const name of sourcesApart(seen.entry, entry)) {
-        if (frame.saved.has(name) && !wordAfter(seen, name)) this.mixedIn(name, seen.inside);
-        else this.mixedSources.set(name, 'everywhere');
-      }
-      const { exit, apart } = restoredFor(seen.exit, seen.saved, frame.saved);
-      for (const name of apart) this.mixedSources.set(name, 'everywhere');
-      for (const inside of this.insides) for (const d of seen.inside) inside.add(d);
-      if (unit && unit.dead === this.mode.dead) pushAll(unit.aborts, seen.aborts);
-      for (const m of seen.maybes) this.abort(m, false);
-      for (const key of seen.changed) {
-        this.lastChange.set(key, ++this.changeCount);
-        for (const c of this.collecting) c.add(key);
-      }
-      return exit;
-    }
-    if (walks.length >= WALKS_PER_FUNCTION) {
-      // (From the state before the prefix assignments, which are gone after the call: what the body changes is not known.)
-      const exit = notWalked(this, def, st);
-      this.unwalked.add(def);
-      this.abort(st, false);
-      return exit;
-    }
-    const from = unit?.aborts.length ?? 0;
-    const maybesFrom = unit?.maybes.length ?? 0;
-    const changed = new Set<string>();
-    const saved = new Map(frame.saved);
-    const inside = new Set<SyntaxNode>();
-    this.collecting.push(changed);
-    this.insides.push(inside);
-    const reveals = this.reveals;
-    let exit: ShellState;
-    try {
-      exit = this.walkBody(def, entry, frame);
-    } finally {
-      this.collecting.pop();
-      this.insides.pop();
-    }
-    // (One that showed what a caller's frame hides, `revealed`, is not reused: another caller's frame hides another.)
-    if (!this.silent) walks.push({ entry, saved, inside, exit, how: this.reveals === reveals ? how : `${how} ${this.reveals}`, aborts: [...new Set(unit?.aborts.slice(from))], maybes: [...new Set(unit?.maybes.slice(maybesFrom))], changed });
-    return exit;
-  }
-
-  /** `name` holds another word than the one a reused walk gives it in the bodies `inside` (`mixedSources`). */
-  private mixedIn(name: string, inside: ReadonlySet<SyntaxNode>): void {
-    const was = this.mixedSources.get(name);
-    if (was === 'everywhere') return;
-    const next = new Set(was);
-    for (const d of inside) next.add(d);
-    this.mixedSources.set(name, next);
-  }
-
-  /**
-   * What a walk of a function body depends on besides its entry state: each mode of the walk (`mode`: in it or not),
-   * and whether an error ends a line there or a subshell (see `abort`). A walk is reused where these are the same
-   * (`call`). (A trap's action walked only for what it changes, `silent`, records nothing, and changes nothing a walk
-   * gives: it reuses the others.)
-   */
-  private reuseKey(): string {
-    return [...Object.values(this.mode).map((depth) => depth > 0), !!this.unitTarget()].join(' ');
   }
 
   /**
@@ -1127,7 +1028,7 @@ export class Walker {
 
   /** Walks the body of `def` from `entry`; its locals (in `frame`) and its `local -` options are restored after it. */
   private walkBodyOnce(def: SyntaxNode, entry: ShellState, frame: Frame): ShellState {
-    if (!this.walks.has(def) && !this.silent) this.walks.set(def, []);
+    if (!this.reuse.walks.has(def) && !this.silent) this.reuse.walks.set(def, []);
     const body = field(def, 'body');
     if (!body) return entry;
     let top = def;
@@ -1137,7 +1038,7 @@ export class Walker {
     this.expand = this.parseAt.get(top) ?? entry;
     this.stack.push(def);
     this.frames.push(frame);
-    for (const inside of this.insides) inside.add(def);
+    this.reuse.entered(def);
     const changes = this.changes.get(def) ?? new Set<string>();
     this.changes.set(def, changes);
     this.collecting.push(changes);

@@ -115,6 +115,9 @@ const ROWS: readonly Row[] = [
   { script: 'set -e; f() { use 1 "$p"; maybe; }; p=a f; p=a f; p=b; use 2 "$p"', origins: { 1: null, 2: 'p=b' } },
   { script: 'f() { use 1 "$p"; : "${q:1:-4}"; }\np=a f; p=a f\nuse 2 "$p"', origins: { 1: null, 2: null } },
   { script: 'f() { declare -g p; }; p=x; p=a f; p=x; p=a f; use 1 "$p"', origins: { 1: null } },
+  // (`declare -g` from a call, of a caller's local, sets what that caller's frame restores: at each call, so the walk is not reused.)
+  { script: 'x=g; g() { declare -g x=dg; }; h1() { local x=l; y=1 g; }; h2() { local x=l; y=1 g; }; h1; x=g; h2; use 1 "$x"', origins: { 1: 'x=dg' } },
+  { script: 'x=g; g() { declare -g x=dg; }; h1() { local x=l; g; }; h2() { local x=l; g; }; h1; x=g; h2; use 1 "$x"', origins: { 1: 'x=dg' } },
   // Quotes and backslashes: the value is the word's text, without them.
   { script: 'p="a\\\\.b"; use 1 "$p"; q=\'x y\'; use 2 "$q"', origins: { 1: 'p="a\\\\.b"', 2: "q='x y'" } },
   // A `case` the walk decides, and one it does not.
