@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.14.0
 
-Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+A variable the script sets is read in the language of the command that uses it, and its value shows on more lines. Large scripts no longer freeze the editor or the web page while their colours and problems are worked out.
+
+Details and examples: [docs/changes/0.14.0.md](https://github.com/sf624/bash-explainer/blob/v0.14.0/docs/changes/0.14.0.md).
 
 ### New
 
@@ -15,9 +17,10 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- Pasting or opening a large script (thousands of lines, with functions called from many places) no longer freezes the web page or the editor for tens of seconds while its colours and problems are worked out.
+- Pasting or opening a large script (thousands of lines, with functions called from many places, also with a prefix assignment such as `MODE=a helper`) no longer freezes the web page or the editor for tens of seconds while its colours and problems are worked out.
 - With `shopt -s nocasematch` on, the example of `[[ $x =~ re ]]` ignores case as bash does (`Y` matches `^(y|yes)$`); where nocasematch may be on, `[[ ]]` and `case` patterns show no example.
-- Large scripts whose functions call each other with a prefix assignment (`MODE=a helper`) no longer freeze the editor or the web page: such a call is worked out once for each state, as a call without one is.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.13.0...v0.14.0)
 
 ## 0.13.0
 
