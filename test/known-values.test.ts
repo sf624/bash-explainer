@@ -557,12 +557,37 @@ describe('the assignment of a value its uses read in a language (known-values.md
   it('several uses with one reading: every line is named; past three, the first three and how many more', () => {
     const uses = (n: number) => "x='^x'\n" + Array.from({ length: n }, (_, i) => `grep -E "$x" f${i}\n`).join('');
     assert.strictEqual(said(uses(2)), 'read as an extended regex (ERE) by `grep -E`, lines 2 and 3');
-    assert.strictEqual(said(uses(3)), 'read as an extended regex (ERE) by `grep -E`, lines 2, 3 and 4');
-    assert.strictEqual(said(uses(5)), 'read as an extended regex (ERE) by `grep -E`, lines 2, 3, 4 and 2 more');
-    assert.strictEqual(said(uses(5), 0, 'ja'), '`grep -E` が拡張正規表現(ERE)として読む（行 2、3、4 ほか 2 行）');
+    assert.strictEqual(said(uses(3)), 'read as an extended regex (ERE) by `grep -E`, lines 2–4');
+    assert.strictEqual(said(uses(5)), 'read as an extended regex (ERE) by `grep -E`, lines 2–6');
+    assert.strictEqual(said(uses(5), 0, 'ja'), '`grep -E` が拡張正規表現(ERE)として読む（行 2〜6）');
+    // (Lines apart: the first three, and how many more.)
+    const apart = "x='^x'\n" + Array.from({ length: 5 }, (_, i) => `grep -E "$x" f${i}\n:\n`).join('');
+    assert.strictEqual(said(apart), 'read as an extended regex (ERE) by `grep -E`, lines 2, 4, 6 and 2 more');
+    assert.strictEqual(said(apart, 0, 'ja'), '`grep -E` が拡張正規表現(ERE)として読む（行 2、4、6 ほか 2 行）');
     assert.deepStrictEqual(assigned(explain(uses(5), 0)).children.map((t) => t.label), ['^', 'x']);
     // (Two uses on one line: the line once, and the command as written with each option once.)
     assert.strictEqual(said("k='^k'\ngrep -E -e \"$k\" -e \"$k\" f\n"), 'read as an extended regex (ERE) by `grep -E -e`, line 2');
+  });
+
+  it('the command as written: its options with their values, but a value that is a copy of a variable', () => {
+    assert.strictEqual(said("re='^a'\ngrep -m 1 -E \"$re\" f\n"), 'read as an extended regex (ERE) by `grep -m 1 -E`, line 2');
+    assert.strictEqual(said("re='^a'\ngrep -A 2 \"$re\" f\n"), 'read as a basic regex (BRE) by `grep -A 2`, line 2');
+    assert.strictEqual(said("s='p'\nsed -n -f x -e \"$s\" f\n"), 'read as a sed script by `sed -n -f x -e`, line 2');
+  });
+
+  it('many readers: one flavour said once, each command once, and the first three of each list', () => {
+    const src = "re='^ERROR'\n" + ['-q', '-c', '-v', '-n', '-l', '-i', '-o', '-h'].map((o, i) => `grep ${o} "$re" f${i}\n`).join('');
+    assert.strictEqual(said(src), 'read as a basic regex (BRE) by `grep -q`, `grep -c`, `grep -v` and 5 more, lines 2–9');
+    assert.strictEqual(said(src, 0, 'ja'), '`grep -q`・`grep -c`・`grep -v` ほか 5 つが基本正規表現(BRE)として読む（行 2〜9）');
+    // (Past three readers, how many more ways, and their lines.)
+    const ways = "v='^a'\ngrep \"$v\" f\ngrep -E \"$v\" f\ngrep -P \"$v\" f\nsed -n \"$v\" f\nawk \"$v\" f\n";
+    assert.strictEqual(said(ways), 'read as a basic regex (BRE) by `grep` (line 2), as an extended regex (ERE) by `grep -E` (line 3), as a Perl-compatible regex (PCRE) by `grep -P` (line 4) and in 2 more ways (lines 5 and 6)');
+    assert.strictEqual(said(ways, 0, 'ja'), '`grep` が基本正規表現(BRE)として（行 2）、`grep -E` が拡張正規表現(ERE)として（行 3）、`grep -P` が Perl 互換正規表現(PCRE)として（行 4）、ほか 2 通り（行 5、6）読む');
+    // (The text stays short whatever the number of uses.)
+    const many = "re='^E'\n" + Array.from({ length: 200 }, (_, i) => `grep -m ${i} "$re" f\n`).join('');
+    assert.ok(said(many).length < 120, said(many));
+    // (Commands that find an error, several of them.)
+    assert.strictEqual(said("v='a['\negrep \"$v\" f\ngrep -E \"$v\" f\n"), '`egrep` and `grep -E` read it as an extended regex (ERE) on lines 2 and 3 and find an error there');
   });
 
   it('several uses with one reading in two flavours: the rows, and each use named with its flavour', () => {
@@ -628,6 +653,7 @@ describe('the assignment of a value its uses read in a language (known-values.md
     assert.strictEqual(said("p='print 1'\nperl -e \"$p\"\n", 0, 'ja'), '`perl -e` が Perl として読む（行 2）');
     assert.strictEqual(said("e='a\\tb'\necho -e \"$e\"\n"), 'read as escapes by `echo -e`, line 2');
     assert.strictEqual(said("m='755'\nchmod \"$m\" f\n"), 'read as a file mode by `chmod`, line 2');
+    assert.strictEqual(said("m='027'\numask \"$m\"\n"), 'read as a umask by `umask`, line 2');
   });
 
   it('`[[ $x =~ $re ]]`: the ERE bash reads', () => {
@@ -640,8 +666,10 @@ describe('the assignment of a value its uses read in a language (known-values.md
     const src = "g='^[A-Z]+$'\ngrep -E $g f\n";
     assert.strictEqual(said(src), 'read as an extended regex (ERE) by `grep -E`, line 2, where no file name matches it');
     assert.strictEqual(said(src, 0, 'ja'), '`grep -E` が拡張正規表現(ERE)として読む（行 2。一致するファイル名がないとき）');
-    // (Quoted and unquoted: two readings, the same tokens but not the same assumption.)
+    // (Quoted and unquoted: two readings, the same tokens but not the same assumption; the reader said once, its condition with its lines.)
     assert.deepStrictEqual(assigned(explain(src + 'grep -E "$g" f\n', 0)).children, []);
+    assert.strictEqual(said(src + 'grep -E "$g" f\n'), 'read as an extended regex (ERE) by `grep -E`, lines 2 and 3, on line 2 where no file name matches it');
+    assert.strictEqual(said(src + 'grep -E "$g" f\n', 0, 'ja'), '`grep -E` が拡張正規表現(ERE)として読む（行 2、3。行 2 は一致するファイル名がないとき）');
   });
 
   it('a variable bash reads itself keeps bash\'s reading: `PS1`', () => {
