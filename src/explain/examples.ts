@@ -43,7 +43,7 @@ import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, ty
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
-import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, optionValues, resolve, shoptAt, type ShoptName, specFor, wordAt } from './reads';
+import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, nocasematchAt, optionValues, resolve, shoptAt, type ShoptName, specFor, wordAt } from './reads';
 import { has, operands, readsFields, regexWords, values } from '../argv/query';
 import { impliedOptions } from '../dict/aliases';
 import { wordFields } from '../semantics/words';
@@ -62,7 +62,7 @@ export function regexExample(cx: Explainer, js: JsRegex, mode: 'lines' | 'invert
 
 function regexExampleOf(cx: Explainer, js: JsRegex, mode: 'lines' | 'inverted' | 'values', subject?: SyntaxNode): void {
   // (`nocasematch` makes `=~` ignore case: surely on, the regex ignores it too; where it may be on, nothing is claimed.)
-  const nocase = subject && shoptAt(cx, subject).nocasematch;
+  const nocase = subject && nocasematchAt(cx, subject);
   if (nocase === 'unknown') return;
   if (nocase === 'on') js = { ...js, flags: js.flags + 'i' };
   const ex = regexExamples(js);
@@ -103,7 +103,7 @@ export function globOpts(cx: Explainer, use: 'file' | 'pattern' | 'none', n: Syn
     const o: GlobOpts = { globstar: on('globstar') || shopt.globstar === 'unknown', dotglob: on('dotglob'), nocase: on('nocaseglob'), noShopt: shopt.dotglob === 'unsupported' };
     return Object.fromEntries(Object.entries(o).filter(([, v]) => v));
   }
-  return use === 'pattern' && on('nocasematch') ? { nocase: true } : {};
+  return use === 'pattern' && nocasematchAt(cx, n) === 'on' ? { nocase: true } : {};
 }
 
 export function pushExample(cx: Explainer, ex: Example | undefined): void {
@@ -137,7 +137,7 @@ export function interactive(cx: Explainer, spec: RerunSpec, inputs: InputBox[]):
 export function patternExample(cx: Explainer, pats: SyntaxNode[], labels: [string, string], known?: { value: string; matches: boolean }): void {
   const texts = pats.map((p) => unquotedWord(p) ?? (p.type === 'extglob_pattern' ? nameText(p) : undefined));
   // (Where `nocasematch` may be on, the matcher would claim a case: no example.)
-  if (shoptAt(cx, pats[0]).nocasematch === 'unknown') return;
+  if (nocasematchAt(cx, pats[0]) === 'unknown') return;
   guardedExample(cx, 'glob', () => pushExample(cx, patterns.patternExample(texts, globOpts(cx, 'pattern', pats[0]), labels, cx.lang, known)));
 }
 
@@ -165,8 +165,7 @@ export function subjectValue(cx: Explainer, n: SyntaxNode): string | undefined {
 /** Values that make a simple `[ ]` / `[[ ]]` / `(( ))` test true and false, with the value of its variable where the model knows it. */
 export function testExample(cx: Explainer, n: SyntaxNode, bracket: TestShape | undefined, asKind?: '['): void {
   // (`nocasematch` changes `[[ == ]]`, which the cases do not follow.)
-  const nocase = n.children[0].type === '[[' ? shoptAt(cx, n).nocasematch : 'off';
-  const plain = nocase === 'off' || nocase === 'default';
+  const plain = n.children[0].type !== '[[' || nocasematchAt(cx, n) === 'off';
   // (The variable's value, split or empty too: the cases read the words with it.)
   const known = (part: SyntaxNode, name: string) => (plain ? shownValue(cx, part, name) : undefined);
   // (Each case as bash reads the test's words with its value: `[ $x = "a b" ]` fails for `x="a b"`.)

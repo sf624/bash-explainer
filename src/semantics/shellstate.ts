@@ -357,6 +357,17 @@ export function shoptIn(st: ShellState, name: string, shell: Shell | undefined):
 }
 
 /**
+ * Whether `nocasematch` is on in `st`, for the examples and the plain-text reading of a pattern: `on`, `off` or `unknown`
+ * (set on some paths only). After code the walk does not read (`opaque`: `source`, `eval`) it is taken as set before: a
+ * sourced file almost never turns it on (maintainer's decision, 2026-11-11; docs/backlog-archive.md). A shell without
+ * `shopt` has none: off.
+ */
+export function nocasematchIn(st: ShellState, shell: Shell | undefined): 'on' | 'off' | 'unknown' {
+  const state = shoptIn(st, 'nocasematch', shell);
+  return state === 'on' || state === 'unknown' ? state : 'off';
+}
+
+/**
  * Whether a variable may come from the environment, and how likely: `usually`, a name the environment almost always
  * has (bash's `HOME`, `PATH`, `TERM`: `BashVariable.environment`; and `USER`: `usualEnvironment`); `maybe`, another name in capitals, which by custom is the
  * environment's; `unlikely`, a name with lower case, which POSIX leaves to the script's own variables (bash still

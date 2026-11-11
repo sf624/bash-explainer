@@ -6,7 +6,7 @@ import { parseExpansion, type ParsedExpansion } from '../expansion';
 import { decodedText } from '../staticword';
 import { nameText, type SyntaxNode } from '../syntax/tree';
 import { globbedByBash, plainPattern } from './chars';
-import { attribute, option, type ShellState, type StateModel } from './state';
+import { attribute, nocasematchIn, type ShellState, type StateModel } from './state';
 import { braceWords, type Char, patternOfChars, wordMeaning } from './words';
 
 /** A field of a word that pathname expansion reads as a pattern: its text after quote removal, and as a pattern (quoted characters escaped); neither where not known. */
@@ -131,10 +131,8 @@ export function onlyGlobbed(n: SyntaxNode, model: StateModel): boolean {
 export function plainPatternText(n: SyntaxNode, model: StateModel): string | undefined {
   const w = wordMeaning(n, model);
   if (w?.context !== 'cond-pattern' && w?.context !== 'case-pattern') return undefined;
-  // (After code the walk does not read, an `eval` or a `source`: nocasematch may be on, a name may have another value.)
-  if (w.state.opaque) return undefined;
-  const nocase = option(w.state, 'shopt', 'nocasematch');
-  if (nocase !== 'off' && nocase !== 'default') return undefined;
+  // (After code the walk does not read, an `eval` or a `source`, nocasematch is taken as set before: `nocasematchIn`. The values of names come from the model's fields, which are not known then.)
+  if (nocasematchIn(w.state, model.shell) !== 'off') return undefined;
   // (One word and one field: neither `[[ ]]` nor `case` brace-expands or splits a pattern.)
   const field = braceWords(n, model, () => '')!.words[0].fields?.[0];
   return field && plainPattern(patternOfChars(field));

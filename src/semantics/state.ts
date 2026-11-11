@@ -42,7 +42,7 @@ import { isBash } from '../shellfeatures';
 
 export {
   attribute, type AliasState, type Attribute, refTarget, type CommandEntry, defaultOn, type ErrexitWhy, exportedValue, type FunctionState, hashOutcomes, type HashOutcome, merge, NameMap, option,
-  type OptionState, type ShellState, shoptIn, type Tri, type VariableState,
+  type OptionState, type ShellState, nocasematchIn, shoptIn, type Tri, type VariableState,
 } from './shellstate';
 export { ARITH_ASSIGNED, type Declaration } from './vars';
 export { lastStageInShell } from './env';

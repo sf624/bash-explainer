@@ -1264,3 +1264,13 @@ All three predate the PR; they are in the explanation of `[[ =~ ]]` for a litera
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".
 - "Usability toward 9/10" was split into one issue per step (label `usability-9`); U1, U4 and U6 were done (#639, #637, #638).
 - The roadmap's heading items ("Readings left after the receives line", "One source per fact, stage SC", "Dialect levels left") were judged by their parts: each part is an issue or an entry above.
+
+## Examples under nocasematch (found reviewing #823, 2026-11-11)
+
+Rare corners, dropped (YAGNI). Kind: `bug`.
+
+- **A sourced file that turns nocasematch on.** `source ./x.sh; [[ $a =~ ^y$ ]]`: the examples (and the plain-text reading of a pattern) take nocasematch as set before the `source` (maintainer's decision, 2026-11-11). Wrong only if x.sh runs `shopt -s nocasematch`.
+- **`[[ $a =~ ^[Z-a]$ ]]` under nocasematch.** bash fails with status 2 ("Invalid range end": REG_ICASE folds the ends); we show matches.
+- **`[[ $a == [Z-a] ]]` under nocasematch.** Nothing matches in bash; we show `a | _ | A`.
+- **`[[ $a == é* ]]`.** A non-ASCII literal makes the pattern look like a plain string, so the test example is wrong. Predates #823.
+- **`ſ` and `K` (Kelvin sign) folding.** glibc and JavaScript's `i` flag without `u` fold them differently; no example generates them today.

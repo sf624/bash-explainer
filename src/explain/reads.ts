@@ -13,7 +13,7 @@ import { programSections } from '../refs';
 import { type CommandLookup, customSpecIn, hostSpecIn, NO_SPEC, shellVariantIn, specIn } from '../semantics/commandhead';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
-import { attribute, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
+import { attribute, nocasematchIn, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
 import { type ReadKnown, readAs, surelyRuns } from '../semantics/scriptstops';
 import { type SyntaxFault, syntaxFault } from '../semantics/syntaxerror';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
@@ -106,6 +106,11 @@ export function restrictedCall(cx: Explainer, at: SyntaxNode, spec: CommandSpec,
 export function shoptAt(cx: Explainer, n: SyntaxNode, when: 'run' | 'parse' = 'run'): ShoptStates {
   const st = cx.state.at(n)[when];
   return Object.fromEntries(SHOPT_NAMES.map((name) => [name, shoptIn(st, name, cx.state.shell)])) as ShoptStates;
+}
+
+/** Whether nocasematch is on at `n` (`nocasematchIn`, src/semantics/shellstate.ts): the one reading of the examples and of the plain-text patterns. */
+export function nocasematchAt(cx: Explainer, n: SyntaxNode, when: 'run' | 'parse' = 'run'): 'on' | 'off' | 'unknown' {
+  return nocasematchIn(cx.state.at(n)[when], cx.state.shell);
 }
 
 /** The meaning of the word that holds `n` (src/semantics/words.ts). */
