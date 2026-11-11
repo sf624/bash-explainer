@@ -3,6 +3,7 @@
 
 import type { Span, Token } from '../analyzer-types';
 import { type ArgRole, type ArgvParse, type ValueRole } from '../argv/interpret';
+import { roleLanguage } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
 import { attribute } from '../semantics/state';
 import { attachedWritten } from '../argv/words';
@@ -159,7 +160,8 @@ export function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disabl
   let t: Token;
   // (`tar cf a.tar`: the value of the letter `f`.)
   const valueFor = /^-/.test(flag) ? cx.s(`\`${flag}\` オプションの値`, `Value for \`${flag}\``) : cx.s(`\`${flag}\` の値`, `Value for \`${flag}\``);
-  if (spec?.lang) t = positional(cx, v, valueFor + ': ' + cx.t(role.option!.text), spec.lang);
+  const lang = roleLanguage(role, false);
+  if (lang) t = positional(cx, v, valueFor + ': ' + cx.t(role.option!.text), lang);
   else {
     const known = own(spec?.values, v.text);
     t = cx.tok(v, 'argument', known

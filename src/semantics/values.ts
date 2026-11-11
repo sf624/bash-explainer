@@ -74,6 +74,12 @@ export function plainCopy(word: SyntaxNode): SyntaxNode | undefined {
   return copiedName(inner) !== undefined ? inner : undefined;
 }
 
+/** The word of which the expansion `part` is a plain copy (`plainCopy`): the string `"$x"` around it, or `part` itself. */
+export function copyingWord(part: SyntaxNode): SyntaxNode {
+  const p = part.parent!;
+  return plainCopy(p)?.startIndex === part.startIndex ? p : part;
+}
+
 /**
  * The assignment word whose text the expansion `part` copies (docs/design/known-values.md, 6.1): the value word of the
  * one plain assignment that gave the variable its value on every path to `part` (`VariableState.source`: `x='^a'`,

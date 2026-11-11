@@ -3,6 +3,7 @@
 // so that a value is never taken for an option (`grep -e -v`), nor an option's letter for another (`sed -ie`).
 import type { ArgRole, ArgvParse, ValueRole } from './interpret';
 import type { Shell } from '../dialect';
+import type { EmbeddedLang } from '../embedded/types';
 import type { CommandSpec, ExitCall, ExitMeaning, NameSpace, OperandSpec, OptionSpec, VariableAct } from './spec';
 
 type OptionRole = Extract<ArgRole, { role: 'option' }>;
@@ -183,6 +184,37 @@ export function operands(parse: ArgvParse, name?: string): GivenOperand[] {
     if (role.role === 'operand' && (name === undefined || role.spec?.name === name)) out.push({ word, role });
   }
   return out;
+}
+
+/** The roles of the words that are options (not their values in words of their own): shown with the command's name, as written (`sed -n`, `grep -E -e`). */
+const OPTION_ROLES = new Set<ArgRole['role']>(['option', 'unknown-option', 'cluster', 'old-style', 'pattern-option', 'open-option']);
+
+/** The role of the word `word` of a parse, and the parse and spec that read it; `before`: the words before it there that are options or subcommands. */
+export interface WordRole { parse: ArgvParse; spec: CommandSpec; role: ArgRole; before: number[] }
+
+/**
+ * The role of the word `word` of `parse` (read by `spec`), in the parse of the subcommand that reads it (`docker run X`), with
+ * the options and subcommands before it (`WordRole.before`). None for a word of a command a slot runs (`sudo grep X`), whose
+ * words its role's parse holds: those are read again on their line.
+ */
+export function roleOfWord(parse: ArgvParse, spec: CommandSpec, word: number, before: readonly number[] = []): WordRole | undefined {
+  const seen = [...before];
+  for (const r of parse.roles) {
+    if (r.word === word) return { parse, spec, role: r.role, before: seen };
+    // (The words after a subcommand are in its parse.)
+    if (r.role.role === 'subcommand') return roleOfWord(r.role.parse, r.role.spec, word, [...seen, r.word]);
+    if (OPTION_ROLES.has(r.role.role)) seen.push(r.word);
+  }
+  return undefined;
+}
+
+/**
+ * The language a command reads the word of the role `role` in, by its spec (`lang` of an operand, or of the value of an option
+ * in a word of its own): none for a function's words (`isFn`), whose options and operands no spec describes.
+ */
+export function roleLanguage(role: ArgRole, isFn: boolean | 'maybe'): EmbeddedLang | undefined {
+  if (role.role === 'operand') return isFn ? undefined : role.spec?.lang;
+  return role.role === 'value' ? role.spec?.lang : undefined;
 }
 
 /**

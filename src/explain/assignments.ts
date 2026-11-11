@@ -19,7 +19,7 @@ import { isPlainWord, splitElement, staticWordValue, unquotedWord } from '../sta
 import { assignmentSpan, field, nameText, type SyntaxNode } from '../syntax/tree';
 import { tokenBasisOf } from '../tokenbases';
 import type { Explainer } from './context';
-import { embeddedValue } from './embedded';
+import { assignedReading, embeddedValue } from './embedded';
 import { skeletal } from './nodes';
 import { arrayKind, isAssoc, wordAt } from './reads';
 import { redirectedWhole } from './redirections';
@@ -209,6 +209,15 @@ export function assignment(cx: Explainer, n: SyntaxNode, decl = false): Token {
     if (emb) {
       pushAll(children[0].children, emb.tokens);
       children[0].explanation += ` — ${emb.note!}`;
+    } else if (!lang && name.type !== 'subscript' && value.type !== 'array' && children.length === 1) {
+      // A value that commands read in a language (`re='^a'; grep -E "$re" f`): how its uses read it (known-values.md, 6.2). The
+      // rows go under the value, as a prompt string's; the text on the assignment, as a literal's note goes on its argument: what
+      // commands read is said at the panel's first depth, the quotes of the string at its second.
+      const read = assignedReading(cx, value);
+      if (read) {
+        pushAll(children[0].children, read.tokens);
+        expl += ` — ${read.note}`;
+      }
     }
   }
   return cx.tok(n, 'assignment', expl, children);

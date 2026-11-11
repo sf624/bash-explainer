@@ -226,7 +226,19 @@ function endedBy(list: Marks[Stop], at: number, from: number): boolean {
   return lo < list.length && list[lo].end <= at;
 }
 
-/** The strongest stop before offset `at`, of the shell that started on row `from` (`ExplainOptions.stopsFrom`: a host's shells, one tree), read as `shell` (bash when absent). */
+/**
+ * The row where the shell that runs row `row` started, in a host's text whose shells start on the rows `starts`, in order
+ * (`ExplainOptions.shellStarts`: bats' tests, Markdown's fences): the last start on or before it, else the text's start. None
+ * where the text is no host's (`starts` undefined): one shell.
+ */
+export function shellStartAt(starts: readonly number[] | undefined, row: number): number | undefined {
+  if (!starts) return undefined;
+  let from = 0;
+  for (const s of starts) if (s <= row) from = s;
+  return from;
+}
+
+/** The strongest stop before offset `at`, of the shell that started on row `from` (`shellStartAt`: a host's shells, one tree), read as `shell` (bash when absent). */
 export function stopBefore(tree: SyntaxTree, at: number, from = 0, shell?: Shell): Stop | undefined {
   const { sure, may } = marksOf(tree, shell);
   return endedBy(sure, at, from) ? 'sure' : endedBy(may, at, from) ? 'may' : undefined;

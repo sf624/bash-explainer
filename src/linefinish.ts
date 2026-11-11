@@ -4,7 +4,7 @@
 // texts taken off them, the notes the caller works out with those, the examples the settings keep, the summary, the origin
 // given to the tokens and the labels their texts echo dropped, and the facts put on their tokens. What depends on the walk (the
 // sentence, `argv`, the reading tree of bash's layers) stays with the shell path.
-import type { ContextEntry, Example, ExampleKind, ExplainOptions, LineExplanation, NoteAnchor, Span, Token, TokenOrigin } from './analyzer-types';
+import type { ContextEntry, Example, ExampleKind, ExplainOptions, LineExplanation, NoteAnchor, Span, Token, TokenMark, TokenOrigin } from './analyzer-types';
 import { pictureNote } from './ctlchars';
 import type { Lang } from './i18n';
 import { onceBy } from './lists';
@@ -134,12 +134,24 @@ export function keptExamples(examples: readonly Example[], opts: ExplainOptions,
  */
 export function tokenErrors(lang: Lang, items: readonly Token[], sayAt: (n: Note & { code: string }, span: Span) => string): string[] {
   const found: string[] = [];
+  eachProblem(items, (m, t) => found.push(sayAt(tokenNote(lang, m), t.span)));
+  return [...new Set(found)];
+}
+
+/** Whether a token of `items`, or under them, says a problem (`tokenErrors`): a known value's reading that finds an error in it. */
+export function saysProblemIn(items: readonly Token[]): boolean {
+  let found = false;
+  eachProblem(items, () => { found = true; });
+  return found;
+}
+
+/** Each mark of a token of `items`, or under them, that says a problem, with its token. */
+function eachProblem(items: readonly Token[], f: (m: TokenMark, t: Token) => void): void {
   const walk = (t: Token) => {
-    for (const m of t.marks ?? []) if (saysProblem(m)) found.push(sayAt(tokenNote(lang, m), t.span));
+    for (const m of t.marks ?? []) if (saysProblem(m)) f(m, t);
     t.children.forEach(walk);
     // (A known value read in its command's language has its tokens apart from the tree: an error in the value is the line's, as a literal's.)
     t.value?.reading?.tokens.forEach(walk);
   };
   items.forEach(walk);
-  return [...new Set(found)];
 }

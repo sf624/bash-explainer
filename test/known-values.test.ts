@@ -527,3 +527,213 @@ describe('a known value read in the language of its command (known-values.md, st
     });
   });
 });
+
+describe('the assignment of a value its uses read in a language (known-values.md, step 5)', function () {
+  this.timeout(60000);
+
+  /** The token of the line's first assignment, which says how the uses read its value. */
+  const assignmentOf = (e: LineExplanation): Token => allTokens(e.items).find((t) => t.kind === 'assignment')!;
+  /** The token of the value of the line's first assignment: the string (or the word) its rows go on. */
+  const assigned = (e: LineExplanation): Token => assignmentOf(e).children[0];
+  /** What the assignment line `line` of `src` says of its value's uses, after the text it has without them. */
+  const said = (src: string, line = 0, lang: 'en' | 'ja' = 'en'): string => assignmentOf(explain(src, line, lang)).explanation.split(' — ').slice(1).join(' — ');
+
+  describe('one use: the rows of the use, placed on the string, and the text naming the command and its line', () => {
+    for (const c of CASES) {
+      it(c.name, () => {
+        const { variable, line } = forms(c, '"$v"');
+        const a = assigned(explain(variable, 0));
+        const use = valueToken(explain(variable, line))?.value!.reading!.tokens ?? [];
+        // (The same tokens as the use's: the reader's, finished as a line's are; no example on the assignment line.)
+        assert.deepStrictEqual(a.children.map(shape), use.map(shape), c.name);
+        assert.deepStrictEqual(explain(variable, 0).examples, []);
+        // (Over the string's characters: inside its quotes.)
+        for (const t of a.children) assert.ok(t.span.start.character > a.span.start.character || t.span.start.line > a.span.start.line, c.name);
+        assert.match(assignmentOf(explain(variable, 0)).explanation, new RegExp(` — read as .* by \`${c.use.split(' V')[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\`, line ${line + 1}$`), c.name);
+      });
+    }
+  });
+
+  it('several uses with one reading: every line is named; past three, the first three and how many more', () => {
+    const uses = (n: number) => "x='^x'\n" + Array.from({ length: n }, (_, i) => `grep -E "$x" f${i}\n`).join('');
+    assert.strictEqual(said(uses(2)), 'read as an extended regex (ERE) by `grep -E`, lines 2 and 3');
+    assert.strictEqual(said(uses(3)), 'read as an extended regex (ERE) by `grep -E`, lines 2, 3 and 4');
+    assert.strictEqual(said(uses(5)), 'read as an extended regex (ERE) by `grep -E`, lines 2, 3, 4 and 2 more');
+    assert.strictEqual(said(uses(5), 0, 'ja'), '`grep -E` が拡張正規表現(ERE)として読む（行 2、3、4 ほか 2 行）');
+    assert.deepStrictEqual(assigned(explain(uses(5), 0)).children.map((t) => t.label), ['^', 'x']);
+    // (Two uses on one line: the line once, and the command as written with each option once.)
+    assert.strictEqual(said("k='^k'\ngrep -E -e \"$k\" -e \"$k\" f\n"), 'read as an extended regex (ERE) by `grep -E -e`, line 2');
+  });
+
+  it('several uses with one reading in two flavours: the rows, and each use named with its flavour', () => {
+    const src = "s='^s'\ngrep -E \"$s\" f\ngrep \"$s\" f\n";
+    assert.strictEqual(said(src), 'read as an extended regex (ERE) by `grep -E` (line 2) and as a basic regex (BRE) by `grep` (line 3)');
+    assert.deepStrictEqual(assigned(explain(src, 0)).children.map((t) => t.label), ['^', 's']);
+  });
+
+  it('several uses with different readings: no rows and no warning, each use named with its flavour', () => {
+    const src = "s='^s+'\ngrep \"$s\" f\ngrep -E \"$s\" f\nsed -n \"$s\" f\n";
+    const e = explain(src, 0);
+    assert.strictEqual(said(src), 'read as a basic regex (BRE) by `grep` (line 2), as an extended regex (ERE) by `grep -E` (line 3) and as a sed script by `sed -n` (line 4)');
+    assert.strictEqual(said(src, 0, 'ja'), '`grep` が基本正規表現(BRE)として（行 2）、`grep -E` が拡張正規表現(ERE)として（行 3）、`sed -n` が sed スクリプトとして（行 4）読む');
+    assert.deepStrictEqual(assigned(e).children, []);
+    assert.deepStrictEqual([e.notes, allTokens(e.items).flatMap((t) => t.marks ?? [])], [[], []]);
+  });
+
+  it('a reading with an error: no rows; the text names the line that finds it, and the problem is said once, at the use', () => {
+    const src = "re='a[b'\ngrep -E \"$re\" f\n";
+    const e = explain(src, 0);
+    assert.strictEqual(said(src), '`grep -E` reads it as an extended regex (ERE) on line 2 and finds an error there');
+    assert.strictEqual(said(src, 0, 'ja'), '行 2 の `grep -E` は拡張正規表現(ERE)として読み、エラーになる');
+    assert.deepStrictEqual([assigned(e).children, e.notes], [[], []]);
+    assert.strictEqual(explain(src, 1).notes.length, 1);
+    // (One use reads it, another finds an error: both named, no rows.)
+    const mixed = "z='(a'\ngrep \"$z\" f\ngrep -E \"$z\" f\n";
+    assert.strictEqual(said(mixed), 'read as a basic regex (BRE) by `grep`, line 2; `grep -E` reads it as an extended regex (ERE) on line 3 and finds an error there');
+    assert.strictEqual(said(mixed, 0, 'ja'), '`grep` が基本正規表現(BRE)として読む（行 2）。行 3 の `grep -E` は拡張正規表現(ERE)として読み、エラーになる');
+    assert.deepStrictEqual(assigned(explain(mixed, 0)).children, []);
+  });
+
+  it('a use above the assignment, in a function called after it: a use of it', () => {
+    assert.strictEqual(said("search() {\n  grep -E \"$re\" notes.txt\n}\nre='^TODO'\nsearch\n", 3), 'read as an extended regex (ERE) by `grep -E`, line 2');
+  });
+
+  it('a use whose state does not carry this assignment\'s word is no use of it: the text order does not decide', () => {
+    assert.strictEqual(said("re='^a'\nre='^b'\ngrep -E \"$re\" f\n"), '');
+    assert.strictEqual(said("re='^a'\nre='^b'\ngrep -E \"$re\" f\n", 1), 'read as an extended regex (ERE) by `grep -E`, line 3');
+    assert.strictEqual(said("grep -E \"$re\" f\nre='^a'\n", 1), '');
+    // (Two words on two paths: neither is the origin.)
+    assert.strictEqual(said("if [ \"$1\" ]; then re='^a'; else re='^a'; fi\ngrep -E \"$re\" f\n"), '');
+  });
+
+  it('uses that read no language, and values read nowhere: the line as it was', () => {
+    for (const src of [
+      "q='^q'\necho \"$q\"\n",
+      "q='^q'\nsudo grep -E \"$q\" f\n",
+      "q='^q'\ngrep -E -F \"$q\" f\n",
+      "q='^q a'\ngrep -E $q f\n",
+      "q='^q'\nf() { :; }\nf \"$q\"\n",
+      "q='^q'\n[[ $1 =~ \"$q\" ]]\n",
+      "q='^q'\n[[ $q =~ ^a ]]\n",
+      "q='^q'\ncase $q in a) ;; esac\n",
+      "q='-E'\ngrep \"$q\" x f\n",
+    ]) assert.deepStrictEqual(shape(assignmentOf(explain(src, 0))), shape(assignmentOf(explain(src.split('\n')[0] + '\n', 0))), src);
+    assert.strictEqual(said("q='^q a'\ngrep -E $q f\n"), '');
+    assert.strictEqual(said("q='^q'\nsudo grep -E \"$q\" f\n"), '');
+  });
+
+  it('the languages: a yq expression of a subcommand, Perl, escapes, a file mode', () => {
+    assert.strictEqual(said("q='.a'\nyq e \"$q\" f.yaml\n"), 'read as a yq expression by `yq e`, line 2');
+    assert.strictEqual(said("p='print 1'\nperl -e \"$p\"\n"), 'read as Perl by `perl -e`, line 2');
+    assert.strictEqual(said("p='print 1'\nperl -e \"$p\"\n", 0, 'ja'), '`perl -e` が Perl として読む（行 2）');
+    assert.strictEqual(said("e='a\\tb'\necho -e \"$e\"\n"), 'read as escapes by `echo -e`, line 2');
+    assert.strictEqual(said("m='755'\nchmod \"$m\" f\n"), 'read as a file mode by `chmod`, line 2');
+  });
+
+  it('`[[ $x =~ $re ]]`: the ERE bash reads', () => {
+    const src = "re='^a+$'\n[[ $1 =~ $re ]]\n";
+    assert.strictEqual(said(src), 'read as an extended regex (ERE) by `[[ =~ ]]`, line 2');
+    assert.deepStrictEqual(assigned(explain(src, 0)).children.map(shape), valueToken(explain(src, 1))!.value!.reading!.tokens.map(shape));
+  });
+
+  it('an unquoted value that globs: read where no file name matches it, as its use says', () => {
+    const src = "g='^[A-Z]+$'\ngrep -E $g f\n";
+    assert.strictEqual(said(src), 'read as an extended regex (ERE) by `grep -E`, line 2, where no file name matches it');
+    assert.strictEqual(said(src, 0, 'ja'), '`grep -E` が拡張正規表現(ERE)として読む（行 2。一致するファイル名がないとき）');
+    // (Quoted and unquoted: two readings, the same tokens but not the same assumption.)
+    assert.deepStrictEqual(assigned(explain(src + 'grep -E "$g" f\n', 0)).children, []);
+  });
+
+  it('a variable bash reads itself keeps bash\'s reading: `PS1`', () => {
+    const src = "PS1='\\u@\\h'\ngrep \"$PS1\" f\n";
+    const a = assignmentOf(explain(src, 0));
+    assert.deepStrictEqual(shape(a), shape(assignmentOf(explain("PS1='\\u@\\h'\n", 0))));
+    assert.doesNotMatch(a.explanation, /read as/);
+  });
+
+  it('a backslash bash removes: said on the assignment line, where the quotes are', () => {
+    const src = 're="a\\\\.b"\ngrep "$re" f\n';
+    const a = assigned(explain(src, 0));
+    assert.strictEqual(said(src), 'read as a basic regex (BRE) by `grep`, line 2; bash has already removed the backslash: `\\\\` → `\\`');
+    assert.deepStrictEqual(a.children.map((t) => t.label), ['a', '\\\\.', 'b']);
+    assert.doesNotMatch(argText(explain(src, 1), '"$re"'), /removed the backslash/);
+  });
+
+  it('declarations: `readonly`, `declare -r`, `local`, `export`', () => {
+    assert.strictEqual(said("readonly RE='^r'\ngrep -E \"$RE\" f\n"), 'read as an extended regex (ERE) by `grep -E`, line 2');
+    assert.strictEqual(said("declare -r re='^r'\ngrep -E \"$re\" f\n"), 'read as an extended regex (ERE) by `grep -E`, line 2');
+    assert.strictEqual(said("export p='^r'\ngrep -E \"$p\" f\n"), 'read as an extended regex (ERE) by `grep -E`, line 2');
+    assert.strictEqual(said("f() {\n  local re='^r'\n  grep -E \"$re\" g\n}\nf\n", 1), 'read as an extended regex (ERE) by `grep -E`, line 3');
+  });
+
+  it('a host file: the document\'s line numbers, and each line\'s own shell (Markdown\'s fences)', () => {
+    const text = '# T\n\n```bash\nif [ "$1" ]; then exit 1; fi\nre=\'[a\'\n```\n\nText.\n\n```bash\ngrep -E "$re" f\n```\n';
+    const levels = (order: number[]): unknown => {
+      const doc = openDocument(text, 'markdown', (t) => parser.parse(t));
+      const analyzer = new Analyzer('en');
+      const out = order.map((l) => explainDocumentLine(analyzer, doc, l, 'en', shellsOf(doc.lines, 'a.md', undefined), {})!);
+      const use = out[order.indexOf(10)];
+      return { assignment: assignmentOf(out[order.indexOf(4)]).explanation, use: [valueToken(use)!.value!.reading!.tokens.map(shape), use.notes] };
+    };
+    const first = levels([4, 10]) as { assignment: string; use: [Shape[], string[]] };
+    assert.match(first.assignment, / — `grep -E` reads it as an extended regex \(ERE\) on line 11 and finds an error there$/);
+    // (The use's fence is a shell of its own: the `exit` of the first one is no stop before it, so the error is the use's line's.)
+    assert.match(first.use[1][0], /^ⓧ Error: No `\]` closes this `\[`/);
+    assert.deepStrictEqual(levels([10, 4]), first);
+  });
+
+  it('the same whichever line is explained first', () => {
+    for (const src of [
+      "re='^[A-Z][0-9]+$'\ngrep -E \"$re\" ids.txt\ngrep \"$re\" ids.txt\n",
+      "s='/^BEGIN/,/^END/p'\nsed -n \"$s\" f\n",
+      "if [ \"$1\" ]; then exit 1; fi\nre='[a'\ngrep -E \"$re\" f\n[[ $2 =~ $re ]]\n",
+      "search() {\n  grep -E \"$re\" notes.txt\n}\nre='^TODO'\nsearch\n",
+    ]) {
+      const tree = parser.parse(src);
+      const lines = src.split('\n').length - 1;
+      const all = (order: number[]): unknown[] => {
+        const a = new Analyzer('en');
+        const got = new Map(order.map((l) => [l, a.explainLine(tree, l, 'bash')] as const));
+        return [...got.keys()].sort().map((l) => { const e = got.get(l)!; return [e.items.map(shape), e.notes, valueToken(e)?.value?.reading?.tokens.map(shape)]; });
+      };
+      const forward = all([...Array(lines).keys()]);
+      assert.deepStrictEqual(all([...Array(lines).keys()].reverse()), forward, src);
+    }
+  });
+
+  describe('every output shows the rows, as for `PS1`', () => {
+    const src = "re='^a+$'\ngrep -E \"$re\" f\n";
+    const e = explain(src, 0);
+    const t = assigned(e);
+
+    it('the panel: under the string\'s row, as the prompt string\'s', () => {
+      const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
+      const under = (x: LineExplanation, label: string) => all(rowModel(x, { depth: 2, receives: false }, 'en').rows).find((r) => r.label === label)!.children.map((c) => c.label);
+      assert.deepStrictEqual(under(e, "'^a+$'"), ['^', 'a', '+', '$']);
+      assert.deepStrictEqual(under(explain("PS1='\\u@\\h'\n", 0), "'\\u@\\h'"), ['\\u', '\\h']);
+    });
+
+    it('the hover\'s part card', () => {
+      const md = partHover({ ex: e, lang: 'en', theme: 'light', lineText: "re='^a+$'", panelLink: 'x', lineLink: 'y', keys: '', placement: 'first', problems: [] }, partAt(e.items, { line: 0, character: t.span.start.character + 1 }));
+      // (The card of the first row of the reading, under the assignment's, whose text the title of its crumb holds.)
+      assert.match(md, /title="Assign a value to variable re \(no spaces around =\) — read as an extended regex \(ERE\) by grep -E, line 2"/);
+      assert.match(md, /start of the line/);
+    });
+
+    it('Markdown', () => {
+      assert.match(toPlainMarkdown(e, "re='^a+$'", 'x'), /read as an extended regex \(ERE\) by `grep -E`, line 2[^\n]*\n {2}- `'\^a\+\$'` — [^\n]*\n {4}- `\^` — start of the line/);
+    });
+
+    it('the CLI and JSON', async () => {
+      const run = async (...args: string[]): Promise<string> => {
+        let out = '';
+        await main(['--no-config', ...args, '-e', src], { stdout: (s) => { out += s; }, stderr: () => {}, env: {}, isTTY: false });
+        return out;
+      };
+      assert.match(await run('--no-color', '--line', '1'), /read as an extended regex \(ERE\) by grep -E, line 2 [^\n]*\n[^\n]*'\^a\+\$'[^\n]*\n +\^ +start of the line/);
+      const json = JSON.parse(await run('--format', 'json', '--line', '1'));
+      assert.match(JSON.stringify(json), /"explanation":"Assign a value to variable `re` \(no spaces around `=`\) — read as an extended regex \(ERE\) by `grep -E`, line 2"/);
+      assert.match(JSON.stringify(json), /"label":"'\^a\+\$'"[^\]]*"children":\[\{"kind":"keyword","label":"\^"/);
+    });
+  });
+});

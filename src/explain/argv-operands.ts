@@ -3,7 +3,7 @@
 
 import type { Token } from '../analyzer-types';
 import { type ArgRole, type ArgvParse, type FieldsRole } from '../argv/interpret';
-import { namespaceOf } from '../argv/query';
+import { namespaceOf, roleLanguage } from '../argv/query';
 import { OPTION_ROLES } from '../argv/regroup';
 import { asBash } from '../shellfeatures';
 import { validName } from '../semantics/posixexits';
@@ -88,7 +88,7 @@ export function operandToken(cx: Explainer, nodes: SyntaxNode[], word: number, r
   }
   // (Its readings: `cp -t $d $a b`, the value of `-t` when `$d` and `$a` give none; `tar -cf $a b`, a word the spec does not
   // describe. The clauses come after the note on its language, of the reading as written: `grep -d $v a b`.)
-  const [own, lang] = [desc ?? cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``), isFn ? undefined : item?.lang];
+  const [own, lang] = [desc ?? cx.s(`文字列 \`${a.text}\``, `Word \`${a.text}\``), roleLanguage(role, isFn)];
   const parts = isFn ? undefined : readingsParts(cx, own, role.readings, word, nodes);
   if (parts && (parts.rest || parts.base !== own)) desc = parts.base + (lang ? '' : parts.rest);
   // (A function named like a declaration builtin, or `alias`, given `a=…`: bash's parser marked the word.)

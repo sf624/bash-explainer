@@ -346,6 +346,7 @@
  "PATH = /bin",
  "PATH=/bin env | cat",
  "PPID",
+ "PS1='\\u@\\h'\n",
  "README.md",
  "RUN [\"apt-get\",\"install\",\"-y\",\"curl\"]",
  "Rewrite as `\"$a\"`",

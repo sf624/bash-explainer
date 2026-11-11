@@ -47,6 +47,9 @@ const SHAPES: [string, string, FileKind?][] = [
   ['set -u and a word over lines', 'set -u\necho $a \\\n  $b\n'],
   ['a block with a statement over lines', '{ echo $x \\\n  b; echo $y; }\n'],
   ['two statements that meet on a line', '{ a \\\n  b; c \\\n  d\n  e; }\n'],
+  // (The assignment reads the readings of its uses, kept for the document: docs/design/known-values.md, 6.3.)
+  ['a value its uses read in a language', "search() {\n  grep -E \"$re\" notes.txt\n}\nre='^[A-Z]+$'\nsearch\ngrep -E \"$re\" g\nbad='a[b'\ngrep -E \"$bad\" h\n"],
+  ['a value read in another fence', '# T\n\n```bash\nif [ "$1" ]; then exit 1; fi\nre=\'[a\'\nok=\'^a\'\n```\n\n```bash\ngrep -E "$re" f\ngrep -E "$ok" g\n```\n', 'markdown'],
   ['directives of bats inside statements over lines', '@test "x" {\n  run foo \\\n    -a \\\n    # bats test_tags=a\n    -b\n  a=(\n    one\n    # bats test_tags=b\n    two\n  )\n}\n', 'bats'],
 ];
 

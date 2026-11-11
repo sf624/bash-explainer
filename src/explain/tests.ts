@@ -24,7 +24,7 @@ import { ancestor, descendants, field, fields, hasError, nameText, type SyntaxNo
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
 import type { Explainer } from './context';
 import { matchExample, regexExample, testExample } from './examples';
-import { regexReachedInDocument, regexValueReading } from './embedded';
+import { regexReachedInDocument, regexRightOf, regexValueReading } from './embedded';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
 import { inArithmetic } from './reads';
 import { withReading } from './values';
@@ -381,8 +381,9 @@ export function binary(cx: Explainer, n: SyntaxNode): Token {
     fault = wholeRegexError(cx, rights[0]);
   }
   // `[[ $x =~ $re ]]`: the value of `$re`, where known, read as the ERE bash reads (its rows go under the value line).
-  if (op === '=~' && rights.length === 1 && !inArithmetic(n) && ancestor(n, (a) => a.type === 'extended_test')) {
-    const known = regexValueReading(cx, rights[0]);
+  const regexRight = regexRightOf(n);
+  if (regexRight) {
+    const known = regexValueReading(cx, regexRight);
     if (known) {
       withReading(cx, operands, known.part, { tokens: known.tokens }, '');
       const js = toJsRegex(known.text, 'ere');

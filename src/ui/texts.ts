@@ -1,3 +1,4 @@
+import { languageNames } from '../embedded/names';
 import { type Lang, lineLabel } from '../i18n';
 
 // The panel's and the page's own texts in the two languages, in one place (docs/design/sources.md, row 17): what the
@@ -165,13 +166,7 @@ export const ui = {
           bashLanguage: '`=~` の右辺の正規表現: {shell}自身が、POSIX の拡張正規表現(ERE)の規則で左辺と照合する。',
           promptLanguage: 'プロンプト文字列（`PS1`・`PS4` などの値）: {shell}自身が、プロンプトを表示するたびにバックスラッシュのエスケープを置き換え、その結果を展開する。',
         },
-        languages: {
-          regex: '正規表現', glob: 'glob パターン', sed: 'sed スクリプト', awk: 'awk プログラム', jq: 'jq フィルター', yq4: 'yq の式', yq3path: 'yq のパス',
-          printf: 'printf の書式', echo: 'エスケープ', date: 'date の書式', perl: 'Perl', mode: 'ファイルモード', umask: 'umask', sortkey: 'ソートキー',
-          cutfields: 'フィールドの範囲', cutchars: '文字の範囲', trset: '文字の集合', getopts: 'オプション文字', getoptshort: 'オプション文字',
-          getoptlong: '長いオプション', gitformat: 'git の書式', gitdate: 'git の日付', arith: '算術式', prompt: 'プロンプト文字列',
-          bazeltarget: 'ターゲットのパターン', bazelquery: 'bazel のクエリ式', bazelcquery: 'bazel のクエリ式', bazelaquery: 'bazel のクエリ式', buildozer: 'buildozer のコマンドかラベル',
-        },
+        languages: languageNames('ja'),
       },
     },
   },
@@ -322,13 +317,7 @@ export const ui = {
           bashLanguage: 'The regex on the right of `=~`: {shell} itself matches the left side against it, by the rules of a POSIX extended regular expression (ERE).',
           promptLanguage: 'A prompt string (the value of `PS1`, `PS4`…): each time {shell} prints the prompt, it replaces the backslash escapes, then expands the result.',
         },
-        languages: {
-          regex: 'regex', glob: 'glob pattern', sed: 'sed script', awk: 'awk program', jq: 'jq filter', yq4: 'yq expression', yq3path: 'yq path',
-          printf: 'printf format', echo: 'escapes', date: 'date format', perl: 'Perl', mode: 'file mode', umask: 'umask', sortkey: 'sort key',
-          cutfields: 'field list', cutchars: 'character list', trset: 'character set', getopts: 'option letters', getoptshort: 'option letters',
-          getoptlong: 'long options', gitformat: 'git format', gitdate: 'git date', arith: 'arithmetic', prompt: 'prompt string',
-          bazeltarget: 'target pattern', bazelquery: 'bazel query expression', bazelcquery: 'bazel query expression', bazelaquery: 'bazel query expression', buildozer: 'buildozer command or label',
-        },
+        languages: languageNames('en'),
       },
     },
   },

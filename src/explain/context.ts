@@ -15,7 +15,7 @@ import { tokenSaid, type TokenTextArgs, type TokenTextId } from '../messages-tok
 import { anchored, type Found, sayAt, spanOf } from '../noteanchors';
 import type { ExecEnv } from '../semantics/env';
 import type { NestedScript } from '../semantics/nested';
-import { type Fault, hostReadAs, keptQuiet, readAs, type ReadKnown, type Stop, stopAt } from '../semantics/scriptstops';
+import { type Fault, hostReadAs, keptQuiet, readAs, type ReadKnown, shellStartAt, type Stop, stopAt } from '../semantics/scriptstops';
 import { docLine, type StateModel } from '../semantics/state';
 import type { StatusModel } from '../semantics/status';
 import { listOverLines, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
@@ -176,12 +176,14 @@ export interface Explainer {
   reachedAt(n: SyntaxNode): boolean;
   /**
    * The part of `evidenceAt` and `reachedAt` that is not one of the flags a line sets for itself (docs/design/known-values.md, 3.1):
-   * `readAs` (or `hostReadAs`) and `stopAt` at `n`, with this line's `script`, `host` and `stopsFrom`. They are the document's for
-   * a node of the line's own region only: in a host file `stopsFrom` is the row the line's shell starts on (`shellStart`,
-   * src/hosts/remap.ts; a bats line's own `@test`), so a node on another line needs its own region's (step 2 of the plan).
+   * `readAs` (or `hostReadAs`) and `stopAt` at `n`, with the document's `script` and `host`, and the row where the shell of `n`
+   * started (`stopsFrom`). They are the document's for a node of any line: what a line asks of a node on another one (the
+   * assignment of a value, of its uses: known-values.md, 6) is what that line says of it.
    */
   documentEvidenceAt(n: SyntaxNode): ReadKnown | undefined;
   documentStopAt(n: SyntaxNode): Stop | undefined;
+  /** The row where the shell that runs `n` started, in a host's text that holds several (`shellStartAt` of `ExplainOptions.shellStarts`: a bats test, a Markdown fence). */
+  stopsFrom(n: SyntaxNode): number | undefined;
   /** The line's part: what the flags this line sets for itself (`unread`, `unsure`, `sometimes`; `unreached`) make of the other. */
   lineEvidence(known: () => ReadKnown | undefined): ReadKnown | undefined;
   lineReached(reached: boolean): boolean;
@@ -416,7 +418,7 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   documentEvidenceAt(n: SyntaxNode): ReadKnown | undefined {
-    return this.opts.host ? hostReadAs(this.tree, n.startIndex, this.opts.stopsFrom, this.shell) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
+    return this.opts.host ? hostReadAs(this.tree, n.startIndex, this.stopsFrom(n), this.shell) : readAs(this.tree, n.startIndex, this.opts.script, this.state);
   }
 
   lineEvidence(read: () => ReadKnown | undefined): ReadKnown | undefined {
@@ -430,7 +432,11 @@ export class LineExplainer implements Explainer, LineOutput {
   }
 
   documentStopAt(n: SyntaxNode): Stop | undefined {
-    return stopAt(this.tree, n.startIndex, this.opts.stopsFrom, this.opts.host ? undefined : this.state, this.shell);
+    return stopAt(this.tree, n.startIndex, this.stopsFrom(n), this.opts.host ? undefined : this.state, this.shell);
+  }
+
+  stopsFrom(n: SyntaxNode): number | undefined {
+    return shellStartAt(this.opts.shellStarts, n.startPosition.row);
   }
 
   lineReached(reached: boolean): boolean {

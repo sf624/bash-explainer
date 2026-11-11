@@ -260,8 +260,11 @@ export interface ExplainOptions {
   sometimes?: boolean;
   /** Set for a string run by a command that discards its stderr, where a failure leaves the script going (`quietAt`): an error of the dialect in it is a warning. `status`: only a failure with a status (`eval`, in the script's own shell). */
   quiet?: Quiet;
-  /** The row where the shell of this line started, in a host's text that holds several (`shellStart`, src/hosts/scripts.ts): a stop before it is another shell's (`stopBefore`). */
-  stopsFrom?: number;
+  /**
+   * The rows where the shells of a host's text start, in order (`shellStarts`, src/hosts/scripts.ts): a stop before the start of a
+   * node's shell (`shellStartAt`) is another shell's (`stopBefore`). Set for a host's text only, empty where one shell runs it all.
+   */
+  shellStarts?: readonly number[];
   /**
    * The host runs the line's words with no shell (`ShellRegion.noShell`: Docker's exec form, a Python list of
    * arguments): the model looks the name up as a program (`StateModel.noShell`), and each word is the host's string.

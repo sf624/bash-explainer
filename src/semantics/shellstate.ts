@@ -619,13 +619,13 @@ function sameOutcomes(a: readonly HashOutcome[], b: readonly HashOutcome[]): boo
   return key(a) === key(b);
 }
 
-/** Whether two entries of the table of `hash -p` say the same (the nodes aside). */
 /**
  * The variables whose value word (`VariableState.source`) differs between two states `sameState` holds the same: a
  * function call that reuses the walk of the one for the other leaves the first one's words in the body and after it.
  */
 export const sourcesApart = (a: ShellState, b: ShellState): string[] => NameMap.differing(a.variables, b.variables, (x, y) => x.source === y.source);
 
+/** Whether two entries of the table of `hash -p` say the same (the nodes aside). */
 function sameHashed(x: CommandEntry, y: CommandEntry): boolean {
   return x === y || (x.state === y.state && x.value === y.value && (x.state !== 'unknown' || sameOutcomes(x.may!, y.may!)));
 }

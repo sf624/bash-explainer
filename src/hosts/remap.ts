@@ -7,7 +7,7 @@ import { type ReadingNode, tokenLines } from '../reading';
 import { descendants, type SyntaxTree } from '../syntax/tree';
 import { sameSpan, spanOf } from '../noteanchors';
 import { placeholderSaid } from '../messages-argv';
-import { regionAt, regionShell, scriptTree, shellLines, shellStart } from './scripts';
+import { regionAt, regionShell, scriptTree, shellLines, shellStart, shellStarts } from './scripts';
 import { stopAt } from '../semantics/scriptstops';
 import { fileRead } from '../semantics/env';
 import { shellState, type StateModel } from '../semantics/state';
@@ -227,7 +227,7 @@ export function explainHostedLine(
   pushAll(notes, found.map((f) => noteData(f.fact)));
   pushAll(hostFacts, found.map((f) => f.fact));
   const ex = analyzer.explainLine(tree, line, regionShell(region, shell), {
-    ...opts, host: region.host, stopsFrom: shellStart(region, line), ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}), ...(pasted.length ? { hostPasted: pasted } : {}),
+    ...opts, host: region.host, shellStarts: shellStarts(extracted, region), ...(region.commands ? { hostCommands: region.commands } : {}), ...(region.run ? { hostRun: region.run } : {}), ...(provided.length ? { hostProvided: provided } : {}), ...(pasted.length ? { hostPasted: pasted } : {}),
     ...(region.noShell ? { noShell: region.noShell } : {}),
     // (The sentence of the line says nothing a problem of the host says: src/linesentence.ts.)
     ...(opts.sentence ? { hostProblems: [...problemCodes({ noteInfo: notes, facts: hostFacts })] } : {}),
@@ -270,7 +270,7 @@ export function hostIssues(tree: SyntaxTree, extracted: Extracted, original: str
   };
   for (const region of extracted.regions) {
     const own = scriptTree(tree, extracted, region);
-    for (const issue of dialectIssues(own, regionShell(region, shell) ?? 'bash', lang, region.start, region.end, version, (n) => stopAt(own, n.startIndex, shellStart(region, n.startPosition.row), undefined, regionShell(region, shell)))) {
+    for (const issue of dialectIssues(own, regionShell(region, shell) ?? 'bash', lang, region.start, region.end, version, (n) => stopAt(own, n.startIndex, shellStart(extracted, region, n.startPosition.row), undefined, regionShell(region, shell)))) {
       out.push({ code: issue.id, severity: severityOf(issue.note.level), message: problemText(issue.note, lang), head: issue.note.head!, ...at(issue.place) });
     }
     if (region.warnPipefail) {

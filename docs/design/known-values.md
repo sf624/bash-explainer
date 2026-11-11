@@ -9,7 +9,7 @@ sed -n ${pattern} config.txt
 
 Line 1 explains the string as a sed script: the range `/^BEGIN/,/^END/` and the command `p`, and says that line 2 reads it. Line 2 reads `${pattern}` as that script, under its value. This page says which values count, how the command is read, what each line shows, how it relates to holes, what it costs, where the facts live, and the steps.
 
-Status: Tracked in #790.
+Status: Done (#818, #821, #822, #824, #PRNUM).
 
 The maintainer decided on 2026-11-10:
 
@@ -135,6 +135,18 @@ What step 4 found:
 - `pattern-from-variable` reads `expansionValue`: no explanation of the corpus changed. On rare lines it changes both ways, and the note holds whatever the value is:
   - Said now, where the state knew the value but `expansionValue` does not give it: another expansion that may fail first (`grep "$p" "${f:?}"`), a string another shell runs, the right side of `||` in `[[ ]]`, dead code (a `case` branch that never runs, a line after `exit`).
   - No longer said, where `expansionValue` knows a value with regex characters that the state did not hold as text: `q='^a'; p=$q; grep "$p" f`, `q='^a'; p="$q"; grep -E "$p" f`. The value is a regex, as the author meant.
+
+What step 5 found:
+
+- The assignment line reads each use as the use's line does, from the command's reading on the model (`commandReading`), with the role of the word found by `roleOfWord` (in a subcommand's parse too: `yq e "$q" f`) and its language by `roleLanguage` (src/argv/query.ts), which the use's tokens now read as well (`operandToken`, `valueToken`). A word of a command a slot runs is in no role there, so it stays unread on both lines. The right side of `=~` is found by one function, `regexRightOf`, which src/explain/tests.ts reads too.
+- The kept reading held only the tokens placed on the use's expansion, which have no offsets in the value. It now keeps the reader's own tokens too (`ValueReadingMade.read`): the assignment places them on its string, as a prompt string's (`fromEmbedded` over `literalOfMapped`), and compares them.
+- The plan keyed a kept reading by the `stopsFrom` of the line that asks, and step 2 noted that the assignment's line must pass the use's. One number per line could not say that: `ExplainOptions.stopsFrom` is replaced by the rows where a host's shells start (`shellStarts`: bats' tests, Markdown's fences, from `shellStarts` in src/hosts/scripts.ts), and the row of a node's shell is `shellStartAt` of its own row (`Explainer.stopsFrom(n)`). `documentEvidenceAt` and `documentStopAt` are then the document's for a node of any line, and the key holds the use's row.
+- Two readings are one when the reader's tokens are equal and so is the assumption: a quoted and an unquoted use of a value that globs (`"$g"`, `$g`) read it under different conditions, so the assignment shows no rows. Two flavours that give the same tokens (`^s` by `grep` and `grep -E`) are one reading: the rows, and the text names both flavours.
+- "The reader's note on the flavour" is a name only for a regex: the other readers' notes say something of the whole (printf's format, perl's loop), not what it is. The name is the flavour for a regex (`flavorName`) and the language's name otherwise, from one table (`LANGUAGE_NAMES`, src/embedded/names.ts), moved out of the panel's texts, whose chip of a language reads it too. "The command as written" is its name and the option words before the use, each once; a value in a word of its own is left out (`grep -E -e "$a" -e "$a"` is `grep -E -e`).
+- The text goes on the assignment's token, not on the string's. The panel shows a string's row at its second depth only (a word part: how bash reads the quotes), so a text there was not seen at the first: the screenshot of `grep "$re"` and `grep -E "$re"` showed the assignment's row alone. A literal's note goes on its argument's token the same way ("search pattern (regex) — extended regex (ERE)"). The rows stay under the string, as a prompt string's, and come at the first depth, as a prompt string's do.
+- An error is any problem the reading's tokens say (`saysProblemIn`, src/linefinish.ts: the walk of `tokenErrors`), at whatever level the use's place gives it.
+- The texts (`assignment-value-read`): "read as a sed script by `sed -n`, line 2"; "read as a basic regex (BRE) by `grep` (line 4) and as an extended regex (ERE) by `grep -E` (line 9)"; "`grep -E` reads it as an extended regex (ERE) on line 2 and finds an error there"; a value that globs adds "where no file name matches it". The right side of `=~` is named `[[ =~ ]]`.
+- In the corpus, 11 assignments get a text, 9 of them with rows; explaining every line forward or backward gives the same lines.
 
 ### 3.1 What the reader reads
 

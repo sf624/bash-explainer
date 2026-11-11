@@ -49,7 +49,7 @@ export function blockAt(doc: ShellDocument, line: number, col: number): Block | 
     if (!region) return undefined;
     tree = scriptTree(doc.tree, doc.extracted, region);
     end = region.end;
-    from = shellStart(region, line);
+    from = shellStart(doc.extracted, region, line);
   }
   const c = shellColumn(doc, line, col);
   const rows = shellRows(tree);
