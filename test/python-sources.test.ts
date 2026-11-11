@@ -61,7 +61,10 @@ export function scan(rel: string, text: string): Match<Kind>[] {
 interface Known { uses: { file: string; fn: string; kind: Kind; count: number; reason: string }[] }
 const known: Known = JSON.parse(fs.readFileSync(path.join(base, 'test', 'fixtures', 'python-sources-known.json'), 'utf8'));
 
-describe('Python host source guards (docs/design/sources.md, rows 30, 31, 36 and 37)', () => {
+describe('Python host source guards (docs/design/sources.md, rows 30, 31, 36 and 37)', function () {
+  // (The scan of every source takes up to 9 s under coverage in CI, beside the browser tests of other workers: mocha's 10 s is too close.)
+  this.timeout(60000);
+
   it('finds a regex of imports anywhere, and readings of literals in a file that reads Python', () => {
     const found = (code: string, rel = 'src/hosts/x.ts') => scan(rel, code).map((m) => `${m.kind} ${m.fn} ${m.what}`);
     const reader = "import { pyLex } from './pylex';\n";

@@ -28,7 +28,10 @@ const known: Known = JSON.parse(fs.readFileSync(path.join(base, 'test', 'fixture
 /** The matches of a code snippet, as `kind what` texts. */
 const found = (code: string): string[] => scanSource('src/x.ts', code).map((m) => `${m.kind} ${m.what}`);
 
-describe('shell checks guard (docs/design/sources.md, SC6)', () => {
+describe('shell checks guard (docs/design/sources.md, SC6)', function () {
+  // (The scan of every source takes up to 9 s under coverage in CI, beside the browser tests of other workers: mocha's 10 s is too close.)
+  this.timeout(60000);
+
   it('finds every kind of match', () => {
     assert.deepStrictEqual(found("function f(shell, cx) { return shell === 'sh' || cx.shell !== 'bash' || 'zsh' == opts.shell || (cx.state.shell) === 'dash'; }"),
       ["compare shell === 'sh'", "compare cx.shell !== 'bash'", "compare 'zsh' == opts.shell", "compare (cx.state.shell) === 'dash'"]);
