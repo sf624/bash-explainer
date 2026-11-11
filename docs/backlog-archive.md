@@ -599,7 +599,7 @@ Each entry names its kind by the label an issue of that kind gets. For `bug`, `c
 
 ### A known value in a hole (`s='s/a/b/'; sed "$s"`)
 
-- **Verdict:** dropped, 2026-11-06. Kind: `missing-explanation`. Taken up again on 2026-11-10 after two examples from real use, and built in #790 ([known-values.md](design/known-values.md): #818, #821, #822, #824 and step 5).
+- **Verdict:** dropped, 2026-11-06. Kind: `missing-explanation`. Taken up again on 2026-11-10 after two examples from real use, and built in #790 ([known-values.md](design/known-values.md): #818, #821, #822, #824, #825).
 - **Reason:** Rare.
 - **Input and contradiction (as the roadmap had it):** A value the model knows for certain could stand in a hole of a word a command reads: `s='s/a/b/'; sed "$s"` stays unread, with the note on the script.
 - **Built:** a word that is only a copy of a variable whose value the model knows (`$s`, `${s}`, `"$s"`, `"${s}"`) is read in the language its command's spec gives it (sed, grep, awk, jq, printf, date, tr and the others), with the rows under the value's line and the example of the literal; the right side of `[[ $x =~ $re ]]` is read as bash's ERE; the assignment's string shows the rows of its uses where they read it one way, and names each command, its flavour and its lines.
