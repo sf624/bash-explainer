@@ -149,7 +149,7 @@ Build one fold, and use it in two ways.
   - A partial read (`get` of some names) before the iteration, so that the memoised values and the rest are checked together.
   - A body that no call reaches (`uncalled`), where a lazy state enters a walk.
 - **A bound on the merge calls.** A generator in test/support makes the prefix dispatcher of section 1.1 (40 commands, 3 calls each, about 650 lines), so no fixture file is needed. The test wraps the merge function at `NameMap.merge` and `NameMap.mergeAll`, as test/line-budget.test.ts already wraps `Walker.runAt`. That counts every kind (options, functions, traps…) and none of the recursive calls. Measured so, on this script:
-  - The colours and the problems together: main 185,320, the prototype 3,900. Bound: 20,000, which main exceeds more than 9 times and the prototype stays well under.
+  - The colours and the problems together: main 185,320, the prototype 3,900. After #830, which walks such calls once per state, main makes 57,655 and step 1a 1,698. Bound: 10,000, which main exceeds more than 5 times and step 1a stays well under.
   - The walk, apart: 60,330 on both. Bound: 120,000, twice that, so that a regression in the walk shows.
   - (On this script the wrapper gives the same counts as the counters of section 1.5: it has no mixed scopes, and only variables differ.)
 - **No timing budget.** One was considered on the 80-command dispatcher. It would not fail on a revert of step 1: that script takes 2.1 s on main, mostly in the walk. The count is the guard.
