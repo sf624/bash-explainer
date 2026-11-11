@@ -155,11 +155,13 @@ describe('the merge of the states a node ran with, on read', function () {
     assert.strictEqual(vars.get('s'), shared, 'kept where both paths have it');
     assert.ok(!vars.has('w') && !vars.has('w'), 'an absent name');
     assert.strictEqual(vars.size, 4);
+    assert.strictEqual(vars.size, 4, 'counted once');
     assert.strictEqual(lazy.status, 0);
     assert.strictEqual(lazy.opaque, true);
     // (Iterated: the names of the first map, then the new ones of the next, as the pairwise merge has them.)
     assert.deepStrictEqual([...vars.keys()], [...merge([a, b]).variables.keys()]);
     assert.strictEqual([...vars].find(([k]) => k === 'x')?.[1], x, 'the object read before');
+    assert.strictEqual(vars.get('x'), x, 'and after');
     const buckets = (vars as unknown as { buckets: (ReadonlyMap<string, VariableState> & { sources?: unknown })[] }).buckets;
     for (const bucket of buckets) assert.strictEqual(bucket?.sources, undefined);
     // (Every way to read a bucket merged on read gives the same.)
