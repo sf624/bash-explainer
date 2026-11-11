@@ -201,7 +201,7 @@ describe('the merge of the states a node ran with, on read', function () {
 
   it('calls the merge functions a bounded number of times on a long dispatcher', () => {
     // (docs/design/large-scripts.md, 2.6: 40 commands called with prefix assignments, 650 lines. Merged at once,
-    // the colours and the problems made 185,320 calls, and the walk 60,330.)
+    // the colours and the problems made 57,655 calls (185,320 before #830), and the walk 65,372; merged on read, 1,698.)
     const counted = NameMap as unknown as Record<'merge' | 'mergeAll', (...args: unknown[]) => unknown>;
     const real = { merge: counted.merge, mergeAll: counted.mergeAll };
     let calls = 0;
@@ -218,7 +218,7 @@ describe('the merge of the states a node ran with, on read', function () {
       documentHighlight(doc, { shells });
       diagnosticsFor(() => doc, () => shells, 'en', defaultSettings(), 'web');
       assert.ok(walk > 0 && walk <= 120000, `the walk: ${walk} calls`);
-      assert.ok(calls > 0 && calls <= 20000, `the colours and the problems: ${calls} calls`);
+      assert.ok(calls > 0 && calls <= 10000, `the colours and the problems: ${calls} calls`);
     } finally {
       Object.assign(counted, real);
     }
