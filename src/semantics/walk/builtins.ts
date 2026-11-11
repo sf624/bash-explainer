@@ -492,6 +492,9 @@ export class WalkBuiltins {
       // that hides it restores. (That frame is the walk's, not the path's: one on some paths only is not followed so,
       // docs/backlog-archive.md.)
       const global = on.includes('g') ? this.globalFrame(st, name) : undefined;
+      // (A write in a caller's frame is not made again where the walk of this call is reused: it counts as showing that
+      // frame, `revealed`, and the walk is not reused.)
+      if (global && global !== this.w.frames[this.w.frames.length - 1]) this.w.reveals++;
       if (global === 'mixed') {
         st = this.w.put(st, 'variables', name, notKnown(hidden!));
         for (const f of this.w.frames) if (f.saved.has(name)) f.saved.set(name, f.saved.get(name) && notKnown(f.saved.get(name)!));
