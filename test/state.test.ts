@@ -12,6 +12,7 @@ import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { assertGrowth } from './support/growth';
 import { descendants, fields } from '../src/syntax/tree';
 import { readDeclarationWords } from '../src/semantics/vars';
+import { Walker } from '../src/semantics/walk/walker';
 
 const parser = createUnbashParser();
 const model = (src: string, shell?: Shell, posix = false): StateModel => shellState(parser.parse(src), shell, { posix });
@@ -472,6 +473,31 @@ describe('shell state: function bodies run at their calls', () => {
     // Called with many different states.
     const many = 'f() { set -f; x=1; }\n' + Array.from({ length: 20 }, (_, i) => `v${i}=1; f`).join('\n');
     assert.strictEqual(variable(end(many), 'x')?.set, 'unknown');
+  });
+  it('a blind script is walked again too when a recursive call took less than its body changes', () => {
+    // `alias a="$x"` makes the model blind: it decides no condition and trusts no value, but its states still give the
+    // options. The call of `f` in `f` is not walked: the first walk takes what the body changed so far (nothing), and
+    // `set +e` comes later. The walk again takes `set +e` as unknown there; the first walk said `set -e` was on at
+    // `false`, and the line said the shell stops there (docs/design/large-scripts.md, 4.1). bash prints `reached`.
+    const src = 'alias a="$x"\nset -e\nf() {\n  if [ "$1" ]; then\n    f\n    false\n    echo reached\n    return\n  fi\n  set +e\n}\nf 1\n';
+    const proto = Walker.prototype as unknown as { program: (root: unknown, st: unknown) => unknown };
+    const real = proto.program;
+    let walks = 0;
+    proto.program = function (this: Walker, root: unknown, st: unknown) {
+      walks++;
+      return real.call(this, root, st);
+    };
+    let m: StateModel;
+    try {
+      m = model(src, 'bash');
+    } finally {
+      proto.program = real;
+    }
+    assert.strictEqual(m.blind, 'an alias of text not known');
+    assert.strictEqual(walks, 2);
+    assert.strictEqual(set(m.at(descendants(m.root, ['command']).find((c) => c.text === 'false')!).run, 'errexit'), 'unknown');
+    const r = spawnSync('bash', ['-c', src], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', FUNCNEST: '20' }, timeout: 5000 });
+    assert.deepStrictEqual([r.stdout, r.status], ['reached\n', 0]);
   });
   it('a readonly function is not defined again', () => {
     const st = end('f() { :; }; readonly -f f; f() { set -f; }; f');
