@@ -32,6 +32,11 @@ A variable keeps its value where the model already follows its other writes (#82
 
 ## Fixed
 
+### Large scripts
+
+- **nvm.sh** (6,943 lines, 151 functions; Node.js 24): the colours of the whole script took 32 s, and its problems 28 s more; now 0.4 s and 4.1 s. The memory in use after them went from 2.4 GB to 0.6 GB. The colours and problems are the same as before.
+- **Why.** A line inside a function called from many places ran with many states of the shell. The tool merged all of them in full the first time a line asked; now it merges only the names the line reads (#770; docs/design/large-scripts.md, step 1a). Building the model of such a script still takes about 10 s on nvm.sh.
+
 ### Examples under nocasematch
 
 - **Regex.** With `shopt -s nocasematch` on, the example of `[[ $ans =~ ^(y|yes)$ ]]` ignores case as bash does: `Y` and `YES` are in "Matches", not in "Does not match". Where nocasematch may be on (`if …; then shopt -s nocasematch; fi`), there is no example. Before, it matched case-sensitively whatever the option.
