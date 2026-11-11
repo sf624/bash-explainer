@@ -13,6 +13,12 @@ import type { Walker } from './walker';
 export const CHANGING = ['i', 'l', 'u', 'n', 'a', 'A'];
 
 /**
+ * Whether the assignment before a command name makes a variable for it: not one to an element (`n[0]=5 f`), which
+ * bash refuses ("not a valid identifier") before it runs the command, assigning nothing.
+ */
+export const temporary = (a: SyntaxNode): boolean => field(a, 'name')!.type !== 'subscript';
+
+/**
  * Records at each prefix assignment of a command the state its value is expanded in: the one after the words (`st`),
  * with the assignments before it (`a=2 b=$a cmd`: `$a` is 2). The walk itself is not changed (`Walker.scratch`): a
  * function call or `eval` makes them for its own run. Gives the state with them all, for `kept`. (Not one to an
@@ -23,7 +29,7 @@ export function temporaries(w: Walker, assignments: readonly SyntaxNode[], st: S
   try {
     for (const a of assignments) {
       w.record(a, st);
-      if (field(a, 'name')!.type !== 'subscript') st = w.builtins.assignNode(a, st, false, true);
+      if (temporary(a)) st = w.builtins.assignNode(a, st, false, true);
     }
   } finally {
     w.scratch--;
