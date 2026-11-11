@@ -24,7 +24,7 @@ import { temporariesUnset } from '../names';
 import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
 import { WalkExpansions } from './expansions';
-import { kept, temporaries } from './temporaries';
+import { kept, temporaries, temporary } from './temporaries';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
@@ -42,12 +42,6 @@ const ERREXIT_STOPS = new Set(['command', 'extended_test', 'arithmetic_command',
 const WALKS_PER_FUNCTION = 4;
 /** How deep calls are followed (deeper ones are guessed). */
 const CALL_DEPTH = 64;
-
-/**
- * Whether the assignment before a command name makes a variable for it: not one to an element (`n[0]=5 f`), which
- * bash refuses ("not a valid identifier") before it runs the command, assigning nothing.
- */
-const temporary = (a: SyntaxNode): boolean => field(a, 'name')!.type !== 'subscript';
 
 /** The walk of a tree (`program`), with its parts. */
 export class Walker {
@@ -1009,7 +1003,7 @@ export class Walker {
       const unit = this.unitTarget();
       if (seen) {
         exit = seen.exit;
-        // (The walk holds the words of its own entry: those that differ here are no origin of a value, `valueOrigin`.)
+        // (It holds the value words of its own entry: those that differ here are no origin of a value, `valueOrigin`.)
         for (const name of sourcesApart(seen.entry, st)) this.mixedSources.add(name);
         if (unit && unit.dead === this.mode.dead) pushAll(unit.aborts, seen.aborts);
         for (const m of seen.maybes) this.abort(m, false);
