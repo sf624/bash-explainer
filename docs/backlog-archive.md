@@ -1332,3 +1332,9 @@ Rare corners, dropped (YAGNI). Kind: `bug`. Each predates #827.
 Rare corner, dropped (YAGNI). Kind: `bug`. Predates #830.
 
 - **`export` of the prefix assignment in the body.** `f() { export x; }; x=g; x=t f; echo "$x"`: bash prints `t` (the export makes the call's variable the shell's, exported); the model restores `g` when the call returns, unexported. Without `x=g`, bash keeps `x` set after the call where the model has it unset. The rows of test/fixtures/probes/state.json list it in their `gaps`.
+
+## The walk of recursive calls (found measuring #770, 2026-11-11)
+
+Rare corner, dropped (YAGNI). Kind: `bug`. Predates #833.
+
+- **"Some paths make it read-only" for a variable that nothing makes readonly.** `alias a="$x"; f() { if [ "$1" ]; then f; echo $y; return; fi; IFS=:; }; f 1`: bash runs `IFS=:` in the inner call, and nothing makes `IFS` readonly. The token of `IFS=:` still says "But some paths before here make it read-only, and there this assignment fails". The recursive call of `f` is not walked, so `widen` (src/semantics/walk/widen.ts) takes what the body changes as unknown. For a variable not set before the call, it takes every attribute as unknown, `r` too; it keeps `r` only where it was on.
