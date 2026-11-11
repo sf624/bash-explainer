@@ -683,7 +683,7 @@ describe('the rewrites of the style checks (docs/design/oracles.md, step 6)', ()
       '[ "$#" -gt 0 ] || exit 1\nrm -rf $@/x', 'f() {\n  [ -n "$D" ] || return 1\n  rm -rf "$D"/*\n}',
       '[ -n "$D" ] && exit 1\nrm -rf $D/x', '! [ -n "$D" ] || exit 1\nrm -rf $D/x', '[ -n "$D" ] || { exit 1; }\nrm -rf $D/x', '[ -z "$D" ] || exit 1\nrm -rf $D/x',
       '[ -n "$E" ] || exit 1\nrm -rf $D/x', '[ -n "$D" ] || echo\nrm -rf $D/x', '[ -n "$D" x ] || exit 1\nrm -rf $D/x', 'test -n "$D" x || exit 1\nrm -rf $D/x', 'echo -n "$D" || exit 1\nrm -rf $D/x',
-      '[ -n "$D" ] || exit 1\nD=\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nread D\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nfor D in a; do :; done\nrm -rf $D/x', '[ -n "${D%/}" ] || exit 1\nrm -rf $D/x']) {
+      '[ -n "$D" ] || exit 1\nD=\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nread D\nrm -rf $D/x', '[ -n "$D" ] || exit 1\nfor D in $L; do :; done\nrm -rf $D/x', '[ -n "${D%/}" ] || exit 1\nrm -rf $D/x']) {
       assert.strictEqual(found(src, 'rm-empty-variable-root').length, 1, src);
     }
   });

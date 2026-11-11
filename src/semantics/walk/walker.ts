@@ -25,6 +25,7 @@ import { WalkBuiltins } from './builtins';
 import { WalkConditions } from './conditions';
 import { WalkExpansions } from './expansions';
 import { kept, temporaries, temporary } from './temporaries';
+import { forStatement } from './forloop';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
@@ -704,7 +705,7 @@ export class Walker {
         return this.loop(n, st, { cond: (s) => this.sequence(cond, s), body: (s) => this.sequence(body?.children ?? [], s), endsWithCondition: true,
           holds: (status) => (status === undefined ? undefined : (status === 0) !== until) });
       }
-      case 'for_statement': case 'select_statement': return this.forStatement(n, st);
+      case 'for_statement': case 'select_statement': return forStatement(this, n, st);
       case 'c_style_for_statement': {
         // The initializer, then the condition, the body and the update, again and again; the loop ends after a condition.
         // (Those of the condition and the update run at each pass: what a `${ …; }` there changes may be.)
@@ -853,7 +854,7 @@ export class Walker {
    * before in a loop being walked starts from what it changed then, as it was in the end: in nested loops, whose
    * values change at each pass, each walk then takes one pass, not as many as the loops around it take.
    */
-  private loop(n: SyntaxNode, st: ShellState, { cond, body, update = (s) => s, endsWithCondition, atLeastOnce = false, holds, exit = (s) => s }: {
+  loop(n: SyntaxNode, st: ShellState, { cond, body, update = (s) => s, endsWithCondition, atLeastOnce = false, holds, exit = (s) => s }: {
     cond: (s: ShellState) => ShellState; body: (s: ShellState) => ShellState; update?: (s: ShellState) => ShellState; endsWithCondition: boolean;
     atLeastOnce?: boolean; holds?: (status: number | undefined) => boolean | undefined; exit?: (s: ShellState) => ShellState;
   }): ShellState {
@@ -927,26 +928,6 @@ export class Walker {
     if (!settled) this.unwalked.add(n);
     this.loopsWalked.set(n, { keys, entry });
     return merge([exit(normal), ...target.breaks, ...target.continues], this.posix);
-  }
-
-  private forStatement(n: SyntaxNode, st: ShellState): ShellState {
-    const values = fields(n, 'value');
-    for (const v of values) {
-      st = this.expansions.defaults(v, this.expansions.substitutions(v, st));
-    }
-    const variable = field(n, 'variable');
-    // (A readonly variable: bash fails at the first word, and the body does not run; it may be.)
-    const readonly = variable ? attribute(st, this.builtins.resolve(st, variable.text) ?? variable.text, 'r') : 'off';
-    // (An integer runs each word, which may fail: see `assignmentError`.)
-    if (variable && attribute(st, this.builtins.resolve(st, variable.text) ?? variable.text, 'i') !== 'off') this.abort(st, false);
-    const assign = (s: ShellState, value: string | undefined): ShellState => (variable && readonly !== 'on' ? this.builtins.setVariable(s, variable.text, variable, value) : s);
-    // `for x in a b c`: x is each word in turn, then stays the last; with no `in`, the positional parameters.
-    const words = values.map((v) => (v.type === 'word' || v.type === 'number' || v.type === 'raw_string' || v.type === 'string' ? staticWordValue(v) : undefined));
-    const known = n.type === 'for_statement' && values.length > 0 && words.every((w) => w !== undefined) && readonly === 'off';
-    const each = known && new Set(words).size === 1 ? words[0] : undefined;
-    // (A list of known words runs the body at least once.)
-    return this.loop(n, st, { cond: (s) => s, body: (s) => this.sequence(field(n, 'body')?.children ?? [], assign(s, each)), endsWithCondition: false, atLeastOnce: known,
-      exit: (s) => (known ? assign(s, words[words.length - 1]) : s) });
   }
 
   private functionDefinition(n: SyntaxNode, st: ShellState): ShellState {

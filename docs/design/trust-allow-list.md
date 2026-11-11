@@ -75,7 +75,8 @@ Each set can be checked for completeness: the type checker for `NodeType`, the m
 | The shebang (the first `comment`) | its options are looked up in the tables below as if set on the first line: `set` letters (`bash -k`), `-O name`, `-o name`, and the assignments of `env -S` (`BASH_COMPAT=42 bash`) (new) |
 | `redirected_statement`, and the redirect nodes (`file_redirect`, `file_descriptor`, `heredoc_redirect`, `heredoc_start`, `heredoc_body`, `heredoc_content`, `heredoc_end`, `herestring_redirect`) | the redirection rows below |
 | `function_definition` | followed; the function is closed only when every call is one the walk sees (today) |
-| `for_statement`, `select_statement` | names: the loop variable (and `REPLY` for `select`) (today) |
+| `for_statement` | followed (#826): the loop variable, each word in turn, then the last unless the body changed it (src/semantics/walk/forloop.ts) |
+| `select_statement` | names: the loop variable and `REPLY` (today) |
 | `coproc_statement` | names: the coprocess array and its `_PID` (today) |
 | `case_statement` | followed, once the walk expands a pattern after `;&` or `;;&` in the state after the list before it (new: today it uses the state before the `case`) |
 | `error` (text our parser could not read) | `all` (new): bash may read it otherwise |
@@ -98,7 +99,8 @@ Each set can be checked for completeness: the type checker for `NodeType`, the m
 | `exit`, `return`, `break`, `continue` | followed (jumps; a count not known takes both paths) |
 | `declare`, `typeset`, `local`, `export`, `readonly` | followed for `x=w` with no option but `-r`, `-x`, `-g`; names for the other options the spec knows (`-i`, `-a`, `-A`, `-l`, `-u`, `-t`); the nameref rule for `-n`; `all` for a name not known (today), and for an option the spec lacks (`-I`: `declare -I x` in a function keeps the caller's value) |
 | `unset` | followed for static names and `-f`; `all` for a name not known (today) |
-| `read`, `mapfile`, `readarray`, `getopts`, `printf -v`, `wait -p` | names: the variables they name; `all` for a name not known (today) |
+| `read`, `mapfile`, `readarray`, `printf -v` | followed (#826): the variables they name get a value the walk takes as not known (`Write.followed`); `all` for a name not known |
+| `getopts`, `wait -p` | names: the variables they name; `all` for a name not known (today) |
 | `mapfile -C`, `readarray -C` | `all` (since the review of steps 1 to 3): bash runs the callback's text in this shell, as `eval` does, with the index and the line after it |
 | `ulimit -n`, `ulimit -u` | `all` (since the review of steps 1 to 3): a lower limit makes a redirection (even to `/dev/null`), the pipe of `$( )` or a fork fail |
 | `let` | arithmetic (below) |

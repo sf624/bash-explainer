@@ -26,6 +26,13 @@ export interface Write {
   append?: true;
   /** It never makes the variable an array (`read x`, `declare -i x=1`, `unset x`), as a plain assignment does not (see `compoundReads`). */
   scalar?: true;
+  /**
+   * Not plain, but the walk follows it where it runs, as it does a plain assignment: it unsets the variable (`unset x`,
+   * `local x` in a function) or gives it a value the walk takes as not known (`read x`, `for x in …`, `printf -v x`,
+   * `mapfile x`), by a row of the allow-list that is `followed` (src/semantics/allow.ts). The variable stays trusted
+   * (`Trust.variable`): a use such a write reaches has no value, and one it does not reach keeps its own.
+   */
+  followed?: true;
 }
 
 /** The builtins a command name read from a variable may be (`debug=false; $debug`): they change nothing. */

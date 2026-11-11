@@ -448,7 +448,7 @@
  "[ -n \"$D\" ] || exit 1\n. ./lib.sh\nrm -rf $D/x",
  "[ -n \"$D\" ] || exit 1\nD=\nrm -rf $D/x",
  "[ -n \"$D\" ] || exit 1\neval \"D=\"\nrm -rf $D/x",
- "[ -n \"$D\" ] || exit 1\nfor D in a; do :; done\nrm -rf $D/x",
+ "[ -n \"$D\" ] || exit 1\nfor D in $L; do :; done\nrm -rf $D/x",
  "[ -n \"$D\" ] || exit 1\nread D\nrm -rf $D/x",
  "[ -n \"$D\" ] || exit 1\nrm -rf $D/x",
  "[ -n \"$D\" ] || exit 1 &\nrm -rf $D/x",
