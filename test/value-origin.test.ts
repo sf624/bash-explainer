@@ -81,6 +81,16 @@ const ROWS: readonly Row[] = [
   { script: 're=g; h() { use 1 "$re"; }; f() { local re=l; h; }; f; h', origins: { 1: null } },
   { script: 'f() { local re; g; use 1 "$re"; }; g() { unset re; }; re=a; f; use 2 "$re"', origins: { 1: 're=a', 2: 're=a' } },
   { script: 'f() { g() { local re; re=b; use 1 "$re"; }; g; use 2 "$re"; }; re=a; f', origins: { 1: 're=b', 2: 're=a' } },
+  // (`unset` of a caller's local shows what the nearest such local hides; of a prefix assignment of a call, what it hides.)
+  { script: 'f() { local x=5; g; use 1 "$x"; }; g() { unset x; }; h() { local x=7; f; }; h', origins: { 1: 'x=7' } },
+  { script: 'f() { local x=5; g; use 1 "$x"; }; g() { unset x; }; x=1; f; h() { local x=7; f; }; h', origins: { 1: null } },
+  { script: 'x=g; f() { unset x; use 1 "$x"; x=5; }; x=t f; use 2 "$x"', origins: { 1: 'x=g', 2: 'x=5' } },
+  { script: 'x=g; f() { local x; use 1 "$x"; }; x=t f; use 2 "$x"', origins: { 1: 'x=t', 2: 'x=g' } },
+  { script: 'x=g; f() { local x=l; x=t g; use 1 "$x"; }; g() { unset x; use 2 "$x"; }; f; use 3 "$x"', origins: { 1: 'x=l', 2: 'x=l', 3: 'x=g' } },
+  // (A local made on some paths only, or again on a pass of a loop, is followed on each.)
+  { script: 'f() { if maybe; then local x=2; fi; x=9; }; x=1; f; use 1 "$x"', origins: { 1: null } },
+  { script: 'f() { local x=2; x=9; }; x=1; f; use 1 "$x"; g() { if maybe; then unset x; fi; }; k() { local x=3; g; use 2 "$x"; }; k', origins: { 1: 'x=1', 2: null } },
+  { script: 'x=1; f() { for x in a; do local x; done; use 1 "$x"; }; f; use 2 "$x"', origins: { 1: null, 2: null } },
   // A prefix assignment: the command's words are expanded before it; a function sees it.
   { script: 'p=a; p=b use 1 "$p"', origins: { 1: 'p=a' } },
   { script: 'p=a; p=b :; use 1 "$p"; q=a; q=b eval :; use 2 "$q"', origins: { 1: 'p=a', 2: 'q=a' } },

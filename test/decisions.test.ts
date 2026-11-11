@@ -96,11 +96,17 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       'v=2; unset v; v=1', 'v=1; g() { :; }; f() { local v; g; }; f', 'v=1; f() { g() { local v; v=3; }; g; }; f', 'v=1; read -r v <<< 2; v=1',
       'v=1; printf -v v %s 2; v=1', 'v=2; f() { local v; v=1; @; }; f', 'v=1; f() { local v; @; }; f', 'v=1; k() { unset v; }; f() { local v=2; k; @; }; f',
       'f() { local v; for v in 1; do @; done; }; f', 'v=1; f() { local v; }; f; mapfile -t w <<< 2',
+      // (`unset` of a caller's local, or of the call's prefix assignment, shows what it hides.)
+      'v=1; f() { local v=5; g; @; }; g() { unset v; }; f', 'v=1; f() { unset v; @; }; v=2 f', 'v=2; f() { local v=1; v=3 g; @; }; g() { unset v; }; f',
+      'f() { local v=2; v=3; }; v=1; f',
     ];
     // (A value not known reaches the test, or two values do.)
     const undecided = [
       'v=1; read -r v <<< 1', 'v=1; [ -t 0 ] && unset v', 'v=1; printf -v v %s 1', 'v=1; mapfile -t v <<< 1', 'v=1; for v in 1 2; do [ -t 0 ] && break; done',
       'v=1; h() { @; }; f() { local v; h; }; f; h', 'v=1; f() { local v; read -r v <<< 1; @; }; f', 'v=1; for v in 1 2; do @; done',
+      // (The nearest local is not always the same; a local made on some paths, or on a pass of a loop.)
+      'v=1; f() { local v=5; g; @; }; g() { unset v; }; f; h() { local v=7; f; }; h', 'f() { if [ -t 0 ]; then local v=2; fi; v=1; }; v=3; f',
+      'f() { for v in 1; do local v; done; @; }; f', 'f() { for v in 1; do declare v; done; @; }; f', 'v=1; g() { [ -t 0 ] && unset v; }; f() { local v=2; g; v=3; }; f',
     ];
     const list: Script[] = [...decides, ...undecided].map((s) => ({ text: s.includes('@') ? `${s.replace('@', test('v'))}; : M4` : `${s}; ${test('v')}; : M4`, constructs: [{ id: 1, type: 'if_statement' }] }));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'decisions-'));

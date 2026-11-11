@@ -1314,3 +1314,9 @@ Rare corners, dropped (YAGNI). Kind: `bug`.
 - **`[[ $a == [Z-a] ]]` under nocasematch.** Nothing matches in bash; we show `a | _ | A`.
 - **`[[ $a == é* ]]`.** A non-ASCII literal makes the pattern look like a plain string, so the test example is wrong. Predates #823.
 - **`ſ` and `K` (Kelvin sign) folding.** glibc and JavaScript's `i` flag without `u` fold them differently; no example generates them today.
+
+## Function scopes (found reviewing #827, 2026-11-11)
+
+Rare corners, dropped (YAGNI). Kind: `bug`. It predates #827.
+
+- **`declare -g` on some paths only, of a name local there.** `f() { local x=l; if c; then declare -g x=5; fi; }; x=1; f; echo "$x"`: the walk sets what the outermost frame restores on every path, so it shows `5` after the call, where bash gives `1` when `c` fails.
