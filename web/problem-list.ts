@@ -2,6 +2,7 @@
 // the right where the cursor is ("Ln 20 · 1/11") with ‹ › (F8, Shift+F8). The order, the position and the next problem
 // are decided in src/ui/problemNav.ts; the levels' marks, colours and words come from the level table (src/levels.ts).
 // The list's height and folding are in layout.ts.
+import { SHELL_NAMES } from '../src/dialect';
 import { DocumentIssue, plain, type ShCount } from '../src/document';
 import { Lang } from '../src/i18n';
 import { levelCounts, LEVELS, levelTally, problemLevel, problemLevels } from '../src/levels';
@@ -26,8 +27,8 @@ export interface StripHost {
   /** Where the problems are now, moved by every edit since the check (the editor's own diagnostics). */
   spans(): ProblemSpan[];
   pick(problem: ProblemSpan): void;
-  /** The hint's button: reads the script as POSIX sh (the choice the chip's popover makes). */
-  checkAsSh(): void;
+  /** The hint's button: switches the page's shell to POSIX sh (the choice the chip's popover makes), and says so with Undo. */
+  switchToSh(): void;
 }
 
 /** The strip and the list, from the problems the editor shows. */
@@ -36,12 +37,14 @@ export class ProblemStrip {
   private list: DocumentIssue[] = [];
   /** The problem last gone to, which tells apart two problems on one range. */
   private picked: ProblemSpan | undefined;
+  /** The hint toward POSIX sh shown under the strip, if any (`showHint`). */
+  private sh: ShCount | undefined;
 
   constructor(private readonly host: StripHost) {
     // (F8 in the panel's frame: the page adds `keys` there too, each time the frame loads.)
     window.addEventListener('keydown', this.keys, true);
     // (The compare page has no hint.)
-    document.getElementById('sh-hint-button')?.addEventListener('click', () => this.host.checkAsSh());
+    document.getElementById('sh-hint-button')?.addEventListener('click', () => this.host.switchToSh());
     for (const [id, back] of [['problem-prev', true], ['problem-next', false]] as const) {
       $(id).addEventListener('click', () => this.step(back));
       $(id).addEventListener('keydown', (e) => this.enter(e, () => this.step(back)));
@@ -68,14 +71,14 @@ export class ProblemStrip {
     const box = $('problems');
     box.hidden = false;
     box.classList.toggle('empty', !this.list.length);
-    $('problems-title').textContent = this.list.length ? t.problems : t.noProblems;
+    this.title(lang);
     $('problems-counts').replaceChildren(...levelTally(levels).map(({ level, n }) => {
       const count = span('count', String(n));
       count.prepend(span(`icon ${LEVELS[level].className}`, LEVELS[level].mark));
       return count;
     }));
     // The counts in words for a screen reader, from the same table ("Problems: 1 error, 5 warnings").
-    $('problems-said').textContent = this.list.length ? t.problemsSaid(levelCounts(levels, lang)) : t.noProblems;
+    if (this.list.length) $('problems-said').textContent = t.problemsSaid(levelCounts(levels, lang));
     // (The compare page's strip has no fold: its list is always open.)
     const toggle = document.getElementById('problems-toggle') as HTMLButtonElement | null;
     if (toggle) toggle.disabled = !this.list.length;
@@ -88,6 +91,18 @@ export class ProblemStrip {
     }
     $('problem-list').replaceChildren(...this.list.map((i) => this.row(i, lang)));
     this.place();
+  }
+
+  /**
+   * The strip's title, and its words for a screen reader with no problem: "No problems", or, while the hint toward POSIX
+   * sh shows under it, "No problems in bash" (the hint shows only for a script read as bash by default:
+   * `shProblemCount`), so that the hint's line reads as the other shell's, not as a contradiction (#746).
+   */
+  private title(lang: Lang): void {
+    const t = TEXT[lang];
+    const none = this.sh ? t.noProblemsIn(SHELL_NAMES.bash) : t.noProblems;
+    $('problems-title').textContent = this.list.length ? t.problems : none;
+    if (!this.list.length) $('problems-said').textContent = none;
   }
 
   /** Whether the page has the line of the hint toward POSIX sh (the compare page has none). */
@@ -116,6 +131,8 @@ export class ProblemStrip {
     const t = TEXT[lang];
     const focused = document.activeElement === button;
     line.hidden = !sh;
+    this.sh = sh;
+    this.title(lang);
     // (Counts the times the hint was worked out, shown or not: a test waits on it for the hint's absence.)
     line.dataset.worked = String(Number(line.dataset.worked ?? 0) + 1);
     if (sh) {

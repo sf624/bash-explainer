@@ -8,7 +8,7 @@
 // The lists are radio groups whose arrows move without choosing: choosing a file type may ask whether to load its
 // sample, so it waits for Enter, Space or a click. The checked item of File type has the focus when the popover opens;
 // Escape closes it and gives the focus back to the chip.
-import type { AutoShell, Shell } from '../src/dialect';
+import { type AutoShell, type Shell, SHELL_NAMES } from '../src/dialect';
 import type { Lang } from '../src/i18n';
 import { scopeChip, ScopeForm, shellChoices } from '../src/ui/scope';
 import { fitsRow, narrow } from './layout';
@@ -50,6 +50,8 @@ export class ScopeControl {
     this.head = document.getElementById('ed-head')!;
     this.nameBox = this.head.querySelector('.file-box');
     this.chip.addEventListener('click', () => (this.pop.open ? this.close(true) : this.open()));
+    // (With reduced motion the page runs no animation: the chip is not lit, and the class it keeps draws nothing.)
+    this.chip.addEventListener('animationend', () => this.chip.classList.remove('lit'));
     this.chip.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       e.preventDefault();
@@ -108,6 +110,21 @@ export class ScopeControl {
     }
     this.lists();
     this.fit();
+  }
+
+  /**
+   * Chooses a shell from a control elsewhere (the hint toward POSIX sh: it is a mode, not a check, #746), and shows it:
+   * the chip lights up for a moment (web/page.css, `.scope-chip.lit`), where the choice now is and can be changed back.
+   * Gives the words of the page's toast, and its Undo, which chooses the shell before (`before`) again.
+   */
+  switchShell(shell: Shell, before: string): { text: string; action: { label: string; run: () => void } } {
+    this.host.choose('shell', shell);
+    this.chip.classList.remove('lit');
+    // (Read once, so that a second switch starts the animation again.)
+    void this.chip.offsetWidth;
+    this.chip.classList.add('lit');
+    const t = TEXT[this.host.lang()];
+    return { text: t.shellSet(SHELL_NAMES[shell]), action: { label: t.undo, run: () => this.host.choose('shell', before) } };
   }
 
   /** Opens the popover (the chip, or the menu's "File type and shell…"), with the focus on the file type checked. */

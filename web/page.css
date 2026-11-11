@@ -600,6 +600,27 @@ button {
   stroke-linejoin: round;
 }
 
+/* The chip lit up for a moment after a control elsewhere changed it (the POSIX sh hint's switch, web/scope-chip.ts,
+   `flash`): its edge and fill in the accent, fading back; a colour only, its box stays. Narrow, its ::before draws it. */
+@keyframes scope-lit {
+  0%, 50% {
+    border-color: var(--page-accent);
+    background-color: var(--accent-soft);
+  }
+}
+
+.scope-chip.lit {
+  animation: scope-lit 2.4s var(--ease);
+}
+
+:where(html.narrow) .scope-chip.lit {
+  animation: none;
+}
+
+:where(html.narrow) .scope-chip.lit::before {
+  animation: scope-lit 2.4s var(--ease);
+}
+
 /* No form fits: the chip's text is cut. */
 .ed-head.squeezed .scope-box {
   flex: 0 1 auto;
