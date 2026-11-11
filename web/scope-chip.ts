@@ -51,7 +51,11 @@ export class ScopeControl {
     this.nameBox = this.head.querySelector('.file-box');
     this.chip.addEventListener('click', () => (this.pop.open ? this.close(true) : this.open()));
     // (With reduced motion the page runs no animation: the chip is not lit, and the class it keeps draws nothing.)
-    this.chip.addEventListener('animationend', () => this.chip.classList.remove('lit'));
+    // (A cancel comes late too, after a second switch restarted the light: the class goes only once no light runs, on the chip or its ::before.)
+    const unlit = () => {
+      if (!this.chip.getAnimations({ subtree: true }).some((a) => (a as CSSAnimation).animationName === 'scope-lit')) this.chip.classList.remove('lit');
+    };
+    for (const end of ['animationend', 'animationcancel']) this.chip.addEventListener(end, unlit);
     this.chip.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       e.preventDefault();

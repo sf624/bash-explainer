@@ -6,7 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
-- On the web page, the POSIX sh hint's button is now "Switch to POSIX sh": the shell chip lights up and a toast says the shell changed, with Undo. With no problem, the strip now says "No problems in bash" above the hint. Before, the button said "Check as POSIX sh" and changed the shell silently.
+- On the web page, the POSIX sh hint's button now says "Switch to POSIX sh", and a toast with Undo says the shell changed. Before, it said "Check as POSIX sh" and changed the shell silently.
 
 ## 0.14.0
 

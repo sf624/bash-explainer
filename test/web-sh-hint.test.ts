@@ -10,7 +10,7 @@ import { dialectIssues } from '../src/dialect';
 import { SH_COUNT_COMMANDS } from '../src/document';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { contrast, parseColour, type RGB } from '../src/ui/colour';
-import { currentShell, FRAMES, openSite, pickKind, problemRows, problemsShown, setShell, toastText, until } from './support/site';
+import { currentShell, FRAMES, openSite, pickKind, problemRows, problemsShown, settingControl, setShell, toastText, until } from './support/site';
 
 // Bash has no problem with these lines; POSIX sh has two ([[ ]] and an array).
 const ONLY_SH = '[[ -f a ]] && echo y\narr=(a b)\n';
@@ -208,15 +208,34 @@ describe('the web page: the hint toward POSIX sh', function () {
     });
   }
 
-  it('takes the toast\'s Undo away when the shell is chosen again in the chip: it would undo that choice', async () => {
+  // (A toast with a button stays 8 s: each case looks for it gone within a second of the other choice, not when it times out.)
+  for (const [where, choose] of [
+    ['in the chip', (page: Page) => setShell(page, 'zsh')],
+    ['in the settings', async (page: Page) => (await settingControl(page, 'shell')).selectOption('zsh')],
+  ] as const) {
+    it(`takes the toast's Undo away when the shell is chosen again ${where}: it would undo that choice`, async () => {
+      const page = await open(desktop(1280, 'en'), ONLY_SH);
+      await hint(page).waitFor({ state: 'visible' });
+      await page.locator('#sh-hint-button').click();
+      await until('the toast', () => toastText(page), (t) => t === 'Shell set to POSIX sh.');
+      await choose(page);
+      await until('the toast gone at once', () => toastText(page), (t) => t === '', 1000);
+      assert.strictEqual(await page.locator('#status .status-action').count(), 0);
+      assert.strictEqual(await currentShell(page), 'zsh');
+      await page.context().close();
+    });
+  }
+
+  it('leaves another toast as it is when the shell changes, before the hint was used', async () => {
     const page = await open(desktop(1280, 'en'), ONLY_SH);
-    await hint(page).waitFor({ state: 'visible' });
-    await page.locator('#sh-hint-button').click();
-    await until('the toast', () => toastText(page), (t) => t === 'Shell set to POSIX sh.');
+    // (A file that is not text, opened through the page's file input: a toast of its own, with no button.)
+    await page.evaluate('for (const o of [window, Window.prototype]) delete o.showOpenFilePicker');
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('#open-btn').click()]);
+    await chooser.setFiles({ name: 'a.out', mimeType: 'application/octet-stream', buffer: Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x00, 0x00]) });
+    const said = await until('the note', () => toastText(page), (t) => t !== '');
     await setShell(page, 'zsh');
-    await until('the toast gone', () => toastText(page), (t) => t === '');
-    assert.strictEqual(await page.locator('#status .status-action').count(), 0);
-    assert.strictEqual(await currentShell(page), 'zsh');
+    await page.waitForTimeout(300);
+    assert.strictEqual(await toastText(page), said);
     await page.context().close();
   });
 
@@ -254,6 +273,9 @@ describe('the web page: the hint toward POSIX sh', function () {
         assert.ok(contrast(parseColour(fg, fill)!, fill) >= 4.5, `${colorScheme}: words ${fg} on ${JSON.stringify(fill)}`);
         // (The fill is lit too, not only the edge.)
         assert.notDeepStrictEqual(fill, around, colorScheme);
+        // Once the light ends, the class goes.
+        await page.evaluate(`document.getAnimations().forEach((a) => { if (a.animationName === 'scope-lit') a.finish(); })`);
+        await until('the chip unlit', () => page.locator('#scope-chip').evaluate((e) => e.classList.contains('lit')), (v) => !v, 2000);
         await page.context().close();
       }
     });
