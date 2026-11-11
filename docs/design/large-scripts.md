@@ -117,7 +117,7 @@ Build one fold, and use it in two ways.
 
 - **The fold.** For a name and the k sources: start with the first source's value; for each next value, keep the result when the two are the same object, else call the kind's merge function. This is what today's pairwise reduce does for each name. Its shortcuts (two states, two maps or two buckets that are the same object) all mean that every name in them has the same object on both sides. No skip is added (section 7).
 - **Step 1a: lazy, in `at()`.** `runAt` gives a state of lazy maps. A bucket whose sources are all the same object stays that object. Any other is a lazy bucket (a `ReadonlyMap`) that folds a name on its first read, and every name on its first iteration. This is the part prototyped, and about 95% of the gain. It touches only `runAt` and src/semantics/shellstate.ts.
-- **Step 1b: eager, in the walk.** `merge` folds each bucket whose sources differ in one pass over its k sources (option A, without skips). The walk reads most of what it merges, so laziness would gain little there. It is measured on its own: the loop of `NameMap.merge` is 3.0 s self of the prototype's 24.3 s, which is what 1b can save at most.
+- **Step 1b: eager, in the walk.** `merge` folds each bucket whose sources differ in one pass over its k sources (option A, without skips). The walk reads most of what it merges, so laziness would gain little there. It is measured on its own: the loop of `NameMap.merge` is 3.0 s self of the prototype's 24.3 s, which is what 1b can save at most. Measured after step 1a and #830, it saved 4% of the model time, and was dropped (section 6, step 2).
 - **Why B.** It is the only option that makes the cost follow what is read rather than what was recorded. It gives the same results by construction, not by a property of the merge functions. It is small: one class and one function in src/semantics/shellstate.ts, and one line in `runAt`. It also covers `mergeScope` at `at()`: in the prototype's profile, `mergeScope` is 0.5 s.
 - **Not taken.** A's skips (section 7) and C.
 
@@ -134,7 +134,7 @@ Build one fold, and use it in two ways.
 - `get` memoises each name, absent names too. The first iteration folds the names not read yet and reuses the memoised objects, so a value read before and after the iteration is the same object.
 - A lazy bucket drops its sources once it has folded every name. The prototype never dropped them, so its heap numbers are an upper bound.
 - `NameMap.size` becomes a getter: a lazy bucket's size is the number of names in the union of its sources, found without a fold.
-- The eager one pass of step 1b still returns the first source's bucket when nothing changed, as `sameAsX` does today.
+- The eager one pass of step 1b would still have returned the first source's bucket when nothing changed, as `sameAsX` does. It was measured and dropped (section 6, step 2), so the walk's `merge` stays pairwise.
 - Both folds get their merge function through one static method of `NameMap` (the eager `NameMap.merge`, and a `NameMap.mergeAll` for the lazy maps, as in the prototype). The guard below wraps those methods. An ESM binding such as `mergeVariable` cannot be wrapped from a test, and no counter goes into src/.
 
 ### 2.6 Tests and guards
@@ -224,7 +224,13 @@ The rules for any result computed apart from the current text:
 ## 6. Steps
 
 1. **1a, `at()` lazy:** the fold, the lazy bucket, `NameMap.mergeAll`, `runAt`; the equality test over the corpus and the bound on the merge calls; a row in docs/design/sources.md. test/snapshot.ts diff empty, stated in the PR. One CHANGELOG line under "Fixed" for long scripts that froze the page.
-2. **1b, the eager one pass in the walk's `merge`:** measured on its own, against the 3.0 s of section 1.3.
+2. **1b, the eager one pass in the walk's `merge`: measured, dropped.** The one pass was built faithful: each bucket's k sources folded a name at a time, with the calls of the pairwise reduce in the same order; a bucket that every source shares kept, and the first source's bucket kept when no step of the fold gave another value; `f` through `NameMap.merge`, so the guard still wraps it. It was measured against main at df7c7d17 (after step 1a and #830), on nvm.sh as in section 1.1, with Node.js 24.22.0, in 14 alternating runs of each (load 1.1–1.8):
+   - The bash model: median 7.15 s on main, 6.87 s with the one pass (4.0% less). The sh model: 6.03 s and 5.79 s (4.0%). Both: 13.20 s and 12.69 s (3.9%); the runs ranged over 12.98–13.66 s and 12.48–13.55 s.
+   - The heap after the two models: 281 MB on both.
+   - A CPU profile of the two models: `merge` on the stack went from 4.0 s to 3.5 s, and the whole from 14.1 s to 13.7 s. What is left in `merge` is mostly the merge functions (`mergeVariable` 2.0–2.1 s on the stack), which a faithful fold calls as often as the pairwise one.
+   - Two variants were no faster: a native copy of the first source's bucket, set again where a value changed, and an iteration with `forEach` instead of entries.
+   - The spans and the problems of nvm.sh were byte for byte those of main.
+   - The gain is under the bar set for this step (a code change only above about 5% of the model time), so it was not merged.
 3. **The measurements of section 4.1:** the second walk when the model is blind (kept: it is needed for the options, `IFS`, functions and traps; a test holds it), then `notWalked` and `widen` (measured: about a fifth of the walks; no change planned). #830 (#832) made the calls with a prefix assignment reuse walks.
 4. **Later, if still needed:** the problems in idle chunks, a Web Worker, each with the rules of section 4.2.
 
