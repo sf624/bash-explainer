@@ -9,7 +9,7 @@ sed -n ${pattern} config.txt
 
 Line 1 explains the string as a sed script: the range `/^BEGIN/,/^END/` and the command `p`, and says that line 2 reads it. Line 2 reads `${pattern}` as that script, under its value. This page says which values count, how the command is read, what each line shows, how it relates to holes, what it costs, where the facts live, and the steps.
 
-Status: Done (#818, #821, #822, #824, #PRNUM).
+Status: Done (#818, #821, #822, #824, #825).
 
 The maintainer decided on 2026-11-10:
 
