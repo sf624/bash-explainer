@@ -92,13 +92,19 @@ export function copyingWord(part: SyntaxNode): SyntaxNode {
 export function valueOrigin(part: SyntaxNode, model: StateModel): SyntaxNode | undefined {
   const name = copiedName(part);
   // (Not a variable a reused walk of a function may hold another call's word of: `StateModel.mixedSources`.)
-  const value = name === undefined || model.mixedSources.has(name) ? undefined : expansionValue(part, model);
+  const value = name === undefined || mixedAt(part, model, name) ? undefined : expansionValue(part, model);
   if (!value) return undefined;
   // (The state the word model read the variable in, as `expansionValue` did: `part` is in a word, and the variable is
   // in the state, since one the script never set has no value there.)
   const source = wordMeaning(part, model)!.state.variables.get(name!)!.source;
   const text = source && staticWordText(source, model.shell)?.text;
   return text === value.text ? source : undefined;
+}
+
+/** Whether `part` may read the variable `name` with another word than the walk that ran it gives (`StateModel.mixedSources`). */
+function mixedAt(part: SyntaxNode, model: StateModel, name: string): boolean {
+  const where = model.mixedSources.get(name);
+  return where === 'everywhere' || (!!where && !!ancestor(part, (a) => where.has(a)));
 }
 
 const usesKept = new WeakMap<StateModel, ReadonlyMap<SyntaxNode, readonly SyntaxNode[]>>();

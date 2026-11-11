@@ -3432,6 +3432,568 @@
     }
   },
   {
+    "manual": "3.7.4",
+    "snippet": "x=g; f() { unset x; y=${x-u}; }; x=t f; @PROBE:a@; x=t f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: unset of the prefix assignment in the body shows the variable it hides, at each call",
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"g\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"g\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"g\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "x=g; f() { local x; y=$x; x=l; }; x=t f; @PROBE:a@; x=t f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: a local over the prefix assignment starts with its value; the call restores the variable it hides",
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { y=$x; }; x=g; f; @PROBE:a@; x=t f; @PROBE:b@; f; @PROBE:c@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: the same function called without a prefix assignment, with one, and without again",
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"g\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "c": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"g\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"g\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"g\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { y=$x; }; x=a f; @PROBE:a@; x=b f; @PROBE:b@; x=a f; @PROBE:c@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: the same function called with different values",
+    "facts": {
+      "a": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"a\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"b\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "c": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"a\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"a\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "g() { z=$x; }; f() { x=i g; y=$x; x=i g; }; x=o f; @PROBE:a@; x=o f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: prefix assignments of nested calls",
+    "facts": {
+      "a": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"o\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"i\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"o\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"i\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"o\""
+          },
+          "z": {
+            "attrs": "-",
+            "value": "\"i\""
+          }
+        },
+        "functions": {
+          "f": "f",
+          "g": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { export x; export y=1; }; x=t f; @PROBE:a@; x=t f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: export of the prefix assignment in the body",
+    "gaps": {
+      "a.variables.x": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)",
+      "b.variables.x": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)",
+      "end.variables.x": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)"
+    },
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"t\""
+          },
+          "y": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"t\""
+          },
+          "y": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"t\""
+          },
+          "y": {
+            "attrs": "x",
+            "value": "\"1\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { export x; }; x=g; x=t f; @PROBE:a@; export -n x; x=t f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: export of the prefix assignment in the body, over a variable of the shell",
+    "gaps": {
+      "a.variables.x.attrs": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)",
+      "a.variables.x.value": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)",
+      "b.variables.x.attrs": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)",
+      "b.variables.x.value": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)",
+      "end.variables.x.attrs": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)",
+      "end.variables.x.value": "export of a prefix assignment in the body of the function it was made for exports it into the shell, where bash keeps it after the call: the call restores what it hides (docs/backlog-archive.md)"
+    },
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "x",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { declare -g x=G; y=$x; }; x=o; x=t f; @PROBE:a@; x=t f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: declare -g in the body sets the variable the prefix assignment hides",
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"G\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"G\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"G\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { x=$x+; y=$x; }; x=o; x=t f; @PROBE:a@; x=t f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: an assignment in the body changes the prefix assignment, not the variable it hides",
+    "facts": {
+      "a": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"o\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t+\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"o\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t+\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"o\""
+          },
+          "y": {
+            "attrs": "-",
+            "value": "\"t+\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "f() { : \"$x\"; }; x=t f; @PROBE:a@; x=o; x=t f; @PROBE:b@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: only where the variables it hides are the same too, as the call restores them",
+    "facts": {
+      "a": {
+        "functions": {
+          "f": "f"
+        }
+      },
+      "b": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"o\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "x": {
+            "attrs": "-",
+            "value": "\"o\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.7.4",
+    "snippet": "g() { : \"$x\"; }; h() { g; }; x=t h; @PROBE:a@; x=t g; @PROBE:b@; x=t h; @PROBE:c@",
+    "note": "a call with a prefix assignment, made again from the same state, reuses the first walk: not the walk of a call without one from a deeper call, where the state is the same: that call restores nothing",
+    "facts": {
+      "a": {
+        "functions": {
+          "g": "f",
+          "h": "f"
+        }
+      },
+      "b": {
+        "functions": {
+          "g": "f",
+          "h": "f"
+        }
+      },
+      "c": {
+        "functions": {
+          "g": "f",
+          "h": "f"
+        }
+      },
+      "end": {
+        "functions": {
+          "g": "f",
+          "h": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
     "manual": "3.2.5.2",
     "snippet": "x=1; if [ \"$x\" = 2 ]; then a=1; elif [[ $x == 1 ]]; then b=1; else c=1; fi\n@PROBE:m@\nif [ -f /nonexistent ]; then d=1; fi",
     "note": "conditions decided from values the script set (4.13); a test of a file is not",

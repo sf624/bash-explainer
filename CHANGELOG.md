@@ -16,6 +16,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - With `shopt -s nocasematch` on, the example of `[[ $x =~ re ]]` ignores case as bash does (`Y` matches `^(y|yes)$`); where nocasematch may be on, `[[ ]]` and `case` patterns show no example.
+- Large scripts whose functions call each other with a prefix assignment (`MODE=a helper`) no longer freeze the editor or the web page: such a call is worked out once for each state, as a call without one is.
 
 ## 0.13.0
 

@@ -1324,3 +1324,9 @@ Rare corners, dropped (YAGNI). Kind: `bug`. Each predates #827.
 - **`declare -g` in a subshell, of a name local in the caller.** `g() { local x=l; echo | declare -g x=5; ( declare -g x=6 ); }; x=1; g; [ "$x" = 1 ]`: bash says true; we decide false. The subshell sets what the caller's frame restores, which the shell itself does not see.
 - **An attribute given by spreading the old state loses the other paths of a mixed scope.** `set -a; f() { [ "$1" = a ] && local x; x=1; }; f b`: bash exports `x` (`env` shows `x=1`); the model says the export is off, where it should be on or unknown. `giveAttribute`, `withoutCase` and the `set -a` export in `setVariable` (src/semantics/walk/builtins.ts) put `{ ...v, attrs }`, which keeps the old `scope.outer`, so the attribute is not given on the other paths. The `a` attribute after an array assignment is lost the same way. No explanation shows it today, since the value is not known there.
 - **The source word of a value on the other paths is not compared when a walk is reused.** `sameVariable` (src/semantics/shellstate.ts) compares the value but ignores `source` and `at`, so the origin word a value shows may come from the first walk. Not seen in any output.
+
+## Prefix assignments of a function call (found building #830, 2026-11-11)
+
+Rare corner, dropped (YAGNI). Kind: `bug`. Predates #830.
+
+- **`export` of the prefix assignment in the body.** `f() { export x; }; x=g; x=t f; echo "$x"`: bash prints `t` (the export makes the call's variable the shell's, exported); the model restores `g` when the call returns, unexported. Without `x=g`, bash keeps `x` set after the call where the model has it unset. The rows of test/fixtures/probes/state.json list it in their `gaps`.

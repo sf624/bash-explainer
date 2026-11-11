@@ -63,7 +63,7 @@ export type Scope = { readonly depth: number; readonly temporary?: true } | { re
 const deepest = (s: Scope | undefined): number => (!s ? 0 : 'mixed' in s ? s.mixed : s.depth);
 
 /** Whether two states of a variable are the same, for `sameState`. */
-function sameVariable(x: VariableState, y: VariableState): boolean {
+export function sameVariable(x: VariableState, y: VariableState): boolean {
   const k = Object.keys(x.attrs);
   return x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && sameScope(x.scope, y.scope)
     && k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state && x.attrs[l].environment === y.attrs[l]?.environment));

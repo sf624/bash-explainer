@@ -39,3 +39,7 @@ A variable keeps its value where the model already follows its other writes (#82
 - **Classes.** With nocasematch on, `[[:upper:]]` and `[[:lower:]]` in a `[[ == ]]` or `case` pattern get no example, and under nocaseglob none for a file pattern (`shopt -s nocaseglob; ls [[:upper:]]*` lists only `Abc` of `abc Abc xyz`): bash folds the ranges of `[a-z]` but not those classes.
 - **Replacements.** The same fix reaches `${x//pat/rep}` under nocasematch: `shopt -s nocasematch; x=aBc; y=${x//[[:lower:]]/X}` was shown as `XXX`; bash gives `XBX`, and the value is now left unknown.
 - **After `source`, `.` or `eval`.** nocasematch is taken as set before (a sourced file almost never turns it on), as the examples always did; the plain-text reading of a pattern (`[[ $x == y ]]`) now does too. Before, it gave up there.
+
+### Functions called with a prefix assignment
+
+- A call such as `MODE=a helper "$1"` was worked out again at every call, so a chain of functions that each call the next twice this way doubled the work at each level: 18 levels (about 55 lines) took 18 s. A call made again from the same state now reuses the first one, as a call without a prefix assignment does, and the chain takes a few milliseconds. On nvm.sh, the most states a line was explained with went from 356 to 21.
