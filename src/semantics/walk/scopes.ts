@@ -3,7 +3,7 @@
 // state says whose it is (`VariableState.scope`), so that a local made, or removed by `unset`, on some paths only is
 // followed on each: `f() { [ -t 0 ] && local x=2; x=9; }` leaves `x` as 9 after the call, or as it was.
 import { type Frame } from './shared';
-import { merge, mergeVariable, type ShellState, type VariableState } from '../shellstate';
+import { merge, mergeVariable, type Scope, type ShellState, type VariableState } from '../shellstate';
 import type { Walker } from './walker';
 
 /**
@@ -41,7 +41,7 @@ export function notKnown(v: VariableState): VariableState {
 
 /** What the variable `v`, mixed at `depth`, is on the paths where it is not that call's (none: there are none). */
 export function outerOf(v: VariableState): { v: VariableState | undefined } | undefined {
-  return v.scope && 'mixed' in v.scope ? v.scope.outer : undefined;
+  return (v.scope as Extract<Scope, { mixed: number }>).outer;
 }
 
 /**
