@@ -100,6 +100,21 @@ const ROWS: readonly Row[] = [
   // (A command substitution known to print nothing is no text of the word.)
   { script: 'p=$(true)x; use 1 "$p"', origins: { 1: 'p=$(true)x' } },
   { script: 'f() { use 1 "$p"; }; p=a; p=b f; use 2 "$p"', origins: { 1: 'p=b', 2: 'p=a' } },
+  // (A call with a prefix assignment made again from the same state reuses the walk of the first: from two words, no origin in the
+  // body; from one, in a loop, that one. `unset` there shows what it hides at each call; the call restores it.)
+  { script: 'f() { use 1 "$p"; }; p=a f; p=a f; p=b; use 2 "$p"', origins: { 1: null, 2: 'p=b' } },
+  { script: 'f() { use 1 "$p"; }; for i in 1 2; do p=a f; done; p=b; use 2 "$p"', origins: { 1: 'p=a', 2: 'p=b' } },
+  { script: 'p=g; f() { unset p; use 1 "$p"; }; p=t f; p=t f; use 2 "$p"', origins: { 1: 'p=g', 2: 'p=g' } },
+  { script: 'p=g; f() { local p; use 1 "$p"; }; for i in 1 2; do p=t f; done; use 2 "$p"', origins: { 1: 'p=t', 2: 'p=g' } },
+  { script: 'f() { use 1 "$p"; }; p=g; f; p=t f; f; use 2 "$p"', origins: { 1: null, 2: 'p=g' } },
+  // (What the call restores is what this call hides, even where the first call hid the same value from another word; not
+  // the walk of a call that hid another value. A word the walk gives after the call is not known there.)
+  { script: 'f() { :; }; p=x; p=a f; p=x; p=a f; use 1 "$p"', origins: { 1: 'p=x' } },
+  { script: 'f() { :; }; if maybe; then p=o; p=t f; else p=t f; fi; use 1 "$p"', origins: { 1: null } },
+  { script: 'g() { :; }; p=a; g; p=a; g; f() { use 1 "$p"; }; p=b f; p=b f; use 2 "$p"', origins: { 1: null, 2: null } },
+  { script: 'set -e; f() { use 1 "$p"; maybe; }; p=a f; p=a f; p=b; use 2 "$p"', origins: { 1: null, 2: 'p=b' } },
+  { script: 'f() { use 1 "$p"; : "${q:1:-4}"; }\np=a f; p=a f\nuse 2 "$p"', origins: { 1: null, 2: null } },
+  { script: 'f() { declare -g p; }; p=x; p=a f; p=x; p=a f; use 1 "$p"', origins: { 1: null } },
   // Quotes and backslashes: the value is the word's text, without them.
   { script: 'p="a\\\\.b"; use 1 "$p"; q=\'x y\'; use 2 "$q"', origins: { 1: 'p="a\\\\.b"', 2: "q='x y'" } },
   // A `case` the walk decides, and one it does not.

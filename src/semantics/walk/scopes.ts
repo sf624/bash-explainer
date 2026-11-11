@@ -3,7 +3,7 @@
 // state says whose it is (`VariableState.scope`), so that a local made, or removed by `unset`, on some paths only is
 // followed on each: `f() { [ -t 0 ] && local x=2; x=9; }` leaves `x` as 9 after the call, or as it was.
 import { type Frame } from './shared';
-import { merge, mergeVariable, type Scope, type ShellState, type VariableState } from '../shellstate';
+import { merge, mergeVariable, sameVariable, type Scope, type ShellState, type VariableState } from '../shellstate';
 import type { Walker } from './walker';
 
 /**
@@ -104,4 +104,38 @@ export function leaveFrame(w: Walker, frame: Frame, end: ShellState, depth: numb
     end = merge([restore(end, maybe), others], w.posix);
   }
   return frame.options ? { ...end, set: frame.options } : end;
+}
+
+type Saved = ReadonlyMap<string, VariableState | undefined>;
+
+/**
+ * Whether two frames hide the same (`Frame.saved`), as `sameState` holds two states the same: a walk of a call is reused
+ * with such a frame. (Two frames of the same size, of calls with the same entry, hide the same names: the variables of
+ * the entry that are prefix assignments of a call at that depth.)
+ */
+export function sameSaved(a: Saved, b: Saved): boolean {
+  if (a.size !== b.size) return false;
+  for (const [name, x] of a) {
+    const y = b.get(name);
+    if (x !== y && (!x || !y || !sameVariable(x, y))) return false;
+  }
+  return true;
+}
+
+/**
+ * `exit`, the end of a walk whose frame hid `was`, for a call whose frame hides `now` (`sameSaved`: the same, but for the
+ * words of the values and where they were set, `VariableState.source` and `at`): what it restores is this call's. Gives
+ * too the names whose value there still holds the word of `was` (`declare -g x` in the body, of the prefix assignment
+ * `x`): which word it is is not known.
+ */
+export function restoredFor(exit: ShellState, was: Saved, now: Saved): { exit: ShellState; apart: string[] } {
+  const apart: string[] = [];
+  for (const [name, v] of was) {
+    const here = now.get(name);
+    const after = exit.variables.get(name);
+    if (here === v) continue;
+    if (after === v) exit = { ...exit, variables: exit.variables.with(name, here) };
+    else if (v?.source && after?.source === v.source) apart.push(name);
+  }
+  return { exit, apart };
 }

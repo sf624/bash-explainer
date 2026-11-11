@@ -656,6 +656,36 @@ describe('one line must not stop the whole tool', () => {
       assert.strictEqual(a?.value, undefined);
     });
 
+    it('functions called with a prefix assignment: each body walked once per state, as without one', () => {
+      // (Each fᵢ calls `X=1 fᵢ₊₁` twice. A body walked again at every such call is 2^n walks: 18 levels took 18 s. And a
+      // dispatcher of the kind of nvm.sh: each command calls helpers with a prefix assignment, one in a loop.)
+      const chain = (n: number, prefix: string) => `${Array.from({ length: n }, (_, i) => `f${i}() {\n  ${prefix}f${i + 1}\n  ${prefix}f${i + 1}\n}\n`).join('')}f${n}() { echo "$X"; }\nf0\n`;
+      const helpers = Array.from({ length: 10 }, (_, i) => `helper_${i}() {\n  local v=$1\n  case $MODE in\n    a) echo "$v" ;;\n    *) printf '%s\\n' "$v" ;;\n  esac\n}\n`).join('');
+      const commands = Array.from({ length: 80 }, (_, i) => `cmd_${i}() {\n  MODE=a helper_${i % 10} "$1"\n  MODE=b helper_${(i + 1) % 10} "$1"\n  while read -r l; do\n    MODE=c helper_${(i + 2) % 10} "$l"\n  done < f\n}\n`).join('');
+      const dispatcher = `${helpers}${commands}main() {\n  case $1 in\n${Array.from({ length: 80 }, (_, i) => `    c${i}) cmd_${i} "$2" ;;\n`).join('')}  esac\n}\nmain "$@"\n`;
+      const proto = Walker.prototype as unknown as { walkBody: (...args: unknown[]) => unknown };
+      const real = proto.walkBody;
+      let walks = 0;
+      proto.walkBody = function (this: Walker, ...args: unknown[]) {
+        if (++walks > 5000) throw new Error('walked too often');
+        return real.apply(this, args);
+      };
+      const count = (script: string): number => {
+        walks = 0;
+        shellState(parser.parse(script), 'bash');
+        return walks;
+      };
+      try {
+        const plain = count(chain(20, ''));
+        assert.strictEqual(plain, 21);
+        assert.strictEqual(count(chain(20, 'X=1 ')), plain);
+        // (Each command once, and its helpers in each mode: main walked each helper at every call, 401 walks.)
+        assert.ok(count(dispatcher) <= 120, String(walks));
+      } finally {
+        proto.walkBody = real;
+      }
+    });
+
     it('aliases that double: a walk follows so many, and then trusts nothing', () => {
       const lines = Array.from({ length: 16 }, (_, i) => `alias a${i + 1}='a${i}; a${i}'`);
       const script = `shopt -s expand_aliases\n${lines.join('\n')}\na16\n`;

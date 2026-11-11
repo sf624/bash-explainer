@@ -120,9 +120,10 @@ export interface StateModel {
   /**
    * The variables whose value word (`VariableState.source`) a function call did not follow: it reused the walk of an
    * entry that differs only in those words (`p=a; f; p=a; f`), so the body and what follows keep the first call's.
-   * `valueOrigin` gives none of them.
+   * Where only the bodies that walk ran keep it (the word of the call's prefix assignment, `p=a f; p=a f`, which the
+   * call then takes back), those function definitions. `valueOrigin` gives none of them there.
    */
-  readonly mixedSources: ReadonlySet<string>;
+  readonly mixedSources: ReadonlyMap<string, ReadonlySet<SyntaxNode> | 'everywhere'>;
   /** The function definitions the host calls once the script has run (bats' tests and hooks), and how (src/semantics/walk/host.ts). */
   readonly hostCalls: ReadonlyMap<SyntaxNode, HostCall>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */

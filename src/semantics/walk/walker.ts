@@ -26,7 +26,7 @@ import { WalkConditions } from './conditions';
 import { WalkExpansions } from './expansions';
 import { kept, temporaries, temporary } from './temporaries';
 import { forStatement } from './forloop';
-import { inScope, leaveFrame, ofCall } from './scopes';
+import { inScope, leaveFrame, ofCall, restoredFor, sameSaved } from './scopes';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
@@ -44,6 +44,23 @@ const ERREXIT_STOPS = new Set(['command', 'extended_test', 'arithmetic_command',
 const WALKS_PER_FUNCTION = 4;
 /** How deep calls are followed (deeper ones are guessed). */
 const CALL_DEPTH = 64;
+
+/**
+ * A walk of a function body: the state it was called with (`entry`, with the call's prefix assignments) and what its
+ * frame hid (`saved`), the state after it, the modes it was made in (`how`, see `reuseKey`), the states where an error
+ * in it ended or may end the line, what it changed, and the bodies it ran (itself, and those it called).
+ */
+interface Walk {
+  entry: ShellState; saved: ReadonlyMap<string, VariableState | undefined>; exit: ShellState; how: string;
+  aborts: ShellState[]; maybes: ShellState[]; changed: ReadonlySet<string>; inside: ReadonlySet<SyntaxNode>;
+}
+
+/** Whether a state the walk gives after the call (its end, or where an error ends the line) holds the word its entry gave `name`. */
+function wordAfter(walk: Walk, name: string): boolean {
+  const word = walk.entry.variables.get(name)?.source;
+  for (const st of [walk.exit, ...walk.aborts, ...walk.maybes]) if (st.variables.get(name)?.source === word) return true;
+  return false;
+}
 
 /** The walk of a tree (`program`), with its parts. */
 export class Walker {
@@ -67,8 +84,11 @@ export class Walker {
   readonly hostCalls = new Map<SyntaxNode, HostCall>();
   /** The `source` and `.` commands run. */
   readonly sources: SyntaxNode[] = [];
-  /** The variables a function call reached with another value word than the walk it reused (`StateModel.mixedSources`). */
-  readonly mixedSources = new Set<string>();
+  /**
+   * The variables a function call reached with another value word than the walk it reused, and where that walk holds
+   * the first word: everywhere, or only in the bodies it ran (`StateModel.mixedSources`).
+   */
+  readonly mixedSources = new Map<string, ReadonlySet<SyntaxNode> | 'everywhere'>();
   /** The first top-level statement of the unit of each top-level statement. */
   readonly unitStart = new Map<SyntaxNode, SyntaxNode>();
   /**
@@ -85,8 +105,10 @@ export class Walker {
   readonly ends: ShellState[] = [];
   /** The command whose alias, `eval` string or trap action is being run (its nodes are in their own tree). */
   aliasHost: SyntaxNode | undefined;
-  /** The walks of each function body: the state it was called with, and the state after it. */
-  private readonly walks = new Map<SyntaxNode, { entry: ShellState; exit: ShellState; how: string; aborts: ShellState[]; maybes: ShellState[]; changed: ReadonlySet<string> }[]>();
+  /** The walks of each function body (a call with the same entry and frame reuses one, `walkOrReuse`). */
+  private readonly walks = new Map<SyntaxNode, Walk[]>();
+  /** The bodies each walk being made has run (`Walk.inside`). */
+  private readonly insides: Set<SyntaxNode>[] = [];
   /** What the walks of each function body changed (from the start: what an earlier walk of the script found, `seed`'s). */
   readonly changes = new Map<SyntaxNode, Set<string>>();
   /**
@@ -970,7 +992,7 @@ export class Walker {
       this.recurse(def, st);
       this.unwalked.add(def);
       this.abort(st, false);
-    } else if (temporaries.length) {
+    } else {
       const frame: Frame = { def, saved: new Map() };
       let entry = st;
       for (const a of temporaries.filter(temporary)) {
@@ -980,46 +1002,78 @@ export class Walker {
         entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry, false, true), name, 'x', a);
         entry = { ...entry, variables: entry.variables.with(name, { ...entry.variables.get(name)!, scope: { depth: this.frames.length + 1, temporary: true } }) };
       }
-      exit = this.walkBody(def, entry, frame);
-    } else {
-      const walks = this.walks.get(def) ?? [];
-      if (!this.silent) this.walks.set(def, walks);
-      const how = this.reuseKey();
-      const seen = walks.find((w) => w.how === how && (w.entry === st || sameState(w.entry, st)));
-      // (A walk reused gives again the states where an error in it ended the line, see `abort`, and makes its changes
-      // again here, for what collects them: a loop, the body that calls it, a trap's action.)
-      const unit = this.unitTarget();
-      if (seen) {
-        exit = seen.exit;
-        // (It holds the value words of its own entry: those that differ here are no origin of a value, `valueOrigin`.)
-        for (const name of sourcesApart(seen.entry, st)) this.mixedSources.add(name);
-        if (unit && unit.dead === this.mode.dead) pushAll(unit.aborts, seen.aborts);
-        for (const m of seen.maybes) this.abort(m, false);
-        for (const key of seen.changed) {
-          this.lastChange.set(key, ++this.changeCount);
-          for (const c of this.collecting) c.add(key);
-        }
-      } else if (walks.length >= WALKS_PER_FUNCTION) {
-        exit = notWalked(this, def, st);
-        this.unwalked.add(def);
-        this.abort(st, false);
-      } else {
-        const from = unit?.aborts.length ?? 0;
-        const maybesFrom = unit?.maybes.length ?? 0;
-        const changed = new Set<string>();
-        this.collecting.push(changed);
-        const reveals = this.reveals;
-        try {
-          exit = this.walkBody(def, st, { def, saved: new Map() });
-        } finally {
-          this.collecting.pop();
-        }
-        // (Each state once: a body that calls a function twice would otherwise double them at each level of calls, `f2() { f1; f1; }`.
-        // One that showed what a caller's frame hides, `revealed`, is not reused: another caller's frame hides another.)
-        if (!this.silent) walks.push({ entry: st, exit, how: this.reveals === reveals ? how : `${how} ${this.reveals}`, aborts: [...new Set(unit?.aborts.slice(from))], maybes: [...new Set(unit?.maybes.slice(maybesFrom))], changed });
-      }
+      exit = this.walkOrReuse(def, st, entry, frame);
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
+  }
+
+  /**
+   * The state after the body of `def` runs from `entry` with `frame` (what the call's prefix assignments hide, `x=1 f`;
+   * `st`: the state before them). A walk made from the same entry, with the same frame and in the same modes, is reused
+   * (each state once: a body that calls a function twice would otherwise double the walks at each level of calls,
+   * `f2() { f1; f1; }`, `f2() { x=1 f1; x=1 f1; }`); past `WALKS_PER_FUNCTION` walks, the body's changes are not known.
+   */
+  private walkOrReuse(def: SyntaxNode, st: ShellState, entry: ShellState, frame: Frame): ShellState {
+    const walks = this.walks.get(def) ?? [];
+    if (!this.silent) this.walks.set(def, walks);
+    const how = this.reuseKey();
+    const seen = walks.find((w) => w.how === how && (w.entry === entry || sameState(w.entry, entry)) && sameSaved(w.saved, frame.saved));
+    // (A walk reused gives again the states where an error in it ended the line, see `abort`, and makes its changes
+    // again here, for what collects them: a loop, the body that calls it, a trap's action.)
+    const unit = this.unitTarget();
+    if (seen) {
+      // (It holds the value words of its own entry: those that differ here are no origin of a value, `valueOrigin`. The
+      // word of a prefix assignment stays in the bodies the walk ran, unless a state it gives after the call holds it.
+      // What the call restores is this call's.)
+      for (const name of sourcesApart(seen.entry, entry)) {
+        if (frame.saved.has(name) && !wordAfter(seen, name)) this.mixedIn(name, seen.inside);
+        else this.mixedSources.set(name, 'everywhere');
+      }
+      const { exit, apart } = restoredFor(seen.exit, seen.saved, frame.saved);
+      for (const name of apart) this.mixedSources.set(name, 'everywhere');
+      for (const inside of this.insides) for (const d of seen.inside) inside.add(d);
+      if (unit && unit.dead === this.mode.dead) pushAll(unit.aborts, seen.aborts);
+      for (const m of seen.maybes) this.abort(m, false);
+      for (const key of seen.changed) {
+        this.lastChange.set(key, ++this.changeCount);
+        for (const c of this.collecting) c.add(key);
+      }
+      return exit;
+    }
+    if (walks.length >= WALKS_PER_FUNCTION) {
+      // (From the state before the prefix assignments, which are gone after the call: what the body changes is not known.)
+      const exit = notWalked(this, def, st);
+      this.unwalked.add(def);
+      this.abort(st, false);
+      return exit;
+    }
+    const from = unit?.aborts.length ?? 0;
+    const maybesFrom = unit?.maybes.length ?? 0;
+    const changed = new Set<string>();
+    const saved = new Map(frame.saved);
+    const inside = new Set<SyntaxNode>();
+    this.collecting.push(changed);
+    this.insides.push(inside);
+    const reveals = this.reveals;
+    let exit: ShellState;
+    try {
+      exit = this.walkBody(def, entry, frame);
+    } finally {
+      this.collecting.pop();
+      this.insides.pop();
+    }
+    // (One that showed what a caller's frame hides, `revealed`, is not reused: another caller's frame hides another.)
+    if (!this.silent) walks.push({ entry, saved, inside, exit, how: this.reveals === reveals ? how : `${how} ${this.reveals}`, aborts: [...new Set(unit?.aborts.slice(from))], maybes: [...new Set(unit?.maybes.slice(maybesFrom))], changed });
+    return exit;
+  }
+
+  /** `name` holds another word than the one a reused walk gives it in the bodies `inside` (`mixedSources`). */
+  private mixedIn(name: string, inside: ReadonlySet<SyntaxNode>): void {
+    const was = this.mixedSources.get(name);
+    if (was === 'everywhere') return;
+    const next = new Set(was);
+    for (const d of inside) next.add(d);
+    this.mixedSources.set(name, next);
   }
 
   /**
@@ -1083,6 +1137,7 @@ export class Walker {
     this.expand = this.parseAt.get(top) ?? entry;
     this.stack.push(def);
     this.frames.push(frame);
+    for (const inside of this.insides) inside.add(def);
     const changes = this.changes.get(def) ?? new Set<string>();
     this.changes.set(def, changes);
     this.collecting.push(changes);
