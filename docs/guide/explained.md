@@ -21,6 +21,8 @@ Many constructs come with a made-up input and the output it produces. The built-
 
 Examples appear right under the part they illustrate (see `bashExplainer.examples.placement`).
 
+A variable the script sets is read in the language of the command that uses it: after `re='^[A-Z][0-9]+$'`, `grep -E "$re" ids.txt` shows the parts of the regex and its example, as the literal pattern does. The assignment line shows the same parts, and names the command and the line that read the value.
+
 ## Shell code in other files
 
 | File | What is explained |

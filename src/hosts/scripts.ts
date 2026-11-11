@@ -4,6 +4,7 @@ import type { Pos, Span } from '../analyzer-types';
 import type { Shell } from '../shellfeatures';
 import type { BashParser, SyntaxTree } from '../syntax/tree';
 import { createUnbashParser } from '../syntax/adapters/unbash';
+import { shellStartAt } from '../semantics/scriptstops';
 import type { CallArgument, Extracted, LanguageRegion, LiteralSource, ReParam, ShellRegion } from './index';
 
 let regionParser: BashParser | undefined;
@@ -48,11 +49,28 @@ export function scriptTree(tree: SyntaxTree, extracted: Extracted, region: Shell
 }
 
 /**
- * The row where the shell that runs `line` of `region` started, for what may stop it (`stopBefore`, src/semantics/scriptstops.ts): in the tree of the region's
- * group (`scriptTree`), which is one shell. But a reader runs each fence of a Markdown file by itself, and bats runs each test in a process of its own.
+ * The rows where the shells that run the tree of `region` start, in order, for what may stop them (`stopBefore`,
+ * src/semantics/scriptstops.ts): the tree of the region's group (`scriptTree`) is one shell, from its first row. But a
+ * reader runs each fence of a Markdown file by itself, and bats runs each test in a process of its own. A row's shell
+ * started on the last of them on or before it (`shellStartAt`).
  */
-export function shellStart(region: ShellRegion, line: number): number {
-  return region.host.kind === 'markdown' ? region.start : region.tests?.filter((t) => t <= line).pop() ?? 0;
+export function shellStarts(extracted: Extracted, region: ShellRegion): readonly number[] {
+  if (region.host.kind !== 'markdown') return region.tests ?? [];
+  let starts = fenceStarts.get(region);
+  if (!starts) {
+    // (Markdown's fences are one script: src/hosts/markdown.ts.)
+    const group = extracted.regions.filter((r) => r.script === region.script);
+    starts = group.map((r) => r.start).sort((a, b) => a - b);
+    for (const r of group) fenceStarts.set(r, starts);
+  }
+  return starts;
+}
+
+const fenceStarts = new WeakMap<ShellRegion, readonly number[]>();
+
+/** The row where the shell that runs `line` of `region` started (`shellStarts`). */
+export function shellStart(extracted: Extracted, region: ShellRegion, line: number): number {
+  return shellStartAt(shellStarts(extracted, region), line)!;
 }
 
 /** The lines of the shell text of a host document: asked for each token of each line, read once. */

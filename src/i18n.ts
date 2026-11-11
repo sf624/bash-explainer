@@ -39,6 +39,14 @@ export const lineLabel = (lang: Lang, n: number, form: LineForm = 'long'): strin
 export const lineRangeLabel = (lang: Lang, a: number, b: number): string =>
   a === b ? lineLabel(lang, a, 'inline') : lang === 'ja' ? `行 ${a}〜${b}` : `lines ${a}–${b}`;
 
-/** The lines of a list of numbers (counted from 1, in the order given): `行 1、3`, `line 1`, `lines 1 and 3`, `lines 1, 2 and 3`. */
-export const lineListLabel = (lang: Lang, lines: readonly number[]): string =>
-  lang === 'ja' ? `行 ${lines.join('、')}` : lines.length === 1 ? lineLabel(lang, lines[0]!, 'inline') : `lines ${lines.slice(0, -1).join(', ')} and ${lines.at(-1)}`;
+/**
+ * The lines of a list of numbers (counted from 1, in the order given): `行 1、3`, `line 1`, `lines 1 and 3`, `lines 1, 2 and 3`.
+ * Past `most` of them, the first `most` and how many more: `行 4、9、12 ほか 2 行`, `lines 4, 9, 12 and 2 more`.
+ */
+export const lineListLabel = (lang: Lang, lines: readonly number[], most = Infinity): string => {
+  if (lines.length > most) {
+    const shown = lines.slice(0, most);
+    return lang === 'ja' ? `行 ${shown.join('、')} ほか ${lines.length - most} 行` : `lines ${shown.join(', ')} and ${lines.length - most} more`;
+  }
+  return lang === 'ja' ? `行 ${lines.join('、')}` : lines.length === 1 ? lineLabel(lang, lines[0]!, 'inline') : `lines ${lines.slice(0, -1).join(', ')} and ${lines.at(-1)}`;
+};

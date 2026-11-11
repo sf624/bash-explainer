@@ -1,5 +1,9 @@
 import { blankName } from './messages-values';
-import type { Text } from './i18n';
+import { type Lang, lineListLabel, type Text } from './i18n';
+import { flavorName } from './embedded/flavors';
+import { LANGUAGE_NAMES } from './embedded/names';
+import type { Flavor } from './embedded/regex-state';
+import type { EmbeddedLang } from './embedded/types';
 import { codeSpan } from './label';
 import { tokenText } from './messages-levels';
 import type { PlaceholderWith } from './argv/spec';
@@ -11,6 +15,30 @@ export const REGEX_VALUE_SPECIAL = {
   ja: '値の中の `.`・`*`・`[` などは特別な意味を',
   en: '`.`, `*`, `[` and the like in the value have their special meaning',
 };
+
+/**
+ * A command that reads a known value in a language, for the texts of its assignment (`assignment-value-read`): the language,
+ * with the regex flavour of the command where it reads a regex; the command as written, with its options (`grep -E`); the lines
+ * that read it so; whether that holds only where no file name matches the value (`glob`: a value that is a glob pattern).
+ */
+export interface ValueReader { lang: EmbeddedLang; flavor?: Flavor | 'fixed'; by: string; lines: readonly number[]; glob?: boolean }
+
+/** How many lines of a reader its text names: past them, how many more (`lineListLabel`). */
+const LINES_SHOWN = 3;
+
+const readerName = (r: ValueReader, lang: Lang): string => (r.flavor ? flavorName(r.flavor, lang) : LANGUAGE_NAMES[r.lang][lang]);
+
+/** `readerName` among Japanese words: a blank between it and the kana where it starts or ends with a Latin letter (`sed スクリプト`, `Perl`). */
+const jaName = (r: ValueReader): string => readerName(r, 'ja').replace(/^(?=[A-Za-z])/, ' ').replace(/(?<=[A-Za-z])$/, ' ');
+
+const readerLines = (r: ValueReader, lang: Lang): string => lineListLabel(lang, r.lines, LINES_SHOWN) + (r.glob
+  ? lang === 'ja' ? '。一致するファイル名がないとき' : ', where no file name matches it' : '');
+
+/** A name of a language with its article: none for a name of things (`escapes`, `option letters`), arithmetic or Perl. */
+const withArticle = (name: string): string => (/s$|^(arithmetic|Perl)$/.test(name) ? name : `${/^[aeiou]/i.test(name) ? 'an' : 'a'} ${name}`);
+
+/** Two items or more: `a and b`, `a, b and c`, with `sep` and `last` between them. */
+const listed = (items: readonly string[], sep: string, last: string): string => items.slice(0, -1).join(sep) + last + items.at(-1)!;
 
 /** What a value does in an unquoted word of a bazel query expression: a character no such word holds ends the word. */
 const QUERY_WORD_END = [
@@ -263,6 +291,25 @@ export const ARGV_TEXTS = {
     return [
       `先にシェルがバックスラッシュを取り除いている: ${list}`,
       `bash has already removed the backslash: ${list}`];
+  }),
+  /**
+   * `re='^[A-Z]+$'`, whose uses read the value in a language (docs/design/known-values.md, 6.2): each command as written that reads
+   * it, in what (its regex flavour, or the language), on which lines (`reads`); and those that find an error in it (`errors`), which
+   * their own lines say.
+   */
+  'assignment-value-read': tokenText<{ reads: readonly ValueReader[]; errors: readonly ValueReader[] }>(({ reads, errors }) => {
+    const ja = [
+      reads.length === 1 ? `${codeSpan(reads[0].by)} が${jaName(reads[0])}として読む（${readerLines(reads[0], 'ja')}）`
+        : reads.length ? `${reads.map((r) => `${codeSpan(r.by)} が${jaName(r)}として（${readerLines(r, 'ja')}）`).join('、')}読む` : '',
+      ...errors.map((r) => `${lineListLabel('ja', r.lines, LINES_SHOWN)} の ${codeSpan(r.by)} は${jaName(r)}として読み、エラーになる`),
+    ];
+    const one = (r: ValueReader): string => `${withArticle(readerName(r, 'en'))} by ${codeSpan(r.by)}`;
+    const en = [
+      reads.length === 1 ? `read as ${one(reads[0])}, ${readerLines(reads[0], 'en')}`
+        : reads.length ? `read as ${listed(reads.map((r) => `${one(r)} (${readerLines(r, 'en')})`), ', as ', ' and as ')}` : '',
+      ...errors.map((r) => `${codeSpan(r.by)} reads it as ${withArticle(readerName(r, 'en'))} on ${lineListLabel('en', r.lines, LINES_SHOWN)} and finds an error there`),
+    ];
+    return [ja.filter(Boolean).join('。'), en.filter(Boolean).join('; ')];
   }),
   /** `sort -t"|"`: the value is written with quotes (`val`: what it is without them). */
   'option-value-unquoted': tokenText<{ val: string }>(({ val }) => [

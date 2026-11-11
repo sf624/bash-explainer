@@ -5,14 +5,14 @@
 // the worked example of the text (src/explain/examples.ts, src/explain/examples-jq.ts).
 import type { ExampleKind, Span, Token, ValueReading } from '../analyzer-types';
 import { rulesOf } from '../argv/parsers';
-import { givenOptions, inRecords, operands, values } from '../argv/query';
+import { givenOptions, inRecords, operands, roleLanguage, roleOfWord, values } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { awkHasGnuEscapes } from '../dict/aliases';
 import { YQ_SPECS } from '../dict/yq';
 import { explainEscapes } from '../embedded/format';
 import { type Embedded, EMBEDDED, type EmbeddedContext } from '../embedded/registry';
 import { HOLES, isHole, type EmbeddedLang, type EmbeddedToken } from '../embedded/types';
-import { codeSpan } from '../label';
+import { codeSpan, shorten } from '../label';
 import { countIn } from '../semantics/argwords';
 import { givesElements } from '../semantics/elements';
 import { awkExample } from '../examples/awk';
@@ -24,12 +24,13 @@ import { sedExample, sedPattern } from '../examples/sed';
 import { NO_INPUT } from '../examples/source';
 import { featureWorks } from '../shellfeatures';
 import { holedContent, type Literal, literalContent, literalOfMapped, removedBackslashes, sourceIndex, staticWordText } from '../staticword';
-import { ancestor, hasError, type SyntaxNode } from '../syntax/tree';
-import { lookupKey } from '../semantics/commandread';
-import type { StateModel } from '../semantics/state';
-import { knownCopy } from '../semantics/values';
-import { finishedApart } from '../linefinish';
-import { type CommandRead, type Explainer, memoKey } from './context';
+import { ancestor, field, hasError, type SyntaxNode } from '../syntax/tree';
+import { commandReading, lookupKey } from '../semantics/commandread';
+import { docLine, type StateModel } from '../semantics/state';
+import { copyingWord, knownCopy, valueUses } from '../semantics/values';
+import { finishedApart, saysProblemIn } from '../linefinish';
+import type { ValueReader } from '../messages-tokens-argv';
+import { type CommandContext, type CommandRead, type Explainer, memoKey } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, programsGiven, regexExample } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fillHoles, holeSink, type HoleSink, holesRead, holeText } from './holes';
@@ -40,7 +41,7 @@ import type { BashVersion } from '../bashversion';
 import type { Shell } from '../dialect';
 import type { Lang } from '../i18n';
 import type { ReadKnown, Stop } from '../semantics/scriptstops';
-import { given, givenIn, lookupOf, optionValues, regexFlavor, regexFlavorOf, trContext } from './reads';
+import { given, givenIn, inArithmetic, lookupOf, optionValues, regexFlavor, regexFlavorOf, trContext } from './reads';
 import { hostString } from './hoststrings';
 import { valueNote } from './words';
 
@@ -63,8 +64,12 @@ export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): Embe
   return lit && embeddedText(cx, lit, lang, a);
 }
 
-/** A known value read in a language (`valueReading`): the reader's tokens, finished and kept, its note, and what bash made of the word. */
-export interface ValueReadingMade { tokens: readonly Token[]; note?: string; part: SyntaxNode; assumes?: 'no-match'; text: string }
+/**
+ * A known value read in a language (`valueReading`): the reader's tokens, finished and kept, its note, and what bash made of the
+ * word; `read`, the reader's own tokens, at their offsets in the value (`text`), which the value's assignment places on its string
+ * (`assignedReading`).
+ */
+export interface ValueReadingMade { tokens: readonly Token[]; read: readonly EmbeddedToken[]; note?: string; part: SyntaxNode; assumes?: 'no-match'; text: string }
 
 /** The readings of known values, by the model of the script (which holds the commands' readings), by the other inputs they read, and by the word. */
 const keptValues = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, ValueReadingMade | null>>>();
@@ -79,14 +84,18 @@ const DOCUMENT_ONLY: LinePart = { lineEvidence: (known) => known(), lineReached:
  * slot runs, nor find's expression). Undefined where the reader reads nothing of it.
  *
  * It is kept for the document, by every input it reads (3.1): the model, the word, the language of the texts, the shell,
- * the bash release, the lookup's inputs, and the document's part of a fault's level (`script`, `host` and `stopsFrom` of
- * the word's region, which in a host file is that of the word's own line: only that line reaches the word in this step).
- * A line that sets flags of its own reading (`unread`, `unsure`, `sometimes`, `unreached`) reads it afresh with them, as it
- * reads a literal. No example is made here: the readers charge nothing.
+ * the bash release, the lookup's inputs, and the document's part of a fault's level (`script`, `host`, and the row where the
+ * word's shell started, `Explainer.stopsFrom`: the same whichever line asks, the use's or its assignment's). A line that
+ * sets flags of its own reading (`unread`, `unsure`, `sometimes`, `unreached`) reads it afresh with them, as it reads a
+ * literal. No example is made here: the readers charge nothing.
  */
 export function valueReading(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): ValueReadingMade | undefined {
   // (Asked only for a word of a command being read: `positional`.)
-  const c = cx.command!;
+  return commandValueReading(cx, cx.command!, a, lang);
+}
+
+/** `valueReading` of the word `a` of the command `c`, as the command's own line reads it, from any line. */
+function commandValueReading(cx: Explainer, c: CommandContext, a: SyntaxNode, lang: EmbeddedLang): ValueReadingMade | undefined {
   if (!c.onModel || c.parse.refused || cx.state.noShell) return undefined;
   return keptValue(cx, a, lang, (line) => readValue(cx, c, a, lang, line));
 }
@@ -104,7 +113,7 @@ export function regexValueReading(cx: Explainer, right: SyntaxNode): ValueReadin
     const { part, value } = known;
     const reached = line.lineReached(regexReachedInDocument(cx, right));
     const tokens = explainRegex(value.text, 'ere', cx.lang, { tool: 'bash', reached });
-    return { tokens: finishedApart(placeValue(tokens, part, value.text, 'regex')), part, text: value.text };
+    return { tokens: finishedApart(placeValue(tokens, part, value.text, 'regex')), read: tokens, part, text: value.text };
   });
 }
 
@@ -125,7 +134,8 @@ function keptValue(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang, make: (line
   if (own) return make(cx);
   let byKey = keptValues.get(cx.state);
   if (!byKey) keptValues.set(cx.state, (byKey = new Map()));
-  const key = JSON.stringify([cx.lang, cx.shell, opts.bashVersion, lookupKey(lookupOf(cx)), opts.script, opts.host, opts.stopsFrom, lang]);
+  // (The row the word's shell started on, in a host's text that holds several: a line on another row may ask, its assignment's.)
+  const key = JSON.stringify([cx.lang, cx.shell, opts.bashVersion, lookupKey(lookupOf(cx)), opts.script, opts.host, cx.stopsFrom(a), lang]);
   let byWord = byKey.get(key);
   if (!byWord) byKey.set(key, (byWord = new WeakMap()));
   let read = byWord.get(a);
@@ -149,7 +159,7 @@ function readValue(cx: Explainer, c: CommandRead, a: SyntaxNode, lang: EmbeddedL
   const read = EMBEDDED[lang](value.text, ecx);
   // (A reading with no tokens may still say something of the whole: `grep -F`, a fixed string.)
   if (!read) return undefined;
-  return { tokens: finishedApart(placeValue(read.tokens, part, value.text, lang)), ...(read.note ? { note: read.note } : {}), part, ...(assumes ? { assumes } : {}), text: value.text };
+  return { tokens: finishedApart(placeValue(read.tokens, part, value.text, lang)), read: read.tokens, ...(read.note ? { note: read.note } : {}), part, ...(assumes ? { assumes } : {}), text: value.text };
 }
 
 /** `valueReading` as a reader's reading of the word, with the worked example of the value made on the asking line, as for a literal. */
@@ -158,6 +168,85 @@ function knownValueRead(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): Embed
   if (!read) return undefined;
   cx.examplesAt(a, () => guardedEmbeddedExample(cx, lang, read.text, a));
   return { tokens: [], ...(read.note ? { note: read.note } : {}), ...(read.tokens.length ? { value: { part: read.part, reading: { tokens: read.tokens, ...(read.assumes ? { assumes: read.assumes } : {}) } } } : {}) };
+}
+
+/**
+ * The right side of `=~` in `[[ ]]` of the binary expression `n`, where it is one word: the ERE bash reads itself
+ * (docs/design/known-values.md, 5). None for another operator, or in arithmetic.
+ */
+export function regexRightOf(n: SyntaxNode): SyntaxNode | undefined {
+  if (n.type !== 'binary_expression' || field(n, 'operator')?.text !== '=~' || inArithmetic(n) || !ancestor(n, (a) => a.type === 'extended_test')) return undefined;
+  // (The parser reads what follows `=~` as one word, up to the next blank: `[[ $x =~ a b ]]` is an error after `a`.)
+  return field(n, 'right')!;
+}
+
+/** A use of an assignment's value (`valueUses`), as its own line reads the value: the reading, who reads it and as what, and its line. */
+interface ValueUse { made: ValueReadingMade; reader: Omit<ValueReader, 'lines' | 'glob'>; line: number }
+
+/**
+ * The use `part` (an expansion `valueUses` gives) as the line of its command reads the value (docs/design/known-values.md, 6.2):
+ * the reading the use's line has, kept for the document (`keptValue`), from the command's reading on the model
+ * (`commandReading`, as `readArgs` reads it) and the language its spec gives the word (`roleLanguage`); or the right side of
+ * `=~`, as bash reads it. None where the use's line reads no language.
+ */
+function valueUse(cx: Explainer, part: SyntaxNode): ValueUse | undefined {
+  const word = copyingWord(part);
+  const line = docLine(part) + 1;
+  const right = regexRightOf(word.parent!);
+  if (right && same(right, word)) {
+    const made = regexValueReading(cx, right);
+    return made && { made, reader: { lang: 'regex', flavor: 'ere', by: '[[ =~ ]]' }, line };
+  }
+  const cmd = word.parent;
+  // (A word of a command is one of its arguments: an expansion before them would be its name.)
+  if (cmd?.type !== 'command') return undefined;
+  const read = commandReading(cmd, cx.state, lookupOf(cx));
+  const index = read.args.findIndex((w) => same(w, word));
+  const found = roleOfWord(read.parse, read.spec, index);
+  const lang = found && roleLanguage(found.role, read.head.fn ?? false);
+  if (!lang) return undefined;
+  const nodes = [...read.args];
+  const c: CommandContext = { cmd: found.parse.command, args: nodes, parse: found.parse, nodes, spec: found.spec, onModel: true };
+  const made = commandValueReading(cx, c, word, lang);
+  if (!made) return undefined;
+  // (The command as written, with the options before the word, each once: `grep -E -e` of `grep -E -e "$a" -e "$a"`.)
+  const by = shorten([field(cmd, 'name')!.text, ...new Set(found.before.map((i) => nodes[i].text))].join(' '));
+  return { made, reader: { lang, ...(lang === 'regex' ? { flavor: regexFlavorOf(c, index) } : {}), by }, line };
+}
+
+/**
+ * What the uses of the assignment's value word `value` make of it (docs/design/known-values.md, 6.2): the uses whose state
+ * carries this word (`valueUses`) and whose line reads the value in a language (`valueUse`). Where they read it one way
+ * (their readers' tokens equal) and none finds an error in it, the reader's tokens placed on the string, as a literal's
+ * (`staticWordText`); in any case a text naming each command, as what it reads the value, and on which lines. None where no
+ * use reads it. No example: the uses' lines have them.
+ */
+export function assignedReading(cx: Explainer, value: SyntaxNode): { tokens: Token[]; note: string } | undefined {
+  const uses = (valueUses(cx.state).get(value) ?? []).flatMap((p) => valueUse(cx, p) ?? []);
+  if (!uses.length) return undefined;
+  const failed = new Set(uses.filter((u) => saysProblemIn(u.made.tokens)));
+  const readers = (list: readonly ValueUse[]): ValueReader[] => {
+    const out = new Map<string, ValueReader & { lines: number[] }>();
+    for (const u of list) {
+      const glob = u.made.assumes === 'no-match';
+      const key = JSON.stringify([u.reader, glob]);
+      const r = out.get(key);
+      // (The uses come in the order of the text: a line read twice, `-e "$a" -e "$a"`, is the last one.)
+      if (!r) out.set(key, { ...u.reader, lines: [u.line], ...(glob ? { glob } : {}) });
+      else if (r.lines.at(-1) !== u.line) r.lines.push(u.line);
+    }
+    return [...out.values()];
+  };
+  const ok = uses.filter((u) => !failed.has(u));
+  const note = cx.text('assignment-value-read', { reads: readers(ok), errors: readers([...failed]) });
+  // (One reading: the same tokens of the reader, at the same offsets of the value, and the same assumption.)
+  const one = !failed.size && new Set(ok.map((u) => JSON.stringify([u.made.read, u.made.assumes]))).size === 1;
+  const m = staticWordText(value, cx.shell)!;
+  const lit = literalOfMapped(m, value);
+  // (Where bash took a backslash away before the commands read the text, `"a\\.b"`: the quotes are here, not at the uses.)
+  const taken = removedBackslashes(lit);
+  const said = taken.length ? note + cx.s('。', '; ') + cx.text('embedded-backslash-removed', { taken }) : note;
+  return { tokens: one ? ok[0].made.read.map((t) => ({ ...fromEmbedded(t, value, lit, 'embedded'), language: ok[0].reader.lang })) : [], note: said };
 }
 
 /**
@@ -201,9 +290,8 @@ function isGawk(c: CommandRead): boolean {
 
 /**
  * Where a word a reader reads stands (docs/design/known-values.md, 3.1): how a fault there is said (`documentEvidenceAt`)
- * and the strongest stop before it (`documentStopAt`), without the flags a line sets for itself. In step 1 the line that
- * asks is the word's own, so its host region is the word's; a reading kept for another line (step 2) takes them from the
- * word's own region (`stopsFrom`).
+ * and the strongest stop before it (`documentStopAt`), without the flags a line sets for itself; in a host file, from the
+ * row where the word's own shell started (`Explainer.stopsFrom`), whichever line asks.
  */
 export interface DocumentPlace { evidence(): ReadKnown | undefined; stop(): Stop | undefined }
 
