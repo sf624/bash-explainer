@@ -4722,5 +4722,113 @@
       ],
       "status": 0
     }
+  },
+  {
+    "id": "unset-temporary-sh",
+    "manual": "4.2",
+    "snippet": "x=g; x=1 unset x; @PROBE:a@ \"${x-u}\"; y=g; @PROBE:b@ \"$y\"",
+    "shell": "sh",
+    "requires": "dash",
+    "note": "bash (also in POSIX mode) removes the command's `x`, and `g` stays; dash keeps the assignment of a special builtin, and unsets it",
+    "none": {
+      "a": "dash and `bash --posix` differ"
+    },
+    "origins": {
+      "b": "y=g"
+    },
+    "facts": {
+      "dash": {
+        "a": [
+          [
+            "u"
+          ]
+        ],
+        "b": [
+          [
+            "g"
+          ]
+        ],
+        "status": 0
+      },
+      "posix": {
+        "a": [
+          [
+            "g"
+          ]
+        ],
+        "b": [
+          [
+            "g"
+          ]
+        ],
+        "status": 0
+      }
+    }
+  },
+  {
+    "id": "unset-temporary-dash",
+    "manual": "4.2",
+    "snippet": "x=g; x=1 unset x; @PROBE:a@ \"${x-u}\"",
+    "shell": "dash",
+    "requires": "dash",
+    "facts": {
+      "a": [
+        [
+          "u"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "unset-temporary-call",
+    "manual": "3.3",
+    "snippet": "x=g; f() { unset x; @PROBE:a@ \"${x-u}\"; x=5; }; x=t f; @PROBE:b@ \"$x\"; f() { local x=l; x=t g; @PROBE:c@ \"$x\"; }; g() { unset x; @PROBE:d@ \"$x\"; }; f",
+    "note": "`unset` in a function of a prefix assignment of its call removes it: the variable it hides shows again",
+    "origins": {
+      "b": "x=5",
+      "c": "x=l",
+      "d": "x=l"
+    },
+    "facts": {
+      "a": [
+        [
+          "g"
+        ]
+      ],
+      "b": [
+        [
+          "5"
+        ]
+      ],
+      "c": [
+        [
+          "l"
+        ]
+      ],
+      "d": [
+        [
+          "l"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "id": "unset-nearest-local",
+    "manual": "3.3",
+    "snippet": "f() { local x=5; g; @PROBE:a@ \"$x\"; }; g() { unset x; }; h() { local x=7; f; }; h",
+    "note": "`unset` of a caller's local shows what the nearest such local hides",
+    "origins": {
+      "a": "x=7"
+    },
+    "facts": {
+      "a": [
+        [
+          "7"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

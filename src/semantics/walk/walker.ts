@@ -26,6 +26,7 @@ import { WalkConditions } from './conditions';
 import { WalkExpansions } from './expansions';
 import { kept, temporaries, temporary } from './temporaries';
 import { forStatement } from './forloop';
+import { inScope, leaveFrame } from './scopes';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
@@ -181,8 +182,13 @@ export class Walker {
     return this.widened.some((w) => this.changes.get(w.def)!.size > w.size);
   }
 
+  /** How many times an `unset` showed what a caller's frame hides (src/semantics/walk/scopes.ts, `revealed`). */
+  reveals = 0;
+
   put<K extends Kind>(st: ShellState, kind: K, name: string, value: Entry<K> | undefined): ShellState {
     const key = `${kind} ${name}`;
+    // (A variable keeps the call it is local to, unless the value says another: src/semantics/walk/scopes.ts.)
+    if (kind === 'variables' && value) value = inScope(st.variables.get(name), value as unknown as VariableState) as unknown as Entry<K>;
     // (Not a change while the temporaries of a command are worked out: src/semantics/walk/temporaries.ts.)
     if (this.scratch) return { ...st, [kind]: (st[kind] as NameMap<Entry<K>>).with(name, value) };
     // (A change of attributes is a change of its own, `attrs name`: what `widen` takes as unknown where it is made.)
@@ -970,8 +976,9 @@ export class Walker {
       for (const a of temporaries.filter(temporary)) {
         const name = field(a, 'name')!.text;
         if (!frame.saved.has(name)) frame.saved.set(name, entry.variables.get(name));
-        // (bash exports them to the commands the body runs.)
+        // (bash exports them to the commands the body runs. They are the call's: `unset x` in the body removes them.)
         entry = this.builtins.giveAttribute(this.builtins.assignNode(a, entry, false, true), name, 'x', a);
+        entry = { ...entry, variables: entry.variables.with(name, { ...entry.variables.get(name)!, scope: { depth: this.frames.length + 1, temporary: true } }) };
       }
       exit = this.walkBody(def, entry, frame);
     } else {
@@ -1001,13 +1008,15 @@ export class Walker {
         const maybesFrom = unit?.maybes.length ?? 0;
         const changed = new Set<string>();
         this.collecting.push(changed);
+        const reveals = this.reveals;
         try {
           exit = this.walkBody(def, st, { def, saved: new Map() });
         } finally {
           this.collecting.pop();
         }
-        // (Each state once: a body that calls a function twice would otherwise double them at each level of calls, `f2() { f1; f1; }`.)
-        if (!this.silent) walks.push({ entry: st, exit, how, aborts: [...new Set(unit?.aborts.slice(from))], maybes: [...new Set(unit?.maybes.slice(maybesFrom))], changed });
+        // (Each state once: a body that calls a function twice would otherwise double them at each level of calls, `f2() { f1; f1; }`.
+        // One that showed what a caller's frame hides, `revealed`, is not reused: another caller's frame hides another.)
+        if (!this.silent) walks.push({ entry: st, exit, how: this.reveals === reveals ? how : `${how} ${this.reveals}`, aborts: [...new Set(unit?.aborts.slice(from))], maybes: [...new Set(unit?.maybes.slice(maybesFrom))], changed });
       }
     }
     return fn.state === 'on' ? exit : merge([st, exit], this.posix);
@@ -1093,19 +1102,7 @@ export class Walker {
     this.collecting.pop();
     // (`f() ( … )` runs its body in a subshell.)
     if (body.type === 'subshell') return entry;
-    return this.leaveFrame(frame, end);
-  }
-
-  /** `end` as the function (or `${ …; }`) of `frame` returns: its locals and its `local -` options are restored. */
-  leaveFrame(frame: Frame, end: ShellState): ShellState {
-    for (const [name, v] of frame.saved) end = { ...end, variables: end.variables.with(name, v) };
-    // A `local GLOBIGNORE` going out of scope sets GLOBIGNORE again, or unsets it: dotglob follows, as for an assignment or `unset`.
-    if (frame.saved.has('GLOBIGNORE') && this.bash) {
-      const gi = frame.saved.get('GLOBIGNORE');
-      end = !gi || gi.set === 'off' ? this.put(end, 'shopt', 'dotglob', 'off') : this.builtins.globignore(end, gi.set === 'on' ? gi.value : undefined);
-    }
-    if (frame.options) end = { ...end, set: frame.options };
-    return end;
+    return leaveFrame(this, frame, end, this.frames.length + 1);
   }
 
   /**

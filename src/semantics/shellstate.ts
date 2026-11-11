@@ -47,7 +47,20 @@ export interface VariableState {
   readonly kept?: true;
   /** The node that last changed it (after a merge, the latest in the source). */
   readonly at: SyntaxNode;
+  /** The function call whose local it is, when it is one (src/semantics/walk/scopes.ts). */
+  readonly scope?: Scope;
 }
+
+/**
+ * The call whose variable it is: by the depth of its frame in the walk (1: the outermost call), and whether it is a
+ * prefix assignment of the call (`x=1 f`), which an `unset` in the body removes. `mixed`: on some paths only, or of
+ * different calls.
+ */
+export type Scope = { readonly depth: number; readonly temporary?: true } | 'mixed';
+
+/** Whether two scopes are the same (none: the shell's own variable). */
+export const sameScope = (a: Scope | undefined, b: Scope | undefined): boolean =>
+  a === b || (typeof a === 'object' && typeof b === 'object' && a.depth === b.depth && !a.temporary === !b.temporary);
 
 export interface FunctionState {
   /** `unknown`: defined on some paths only. */
@@ -512,7 +525,7 @@ export function mergeOption(kind: 'set' | 'shopt', name: string, a: OptionState 
   return 'unknown';
 }
 
-function mergeVariable(name: string, a: VariableState | undefined, b: VariableState | undefined): VariableState {
+export function mergeVariable(name: string, a: VariableState | undefined, b: VariableState | undefined): VariableState {
   // Changed on one path only: the other left it as the shell started, set and exported only when the environment had
   // it (`kept`, `exportFromEnvironment`), so the merge is set at most where either path sets it, and exported at most
   // where either exports it: where the changed path removed it or its export, at most when the environment had it.
@@ -524,7 +537,7 @@ function mergeVariable(name: string, a: VariableState | undefined, b: VariableSt
     const x = v.attrs.x;
     // (`if …; then unset Y; fi`: on neither path is `Y` exported unless the environment had it, as after a first `Y=1`.)
     if (start.state !== 'off' && (!x || x.state === 'off')) attrs.x = { state: 'unknown', at: x?.at ?? v.at, environment: start.environment!, atMost: true };
-    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true };
+    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true, ...(v.scope ? { scope: 'mixed' as const } : {}) };
   }
   const attrs: Record<string, Attribute> = {};
   for (const l of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {
@@ -534,7 +547,8 @@ function mergeVariable(name: string, a: VariableState | undefined, b: VariableSt
     attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at), ...(x.environment && y.environment ? { environment: x.environment, ...(x.atMost || y.atMost ? { atMost: true as const } : {}) } : {}) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
   }
   const source = a.source === b.source ? a.source : undefined;
-  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}) };
+  const scope = sameScope(a.scope, b.scope) ? a.scope : 'mixed';
+  return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}), ...(scope ? { scope } : {}) };
 }
 
 function mergeFunction(a: FunctionState | undefined, b: FunctionState | undefined): FunctionState {
@@ -640,7 +654,7 @@ export function sameState(a: ShellState, b: ShellState): boolean {
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state && x.attrs[l].environment === y.attrs[l]?.environment);
   };
   return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
-    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && attrs(x, y)))
+    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && sameScope(x.scope, y.scope) && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)

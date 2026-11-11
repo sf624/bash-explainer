@@ -17,7 +17,8 @@ import { aliasOf, builtinParse, builtinRead, type BuiltinRead, commandName, DECL
 import { attribute, type Attribute, type CommandEntry, environmentHas, exportFromEnvironment, merge, option, POSIX_ON, type ShellState, type Tri, withoutErrexitWhy, withStatus } from '../shellstate';
 import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
-import { ExpansionError, exitSignal, NAME, type Operand, processIn, type Target } from './shared';
+import { ExpansionError, exitSignal, type Frame, NAME, type Operand, processIn, type Target } from './shared';
+import { hide, notKnown, revealed, whose } from './scopes';
 import { restrictedFromHere } from './child';
 import { execTraps, trapCommand, trapSignals } from './traps';
 import type { Walker } from './walker';
@@ -453,13 +454,18 @@ export class WalkBuiltins {
         continue;
       }
       const name = o.name;
-      // A local variable starts afresh, hiding the one outside, from here to the end of the function.
-      if (local && !frame.saved.has(name)) {
-        const hidden = st.variables.get(name);
+      const hidden = st.variables.get(name);
+      // (Whose the variable is here: src/semantics/walk/scopes.ts. A local over a prefix assignment of the call, `x=1 f`,
+      // starts with its value, and is then the call's local: what the call restores stays.)
+      const whom = local ? whose(hidden, this.w.frames.length) : 'this';
+      if (whom === 'temporary') st = this.w.put(st, 'variables', name, { ...hidden!, scope: { depth: this.w.frames.length } });
+      // A local variable starts afresh, hiding the one outside, from here to the end of the function (on some paths, where
+      // it may be one already: both).
+      if (whom === 'other' || whom === 'mixed') {
         // bash refuses a local copy of a readonly global variable ("readonly variable"), which stays as it is; a
         // caller's readonly local may be hidden.
-        if (hidden?.attrs.r?.state === 'on' && !this.w.frames.some((f) => f.saved.has(name))) continue;
-        frame.saved.set(name, hidden);
+        if (hidden?.attrs.r?.state === 'on' && !hidden.scope) continue;
+        hide(frame, name, hidden);
         // It keeps the export attribute of the one it hides, and no other (bash's make_local_variable). (With
         // localvar_inherit, it starts with the value and attributes of the one it hides: not followed. So does dash's
         // `local`, and sh may be dash: `local IFS` keeps the IFS of the caller there. zsh's starts empty.)
@@ -468,10 +474,18 @@ export class WalkBuiltins {
         const inherit = asBash('localUnset', this.w.shell) !== 'yes' || on.includes('I') ? 'unknown' : option(st, 'shopt', 'localvar_inherit');
         // (Also that of the environment's, when the script has not set it: `exportFromEnvironment`.)
         const kept: Record<string, Attribute> = !hidden ? { x: exportFromEnvironment(name, n) } : x && (x.state !== 'off' || x.environment) ? { x: { ...x, at: n } } : {};
-        st = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: kept, at: n });
+        const fresh = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: kept, at: n, scope: { depth: this.w.frames.length } });
+        st = whom === 'mixed' ? merge([fresh, st], this.w.posix) : fresh;
       }
-      // `declare -g x` while `x` is local: the global one.
-      const global = on.includes('g') ? this.w.frames.find((f) => f.saved.has(name)) : undefined;
+      // `declare -g x` while `x` is local (or a prefix assignment of a call): the global one, which the outermost frame
+      // that hides it restores. (That frame is the walk's, not the path's: one on some paths only is not followed so,
+      // docs/backlog-archive.md.)
+      const global = on.includes('g') ? this.globalFrame(st, name) : undefined;
+      if (global === 'mixed') {
+        st = this.w.put(st, 'variables', name, notKnown(hidden!));
+        for (const f of this.w.frames) if (f.saved.has(name)) f.saved.set(name, f.saved.get(name) && notKnown(f.saved.get(name)!));
+        continue;
+      }
       const scope = global ? { ...st, variables: st.variables.with(name, global.saved.get(name)) } : st;
       let next = this.declareOne(scope, name, gives, removes, o, n, on.includes('n'), before);
       if (global) {
@@ -544,8 +558,10 @@ export class WalkBuiltins {
           if (fn) st = this.w.put(st, 'functions', text, { ...fn, state: 'off', removed: n });
           continue;
         }
-        // `unset 'a[1]'` removes an element; `x=1 unset x` the `x` of the command, and the one from before stays.
-        if (text.includes('[') || temporary.has(text)) continue;
+        // `unset 'a[1]'` removes an element; `x=1 unset x` the `x` of the command, and the one from before stays (in
+        // dash and others, the assignment of a special builtin stays, and is unset: `unsetTemporary`).
+        const kept = temporary.has(text) ? asBash('unsetTemporary', this.w.shell) : 'no';
+        if (text.includes('[') || kept === 'yes') continue;
         const v = st.variables.get(text);
         // With no -v, a name with no variable is a function.
         if (space === 'either' && (!v || v.declared === 'off') && fn && fn.state !== 'off') {
@@ -567,21 +583,39 @@ export class WalkBuiltins {
         if (target && !this.w.bash && attribute(st, target, 'r') === 'unknown') this.w.abort(st, false);
         if (!target || attribute(st, target, 'r') === 'on') continue;
         const after = this.unsetVariable(st, target, node);
-        st = ref === 'unknown' ? merge([st, after], this.w.posix) : after;
+        st = ref === 'unknown' || kept === 'unknown' ? merge([st, after], this.w.posix) : after;
       }
     }
     return st;
   }
 
+  /**
+   * The frame that holds the global value of `name` where `declare -g` sets it: none where the variable there is the
+   * shell's own; `mixed` where whose it is is not known.
+   */
+  private globalFrame(st: ShellState, name: string): Frame | 'mixed' | undefined {
+    let frame: Frame | undefined;
+    // (Each frame hides what an outer one has, down to the shell's own.)
+    let s = st.variables.get(name)?.scope;
+    for (let depth = this.w.frames.length; depth >= 1 && s !== undefined; depth--) {
+      if (s === 'mixed') return 'mixed';
+      if (s.depth !== depth) continue;
+      frame = this.w.frames[depth - 1];
+      s = frame.saved.get(name)?.scope;
+    }
+    return frame;
+  }
+
   /** `st` with the variable `target` unset by the word `node` of `unset`. */
   private unsetVariable(st: ShellState, target: string, node: SyntaxNode): ShellState {
-    // The local of a calling function: unset removes it, and the variable outside shows again (it is no longer restored).
-    const top = this.w.frames[this.w.frames.length - 1];
-    const outer = this.w.frames.find((f) => f !== top && f.saved.has(target));
-    if (outer && !top.saved.has(target)) {
-      st = this.w.put(st, 'variables', target, outer.saved.get(target));
-      outer.saved.delete(target);
-      return st;
+    // A local of a calling function, or a prefix assignment of a call: unset removes it, and the variable it hides shows
+    // again. Whose it is not known: nor is what it gives.
+    const v = st.variables.get(target);
+    if (v?.scope === 'mixed') return this.w.put(st, 'variables', target, notKnown(v));
+    const shown = revealed(this.w, v, target, this.w.frames.length);
+    if (shown) {
+      this.w.reveals++;
+      return this.w.put(st, 'variables', target, shown.hidden);
     }
     if (target === 'POSIXLY_CORRECT' && this.w.bash) st = this.setPosix(st, false, node, true);
     // Unsetting GLOBIGNORE turns dotglob off (setting it turned it on).

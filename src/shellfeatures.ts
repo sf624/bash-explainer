@@ -317,6 +317,9 @@ export const SHELL_BEHAVIOURS = {
   // `local x` starts unset, as bash's does with `localvar_inherit` off (the default): dash's starts with the value of the `x` it hides, zsh's empty.
   // (ksh93's `local` makes no local variable: `typesetScope`.)
   localUnset: { differs: 'dz' },
+  // `x=1 unset x` removes the command's `x`, and the one from before stays (bash, also in POSIX mode): the others keep the
+  // assignment of a special builtin, and unset it.
+  unsetTemporary: { differs: 'daykm' },
   // The last stage of a pipeline runs in the shell itself, so `echo x | read v` sets `v` (bash: in a subshell, unless `lastpipe` is on and job control off).
   lastStageShell: { differs: 'kz' },
 } as const satisfies Record<string, ShellBehaviour>;

@@ -415,6 +415,17 @@ describe('shell state: function bodies run at their calls', () => {
     // `declare` in a function is local, `declare -g` is not, and `typeset` is local too.
     assert.deepStrictEqual(['a', 'b', 'c'].map((v) => variable(end('f() { declare a=1; declare -g b=1; typeset c=1; }; f'), v)?.value), [undefined, '1', undefined]);
   });
+  it('follows whose each variable is on each path: a local made, or removed, on some paths only (src/semantics/walk/scopes.ts)', () => {
+    // (`[ -t 0 ]` may hold or not: bash restores `0` on the paths that made a local, and keeps `2`, unset or `5` on the others.)
+    const after = (src: string) => variable(end(`x=0; f() { ${src}; }; f`), 'x');
+    assert.deepStrictEqual(['if [ -t 0 ]; then local x=1; fi; x=2', 'if [ -t 0 ]; then local x=1; fi; unset x', 'if [ -t 0 ]; then local x=1; fi; declare -g x=5',
+      '[ -t 0 ] && g() { unset x; }; local x=1; g; x=2'].map((s) => after(s)?.value), [undefined, undefined, undefined, undefined]);
+    assert.deepStrictEqual(['if [ -t 0 ]; then local x=1; else local x=2; fi', 'local x=1; unset x; x=2', 'x=1 g', 'local -r x=1'].map((s) => after(s)?.value), ['0', '0', '0', '0']);
+    assert.strictEqual(variable(end('f() { if [ -t 0 ]; then local x; else local x; fi; }; f'), 'x'), undefined);
+    // (`unset` in a function of the call's prefix assignment, or of a caller's: the variable from before shows again.)
+    assert.strictEqual(variable(end('x=0; f() { unset x; x=2; }; x=1 f'), 'x')?.value, '2');
+    assert.strictEqual(variable(end('x=0; g() { unset x; }; f() { g; x=2; }; x=1 f'), 'x')?.value, '2');
+  });
   it('a recursive call, and calls too deep, are guessed from what the body changes', () => {
     assert.strictEqual(set(end('f() { if a; then set -f; return; fi; f; }; f'), 'noglob'), 'unknown');
     const deep = Array.from({ length: 40 }, (_, i) => `f${i}() { f${i + 1}; }`).join('\n') + '\nf40() { set -f; }\nf0';

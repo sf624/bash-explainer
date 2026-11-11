@@ -7,6 +7,7 @@ import { subshellTraps } from './traps';
 import { attribute, merge, option, type ShellState, type Tri, type VariableState, withoutErrexitWhy } from '../shellstate';
 import { ArithError, ExpansionError, type Frame, inShell, numberOfLengths, SUBSTITUTIONS, type Target } from './shared';
 import type { Walker } from './walker';
+import { leaveFrame } from './scopes';
 import { pushAll } from '../../lists';
 
 /** Where an expression is arithmetic: an arithmetic expansion in it is run with the expression. */
@@ -138,7 +139,7 @@ export class WalkExpansions {
     const inherit = option(st, 'shopt', 'inherit_errexit');
     // (What it gives back as it ends: with inherit_errexit, errexit as it leaves it; else as it was.)
     const leave = (end: ShellState): ShellState => {
-      const out = { ...withoutErrexitWhy(this.w.leaveFrame(frame, end)), ...(st.errexitWhy ? { errexitWhy: st.errexitWhy } : {}) };
+      const out = { ...withoutErrexitWhy(leaveFrame(this.w, frame, end, this.w.frames.length + 1)), ...(st.errexitWhy ? { errexitWhy: st.errexitWhy } : {}) };
       const kept = { ...out, set: out.set.with('errexit', st.set.get('errexit')) };
       return inherit === 'on' ? out : inherit === 'unknown' ? merge([out, kept], this.w.posix) : kept;
     };
@@ -150,7 +151,7 @@ export class WalkExpansions {
     try {
       if (reply) {
         frame.saved.set('REPLY', entry.variables.get('REPLY'));
-        entry = this.w.put(entry, 'variables', 'REPLY', { declared: 'on', set: 'off', attrs: {}, at: c });
+        entry = this.w.put(entry, 'variables', 'REPLY', { declared: 'on', set: 'off', attrs: {}, at: c, scope: { depth: this.w.frames.length } });
       }
       end = this.w.sequence(c.children, entry);
     } finally {

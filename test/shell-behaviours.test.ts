@@ -23,6 +23,7 @@ const PROBES: Record<BehaviourId, string> = {
   badNameStops: '[ "$(unset 1a 2>/dev/null; echo x)" != x ]',
   localOutsideStops: '[ "$(local v 2>/dev/null; echo x)" != x ]',
   localUnset: 'x=1; f() { local x; [ "${x-u}" != u ] || return 1; x=2; }; f && [ "$x" = 1 ]',
+  unsetTemporary: 'x=g; x=1 unset x; [ "${x-u}" != g ]',
   lastStageShell: 'echo x | read v; [ "$v" = x ]',
 };
 
