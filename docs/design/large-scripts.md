@@ -1,6 +1,6 @@
 # Large scripts: a cheaper state merge
 
-Status: Tracked in #770.
+Status: Done (#829, #831, #832, #833, #834).
 
 On a long script whose functions call each other from many sites, most of the time goes into one place: the merge of the shell states a node ran with (`merge`, src/semantics/shellstate.ts). This page measures it on main at c187a439, compares three ways to make it cheaper, and recommends one (step 1, in two parts). The colours of the lines in view, first planned here, belong to #672 (section 3). Section 4 lists what is left for later, with the lessons of #773 on stale results. Section 5 lists the risks, and section 7 the maintainer's decisions.
 
@@ -189,7 +189,7 @@ After step 1a and #830, a paste of nvm.sh costs about 7 s for the bash model and
    | `runAt` | 0.1 s (0.5%) | — |
 
    Counted in a copy of src/ with counters, over the four walks: `notWalked` runs 32,888 times and replays 2.95 million keys, about 90 per call. It adds each key to every set of the bodies being walked (`collecting`), 12 to 18 deep on most calls: 38.9 million additions. That is most of its own 1.2 s. `widen` runs 32,972 times over 3.02 million keys; almost every call comes from `notWalked`. Together they are about a fifth of the walks.
-   - The sets of the bodies being walked are also each body's `changes`, which a recursive call reads in the middle of the walk. So adding a body's keys to the outer sets only when it ends would change what such a call takes as unknown. A cheaper `notWalked` that keeps the results needs a design of its own. It is not planned: after step 1a and #830, the bash model are about 7 s of a paste of about 11 s on nvm.sh, and items 4 and 5 below would end the freeze itself.
+   - The sets of the bodies being walked are also each body's `changes`, which a recursive call reads in the middle of the walk. So adding a body's keys to the outer sets only when it ends would change what such a call takes as unknown. A cheaper `notWalked` that keeps the results needs a design of its own, left to #836: after step 1a and #830, the bash model are about 7 s of a paste of about 11 s on nvm.sh, and items 4 and 5 below would end the freeze itself.
 3. **Calls with a prefix assignment: #830.** They were walked at every call, without reuse and past `WALKS_PER_FUNCTION`, so their cost grows exponentially with the depth of such calls. A review measured, on main, a chain where each fᵢ calls `X=1 fᵢ₊₁` twice: 14 levels 0.65 s, 16 levels 3.0 s, 18 levels (about 55 lines) 18 s; the same chain without the prefixes takes 4 ms. They make the nodes with the most states on nvm.sh. #830 (#832) made such a call reuse the walks of its body, as a plain call does.
 4. **The problems in idle chunks.** `noteIssues` explains every line in one task (4 s on nvm.sh after step 1). It could run in chunks of lines between frames, and show its result when all chunks are done.
 5. **The core in a Web Worker.** This would end the freezes themselves: the page would stay responsive, and the results would arrive later. [line-budget.md](line-budget.md) ("Whether counting is enough") lists a worker as a backstop with a time limit, deferred. A worker for responsiveness needs no clock limit, so results stay the same on every machine.
@@ -223,7 +223,7 @@ The rules for any result computed apart from the current text:
 
 ## 6. Steps
 
-1. **1a, `at()` lazy:** the fold, the lazy bucket, `NameMap.mergeAll`, `runAt`; the equality test over the corpus and the bound on the merge calls; a row in docs/design/sources.md. test/snapshot.ts diff empty, stated in the PR. One CHANGELOG line under "Fixed" for long scripts that froze the page.
+1. **1a, `at()` lazy: done (#831).** The fold, the lazy bucket, `NameMap.mergeAll`, `runAt`; the equality test over the corpus and the bound on the merge calls; a row in docs/design/sources.md. test/snapshot.ts diff empty, stated in the PR. One CHANGELOG line under "Fixed" for long scripts that froze the page.
 2. **1b, the eager one pass in the walk's `merge`: measured, dropped.** The one pass was built faithful: each bucket's k sources folded a name at a time, with the calls of the pairwise reduce in the same order; a bucket that every source shares kept, and the first source's bucket kept when no step of the fold gave another value; `f` through `NameMap.merge`, so the guard still wraps it. It was measured against main at df7c7d17 (after step 1a and #830), on nvm.sh as in section 1.1, with Node.js 24.22.0, in 14 alternating runs of each (load 1.1–1.8):
    - The bash model: median 7.15 s on main, 6.87 s with the one pass (4.0% less). The sh model: 6.03 s and 5.79 s (4.0%). Both: 13.20 s and 12.69 s (3.9%); the runs ranged over 12.98–13.66 s and 12.48–13.55 s.
    - The heap after the two models: 281 MB on both.
@@ -231,8 +231,10 @@ The rules for any result computed apart from the current text:
    - Two variants were no faster: a native copy of the first source's bucket, set again where a value changed, and an iteration with `forEach` instead of entries.
    - The spans and the problems of nvm.sh were byte for byte those of main.
    - The gain is under the bar set for this step (a code change only above about 5% of the model time), so it was not merged.
-3. **The measurements of section 4.1:** the second walk when the model is blind (kept: it is needed for the options, `IFS`, functions and traps; a test holds it), then `notWalked` and `widen` (measured: about a fifth of the walks; no change planned). #830 (#832) made the calls with a prefix assignment reuse walks.
-4. **Later, if still needed:** the problems in idle chunks, a Web Worker, each with the rules of section 4.2.
+3. **The measurements of section 4.1: done (#833).** The second walk when the model is blind is kept: it is needed for the options, `IFS`, functions and traps, and a test holds it. `notWalked` and `widen` were measured at about a fifth of the walks; a cheaper version that keeps the results is left to #836. #830 (#832) made the calls with a prefix assignment reuse walks.
+4. **Later, if still needed:** the problems in idle chunks, a Web Worker, each with the rules of section 4.2. Not part of this plan.
+
+The plan ends here: step 1a and #830 are done, step 1b was dropped, the second walk is kept, `notWalked` and `widen` are left to #836, and the colours of the lines in view to #672 (section 3).
 
 ## 7. Decisions of the maintainer (2026-11-11)
 
