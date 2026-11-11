@@ -9,6 +9,7 @@ import { nestedScripts } from '../src/semantics/nested';
 import type { Shell } from '../src/dialect';
 import { attribute, defaultOn, lastStageInShell, merge, NameMap, option, shebangPosix, shebangRefused, type ShebangRefusal, shellState, ShellState, StateModel } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
+import { runContained } from './support/contained';
 import { assertGrowth } from './support/growth';
 import { descendants, fields } from '../src/syntax/tree';
 import { readDeclarationWords } from '../src/semantics/vars';
@@ -474,7 +475,7 @@ describe('shell state: function bodies run at their calls', () => {
     const many = 'f() { set -f; x=1; }\n' + Array.from({ length: 20 }, (_, i) => `v${i}=1; f`).join('\n');
     assert.strictEqual(variable(end(many), 'x')?.set, 'unknown');
   });
-  it('a blind script is walked again too when a recursive call took less than its body changes', () => {
+  it('a blind script is walked again too when a recursive call took less than its body changes', async () => {
     // `alias a="$x"` makes the model blind: it decides no condition and trusts no value, but its states still give the
     // options. The call of `f` in `f` is not walked: the first walk takes what the body changed so far (nothing), and
     // `set +e` comes later. The walk again takes `set +e` as unknown there; the first walk said `set -e` was on at
@@ -496,8 +497,14 @@ describe('shell state: function bodies run at their calls', () => {
     assert.strictEqual(m.blind, 'an alias of text not known');
     assert.strictEqual(walks, 2);
     assert.strictEqual(set(m.at(descendants(m.root, ['command']).find((c) => c.text === 'false')!).run, 'errexit'), 'unknown');
-    const r = spawnSync('bash', ['-c', src], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', FUNCNEST: '20' }, timeout: 5000 });
-    assert.deepStrictEqual([r.stdout, r.status], ['reached\n', 0]);
+    // (It recurses: run contained, with FUNCNEST.)
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-blind-walk-'));
+    try {
+      const r = await runContained(['bash', '--norc', '--noprofile', '-c', src], dir, { FUNCNEST: '20' }, 10000);
+      assert.deepStrictEqual([r.stdout, r.status], ['reached\n', 0]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
   it('a readonly function is not defined again', () => {
     const st = end('f() { :; }; readonly -f f; f() { set -f; }; f');
