@@ -163,11 +163,34 @@ The colours of the lines in view on the web page were step 2 of this plan. They 
 
 ### 4.1 What is left
 
-After step 1, a paste of nvm.sh costs about 10 s for the bash model and 4 s for the problems. These come next, each in its own issue:
+After step 1a and #830, a paste of nvm.sh costs about 7 s for the bash model and 4 s for the problems (item 1). These come next, each in its own issue:
 
-1. **The second walk when the model is blind.** A model is walked again when the first walk ends `short`: a call that was not walked took fewer changes of its body as unknown than the body makes (`Walker.short`, `buildModel` in src/semantics/state.ts). On nvm.sh this happens although the trust scan says the model is blind, and it doubles the walk of each model. A blind model trusts no decision and no value, but its states still give names, options and traps. Measure first: walk once when the model is blind, and diff test/snapshot.ts over the corpus. Then decide with the list of differences.
-2. **`notWalked` and `widen`.** They take 11% of the prototype's CPU (src/semantics/walk/widen.ts): the calls past `WALKS_PER_FUNCTION`, and the bodies no call reached, take what the script changed as unknown. Measured after item 1.
-3. **Calls with a prefix assignment: #830.** They are walked at every call, without reuse and past `WALKS_PER_FUNCTION`, so their cost grows exponentially with the depth of such calls. A review measured, on main, a chain where each fᵢ calls `X=1 fᵢ₊₁` twice: 14 levels 0.65 s, 16 levels 3.0 s, 18 levels (about 55 lines) 18 s; the same chain without the prefixes takes 4 ms. They make the nodes with the most states on nvm.sh. This is #830, not a constant factor to measure.
+1. **The second walk when the model is blind: kept.** A model is walked again when the first walk ends `short`: a call that was not walked took fewer changes of its body as unknown than the body makes (`Walker.short`, `buildModel` in src/semantics/state.ts). Measured on main at fcbe6974 (after step 1a and #830), Node.js 24.22.0, nvm.sh as in section 1.1:
+   - The bash model takes 7.1–7.4 s: 3.8–4.1 s for the first walk, 3.1–3.3 s for the second. The sh model takes 6.0–6.4 s (3.1–3.3 s and 2.9–3.0 s). The colours take 0.31–0.34 s, the problems 3.7–4.0 s. No model needs a third walk.
+   - In the first walk of the bash model, 518 of the 8,805 calls not walked are short. They are the recursive calls of seven functions: `nvm`, `nvm_version`, `nvm_ls_remote`, `nvm_check_file_permissions`, `nvm_has_system_iojs`, `nvm_ls` and `nvm_resolve_local_alias`. What their bodies change after the call adds up to 859 names for `nvm` alone. Among them are `set errexit`, `set allexport`, `set errtrace`, `IFS`, functions and traps.
+   - Walked once when the trust scan says blind (an experiment, not merged): the bash model takes 3.95 s instead of 7.25 s, and the sh model 3.29 s instead of 6.40 s. The heap after the two models is 192 MB instead of 292 MB. The corpus snapshot (test/snapshot.ts, 6,694 lines) is the same byte for byte, and so are the spans and the problems of nvm.sh.
+   - But it is not sound. A blind model trusts no decision and no value, yet its states still give the options, `IFS`, the functions, the aliases and the traps, and the lines read them. In `alias a="$x"; set -e; f() { if [ "$1" ]; then f; false; echo reached; return; fi; set +e; }; f 1`, the first walk has `set -e` on at `false`, and the line says the shell stops there. bash runs `set +e` in the inner call and prints `reached`. The second walk takes `errexit` as unknown there.
+   - So the second walk stays. test/state.test.ts ("a blind script is walked again too…") holds it: it counts the walks by wrapping `Walker.prototype.program`, and compares with bash. Only the first walk's `changes` and `lastAt` reach the second, so a cheaper first walk would need another way to find what each body changes. That would change results, so it is not planned.
+2. **`notWalked` and `widen`: measured.** A CPU profile of the two models, the colours and the problems on nvm.sh, at fcbe6974, takes 18.8 s:
+
+   | Function | On the stack | Self |
+   | --- | --- | --- |
+   | The walks (four) | 13.1 s (70%) | — |
+   | `merge` (in the walks) | 4.0 s (21%) | 0.15 s |
+   | The problems (`diagnosticsFor`) | 3.8 s (20%) | — |
+   | `notWalked` (src/semantics/walk/widen.ts) | 2.4 s (13%) | 1.2 s |
+   | `mergeVariable` | 2.2 s (11.5%) | 1.9 s |
+   | The loop of `NameMap.merge` | — | 1.7 s (9%) |
+   | `widen` | 1.3 s (6.7%) | 0.9 s |
+   | Garbage collection | 0.7 s (3.6%) | 0.7 s |
+   | `sameState` | 0.6 s (3.1%) | — |
+   | `mergeScope` | 0.4 s (2.0%) | — |
+   | The colours (`documentHighlight`) | 0.3 s (1.6%) | — |
+   | `runAt` | 0.1 s (0.5%) | — |
+
+   Counted in a copy of src/ with counters, over the four walks: `notWalked` runs 32,888 times and replays 2.95 million keys, about 90 per call. It adds each key to every set of the bodies being walked (`collecting`), 12 to 18 deep on most calls: 38.9 million additions. That is most of its own 1.2 s. `widen` runs 32,972 times over 3.02 million keys; almost every call comes from `notWalked`. Together they are about a fifth of the walks.
+   - The sets of the bodies being walked are also each body's `changes`, which a recursive call reads in the middle of the walk. So adding a body's keys to the outer sets only when it ends would change what such a call takes as unknown. A cheaper `notWalked` that keeps the results needs a design of its own. It is not planned: after step 1a and #830, the bash model are about 7 s of a paste of about 11 s on nvm.sh, and items 4 and 5 below would end the freeze itself.
+3. **Calls with a prefix assignment: #830.** They were walked at every call, without reuse and past `WALKS_PER_FUNCTION`, so their cost grows exponentially with the depth of such calls. A review measured, on main, a chain where each fᵢ calls `X=1 fᵢ₊₁` twice: 14 levels 0.65 s, 16 levels 3.0 s, 18 levels (about 55 lines) 18 s; the same chain without the prefixes takes 4 ms. They make the nodes with the most states on nvm.sh. #830 (#832) made such a call reuse the walks of its body, as a plain call does.
 4. **The problems in idle chunks.** `noteIssues` explains every line in one task (4 s on nvm.sh after step 1). It could run in chunks of lines between frames, and show its result when all chunks are done.
 5. **The core in a Web Worker.** This would end the freezes themselves: the page would stay responsive, and the results would arrive later. [line-budget.md](line-budget.md) ("Whether counting is enough") lists a worker as a backstop with a time limit, deferred. A worker for responsiveness needs no clock limit, so results stay the same on every machine.
 
@@ -202,7 +225,7 @@ The rules for any result computed apart from the current text:
 
 1. **1a, `at()` lazy:** the fold, the lazy bucket, `NameMap.mergeAll`, `runAt`; the equality test over the corpus and the bound on the merge calls; a row in docs/design/sources.md. test/snapshot.ts diff empty, stated in the PR. One CHANGELOG line under "Fixed" for long scripts that froze the page.
 2. **1b, the eager one pass in the walk's `merge`:** measured on its own, against the 3.0 s of section 1.3.
-3. **The measurements of section 4.1:** the second walk when the model is blind, then `notWalked` and `widen`. #830 for the calls with a prefix assignment.
+3. **The measurements of section 4.1:** the second walk when the model is blind (kept: it is needed for the options, `IFS`, functions and traps; a test holds it), then `notWalked` and `widen` (measured: about a fifth of the walks; no change planned). #830 (#832) made the calls with a prefix assignment reuse walks.
 4. **Later, if still needed:** the problems in idle chunks, a Web Worker, each with the rules of section 4.2.
 
 ## 7. Decisions of the maintainer (2026-11-11)
