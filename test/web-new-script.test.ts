@@ -252,7 +252,7 @@ describe('the web page: what a new script resets, and the depths\' names', funct
     await ctx.close();
   });
 
-  it('select all and paste after "Check as POSIX sh" starts a new script (usability test, run 3): the shell back to Auto, with a toast; its Undo keeps the paste, Ctrl+Z takes the whole step back', async () => {
+  it('select all and paste after "Switch to POSIX sh" starts a new script (usability test, run 3): the shell back to Auto, with a toast; its Undo keeps the paste, Ctrl+Z takes the whole step back', async () => {
     for (const lang of ['en', 'ja'] as const) {
       const { ctx, page, errors } = await open({ lang });
       await page.locator('.cm-content').focus();

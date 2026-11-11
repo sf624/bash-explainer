@@ -1,14 +1,16 @@
 // The web page's hint toward POSIX sh (docs/design/usability-9.md, 2.1; Q2, Q3), run for real in headless Chromium: a line
 // of the Problems strip, after the list or in place of "No problems", for a script with no shebang (any shebang, bash's
-// too, says the author chose: decision of 2026-11-09, #761); its count from `dialectIssues` for sh; its button reads the script as sh, as the
-// chip's popover does; it is never a problem (the counts, the list and the Problems tab do not hold it); laid out inside
+// too, says the author chose: decision of 2026-11-09, #761); its count from `dialectIssues` for sh; its button switches the page's
+// shell to sh, as the chip's popover does, and says so (#746: the chip lights up, a toast with Undo); with no problem the strip
+// says "No problems in bash" above it; it is never a problem (the counts, the list and the Problems tab do not hold it); laid out inside
 // the pane and the sheet at 390 and 1280 px, in both languages. Unit tests of the count: test/sh-hint.test.ts.
 import * as assert from 'assert';
 import type { Browser, BrowserContextOptions, Page } from 'playwright-core';
 import { dialectIssues } from '../src/dialect';
 import { SH_COUNT_COMMANDS } from '../src/document';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { currentShell, openSite, pickKind, problemRows, problemsShown, until } from './support/site';
+import { contrast, parseColour, type RGB } from '../src/ui/colour';
+import { currentShell, FRAMES, openSite, pickKind, problemRows, problemsShown, setShell, toastText, until } from './support/site';
 
 // Bash has no problem with these lines; POSIX sh has two ([[ ]] and an array).
 const ONLY_SH = '[[ -f a ]] && echo y\narr=(a b)\n';
@@ -77,7 +79,7 @@ describe('the web page: the hint toward POSIX sh', function () {
       } else {
         await hint(page).waitFor({ state: 'visible' });
         assert.strictEqual(await page.locator('#sh-hint-text').textContent(), said, name);
-        assert.strictEqual(await page.locator('#sh-hint-button').textContent(), 'Check as POSIX sh', name);
+        assert.strictEqual(await page.locator('#sh-hint-button').textContent(), 'Switch to POSIX sh', name);
       }
       await page.context().close();
     }
@@ -101,15 +103,19 @@ describe('the web page: the hint toward POSIX sh', function () {
     await page.keyboard.press('Control+A');
     await page.keyboard.insertText('echo hi\n');
     await until('the hint gone', () => hint(page).isVisible(), (v) => !v);
+    // (With the hint gone, the strip names no shell.)
+    assert.strictEqual(await page.locator('#problems-title').textContent(), 'No problems');
+    assert.strictEqual(await page.locator('#problems-said').textContent(), 'No problems');
     await page.context().close();
   });
 
   for (const lang of ['en', 'ja'] as const) {
-    it(`is a line of the strip, never a problem: the counts, the list and "No problems" stay as they were (${lang})`, async () => {
+    it(`is a line of the strip, never a problem: the counts and the list stay as they were, and "No problems" names bash (${lang})`, async () => {
       const page = await open(desktop(1280, lang), ONLY_SH);
       await hint(page).waitFor({ state: 'visible' });
-      const none = lang === 'en' ? 'No problems' : '問題なし';
-      // In place of "No problems": the strip says it, the fold has nothing to open, and the hint is the line after it.
+      const none = lang === 'en' ? 'No problems in bash' : 'bash では問題なし';
+      // In place of "No problems": the strip says there is none in bash (not a "No problems" the hint's line would
+      // contradict: #746), the fold has nothing to open, and the hint is the line after it.
       assert.strictEqual(await page.locator('#problems-title').textContent(), none);
       assert.strictEqual(await page.locator('#problems-said').textContent(), none);
       assert.strictEqual(await page.locator('#problems-toggle').isDisabled(), true);
@@ -117,7 +123,7 @@ describe('the web page: the hint toward POSIX sh', function () {
       assert.strictEqual(await problemRows(page).count(), 0);
       const n = shIssues(ONLY_SH);
       assert.strictEqual(await page.locator('#sh-hint-text').textContent(), lang === 'en' ? `${n} constructs not in POSIX sh` : `POSIX sh にない書き方が ${n} 件`);
-      assert.strictEqual(await page.locator('#sh-hint-button').textContent(), lang === 'en' ? 'Check as POSIX sh' : 'POSIX sh として確認');
+      assert.strictEqual(await page.locator('#sh-hint-button').textContent(), lang === 'en' ? 'Switch to POSIX sh' : 'POSIX sh に切り替え');
       // The strip's row is as high as ever; the hint is below it, inside the box.
       const [strip, line, box] = await Promise.all(['.problems-strip', '#problems-sh', '#problems'].map((s) => page.locator(s).boundingBox()));
       assert.strictEqual(Math.round(strip!.height), 32);
@@ -140,7 +146,7 @@ describe('the web page: the hint toward POSIX sh', function () {
     });
   }
 
-  it('has a button that reads the script as POSIX sh, as the chip does, and the list then has the sh problems', async () => {
+  it('has a button that switches the shell to POSIX sh, as the chip does, and the list then has the sh problems', async () => {
     const page = await open(desktop(1280, 'en'), BOTH);
     await hint(page).waitFor({ state: 'visible' });
     assert.strictEqual(await currentShell(page), 'auto');
@@ -160,6 +166,98 @@ describe('the web page: the hint toward POSIX sh', function () {
     await hint(page).waitFor({ state: 'visible' });
     await page.context().close();
   });
+
+  /** Whether two boxes overlap. */
+  const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+  for (const [width, lang] of [390, 1280].flatMap((w) => (['en', 'ja'] as const).map((l) => [w, l] as const))) {
+    it(`says that the button switched the shell (#746): the chip shows it and lights up, a toast with Undo sets back Auto (${width} px, ${lang})`, async () => {
+      const page = await open(desktop(width, lang), ONLY_SH);
+      await hint(page).waitFor({ state: 'visible' });
+      const chip = page.locator('#scope-chip');
+      const before = (await chip.boundingBox())!;
+      await page.locator('#sh-hint-button').click();
+      assert.strictEqual(await currentShell(page), 'sh');
+      // The chip says the shell chosen, lit for a moment; its box keeps its place and its height (only its words changed).
+      assert.match((await page.locator('#scope-chip-text').textContent()) ?? '', /POSIX sh$/);
+      assert.strictEqual(await chip.evaluate((e) => e.classList.contains('lit')), true);
+      const after = (await chip.boundingBox())!;
+      assert.ok(Math.abs(after.y - before.y) < 0.5 && Math.abs(after.height - before.height) < 0.5, JSON.stringify([before, after]));
+      // The toast says what the button did; only its words are the live region, the Undo is a button beside it.
+      const said = lang === 'en' ? 'Shell set to POSIX sh.' : 'シェルを POSIX sh にしました。';
+      const undoWord = lang === 'en' ? 'Undo' : '元に戻す';
+      await until('the toast', () => toastText(page), (t) => t === said);
+      assert.strictEqual(await page.locator('#status').ariaSnapshot(), `- status: ${said}\n- button "${undoWord}"`);
+      const undo = page.locator('#status .status-action');
+      assert.strictEqual(await undo.isEnabled(), true);
+      // The focus stayed in the strip, and the toast is not over it (WCAG 2.2, 2.4.11), nor over the chip.
+      const focused = await page.evaluate('(() => { const r = document.activeElement.getBoundingClientRect(); return { id: document.activeElement.id, x: r.x, y: r.y, width: r.width, height: r.height }; })()') as { id: string; x: number; y: number; width: number; height: number };
+      assert.strictEqual(focused.id, 'problems-toggle');
+      const toastBox = (await page.locator('#status').boundingBox())!;
+      assert.ok(!overlap(toastBox, focused) && !overlap(toastBox, after), JSON.stringify([toastBox, focused, after]));
+      // Undo from the keyboard: Auto again, the hint back with "No problems in bash", the toast gone, and the focus on the page's editor, not on <body>.
+      await undo.focus();
+      await page.keyboard.press('Enter');
+      await until('Auto', () => currentShell(page), (v) => v === 'auto');
+      await until('the toast gone', () => toastText(page), (t) => t === '');
+      assert.strictEqual(await page.evaluate("document.activeElement.closest('.cm-editor') !== null"), true, String(await page.evaluate('document.activeElement.tagName')));
+      await hint(page).waitFor({ state: 'visible' });
+      assert.strictEqual(await page.locator('#problems-title').textContent(), lang === 'en' ? 'No problems in bash' : 'bash では問題なし');
+      await page.context().close();
+    });
+  }
+
+  it('takes the toast\'s Undo away when the shell is chosen again in the chip: it would undo that choice', async () => {
+    const page = await open(desktop(1280, 'en'), ONLY_SH);
+    await hint(page).waitFor({ state: 'visible' });
+    await page.locator('#sh-hint-button').click();
+    await until('the toast', () => toastText(page), (t) => t === 'Shell set to POSIX sh.');
+    await setShell(page, 'zsh');
+    await until('the toast gone', () => toastText(page), (t) => t === '');
+    assert.strictEqual(await page.locator('#status .status-action').count(), 0);
+    assert.strictEqual(await currentShell(page), 'zsh');
+    await page.context().close();
+  });
+
+  /**
+   * The chip's words, its edge (its ::before's on a narrow page, which draws the pill there) and the fills under them:
+   * its ancestors' (the header around it), then its own and its ::before's (none beside the editor).
+   */
+  const chipColours = (page: Page, narrow: boolean) => page.evaluate(`(() => {
+    const el = document.getElementById('scope-chip');
+    const before = getComputedStyle(el, '::before');
+    const around = [];
+    for (let e = el.parentElement; e; e = e.parentElement) around.push(getComputedStyle(e).backgroundColor);
+    return { fg: getComputedStyle(el).color, edge: (${narrow} ? before : getComputedStyle(el)).borderTopColor, around: around.reverse(), own: [getComputedStyle(el).backgroundColor, before.backgroundColor] };
+  })()`) as Promise<{ fg: string; edge: string; around: string[]; own: string[] }>;
+
+  for (const width of [390, 1280]) {
+    it(`lights the chip up with an edge of 3:1 and words of 4.5:1, light and dark (${width} px)`, async () => {
+      for (const colorScheme of ['light', 'dark'] as const) {
+        const page = await open({ ...desktop(width, 'en'), colorScheme }, ONLY_SH);
+        await hint(page).waitFor({ state: 'visible' });
+        await page.locator('#sh-hint-button').click();
+        // (Held at its start, where the accent is full, to measure it.)
+        await page.evaluate(`document.getAnimations().forEach((a) => { if (a.animationName === 'scope-lit') { a.pause(); a.currentTime = 0; } })`);
+        await page.evaluate(FRAMES);
+        const narrow = await page.evaluate('document.documentElement.classList.contains("narrow")') as boolean;
+        const colours = await chipColours(page, narrow);
+        const { fg, edge } = colours;
+        // (The header's own colour, then the chip's fill over it.)
+        let around: RGB = [255, 255, 255];
+        for (const b of colours.around) around = parseColour(b, around) ?? around;
+        let fill = around;
+        for (const b of colours.own) fill = parseColour(b, fill) ?? fill;
+        const lit = parseColour(edge, around)!;
+        assert.ok(contrast(lit, around) >= 3, `${colorScheme}: edge ${edge} on ${JSON.stringify(around)}: ${contrast(lit, around).toFixed(2)}`);
+        assert.ok(contrast(parseColour(fg, fill)!, fill) >= 4.5, `${colorScheme}: words ${fg} on ${JSON.stringify(fill)}`);
+        // (The fill is lit too, not only the edge.)
+        assert.notDeepStrictEqual(fill, around, colorScheme);
+        await page.context().close();
+      }
+    });
+  }
 
   it('keeps the list its room when the hint comes under a list set to its least height: the least moves with it', async () => {
     const page = await open(desktop(1280, 'en'), '#!/bin/bash\nlocal a=1\nlocal b=2\nlocal c=3\n');
@@ -195,7 +293,7 @@ describe('the web page: the hint toward POSIX sh', function () {
       const page = await open(desktop(1280, lang), LARGE);
       await hint(page).waitFor({ state: 'visible' });
       assert.strictEqual(await page.locator('#sh-hint-text').textContent(), lang === 'en' ? 'POSIX sh: not checked in a script this large' : 'POSIX sh：大きなスクリプトでは確認しない');
-      assert.strictEqual(await page.locator('#sh-hint-button').textContent(), lang === 'en' ? 'Check as POSIX sh' : 'POSIX sh として確認');
+      assert.strictEqual(await page.locator('#sh-hint-button').textContent(), lang === 'en' ? 'Switch to POSIX sh' : 'POSIX sh に切り替え');
       await page.locator('#sh-hint-button').click();
       await until('the shell', () => currentShell(page), (s) => s === 'sh');
       await page.context().close();

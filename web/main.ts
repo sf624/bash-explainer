@@ -186,7 +186,10 @@ const strip: ProblemStrip | undefined = mode.hasChrome ? new ProblemStrip({
     editor.select(i.startLine, i.startCol, i.endLine, i.endCol);
     sheet?.picked();
   },
-  checkAsSh: () => setChoice('shell', 'sh'),
+  switchToSh() {
+    const said = scope?.switchShell('sh', settings.shell);
+    if (said) status('undo', said.text, (shUndo = said.action));
+  },
 }) : undefined;
 const editor: Editor = new Editor({
   kind: () => kinds.kind,
@@ -493,9 +496,13 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
   const next = { ...settings, [key === 'shell' ? 'shell' : 'yq.flavor']: value };
   // Only values the setting takes (a copy of another version may offer others).
   if (readSettings(changedSettings(next), 'panel').warnings.length) return;
+  if (key === 'shell' && toast.current?.action === shUndo) toast.hide();
   changeSettings(next);
   settingsDialog?.refresh();
 }
+
+/** The Undo of the toast after the hint's switch to POSIX sh (#746), while it shows: any other change of the shell takes it away. */
+let shUndo: ToastSpec['action'];
 
 /** A place the focus can go to as a whole: the editor's, the explanation's (F6's stops), or the toast's. */
 type Stop = 'editor' | 'settings' | 'grabber' | 'panel' | 'toast';

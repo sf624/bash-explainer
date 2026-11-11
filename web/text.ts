@@ -25,11 +25,14 @@ export const TEXT = {
     problems: 'Problems',
     // The Problems strip under the editor (web/problem-list.ts): its name with the counts said, and where the cursor is.
     noProblems: 'No problems',
-    // The strip's hint toward POSIX sh (web/problem-list.ts): how many constructs the script has that POSIX sh lacks or runs differently (the dialect issues for sh), and the button that checks the script as sh.
+    // (The strip with no problem while the hint toward POSIX sh shows: the shell it found none in, so that the hint's line does not read as a contradiction.)
+    noProblemsIn: (shell: string) => `No problems in ${shell}`,
+    // The strip's hint toward POSIX sh (web/problem-list.ts): how many constructs the script has that POSIX sh lacks or runs differently (the dialect issues for sh), and the button that switches the page's shell to sh (the toast after it says so, with Undo).
     shHint: (n: number) => `${n} ${n === 1 ? 'construct' : 'constructs'} not in POSIX sh`,
     // (A script too large to count them when idle: src/document.ts, `SH_COUNT_COMMANDS`; the button still reads it as sh.)
     shHintLarge: 'POSIX sh: not checked in a script this large',
-    shHintButton: 'Check as POSIX sh',
+    shHintButton: 'Switch to POSIX sh',
+    shellSet: (shell: string) => `Shell set to ${shell}.`,
     problemsSaid: (counts: readonly string[]) => `Problems: ${counts.join(', ')}`,
     problemPosSaid: (line: number, i: number, n: number) => `Problem ${i} of ${n}, ${lineLabel('en', line, 'inline')}`,
     prevProblem: 'Previous problem',
@@ -209,9 +212,11 @@ export const TEXT = {
     copied: '解説を Markdown でコピーしました。',
     problems: '問題',
     noProblems: '問題なし',
+    noProblemsIn: (shell: string) => `${shell} では問題なし`,
     shHint: (n: number) => `POSIX sh にない書き方が ${n} 件`,
     shHintLarge: 'POSIX sh：大きなスクリプトでは確認しない',
-    shHintButton: 'POSIX sh として確認',
+    shHintButton: 'POSIX sh に切り替え',
+    shellSet: (shell: string) => `シェルを${jaWord(shell)}にしました。`,
     problemsSaid: (counts: readonly string[]) => `問題：${counts.join('、')}`,
     problemPosSaid: (line: number, i: number, n: number) => `${n} 件中 ${i} 件目の問題、${lineLabel('ja', line)}`,
     prevProblem: '前の問題',

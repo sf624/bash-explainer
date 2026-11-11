@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
+### Changed
+
+- On the web page, the POSIX sh hint's button is now "Switch to POSIX sh": the shell chip lights up and a toast says the shell changed, with Undo. With no problem, the strip now says "No problems in bash" above the hint. Before, the button said "Check as POSIX sh" and changed the shell silently.
+
 ## 0.14.0
 
 A variable the script sets is read in the language of the command that uses it, and its value shows on more lines. Large scripts no longer freeze the editor or the web page while their colours and problems are worked out.
