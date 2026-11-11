@@ -429,6 +429,19 @@ describe('shell state: function bodies run at their calls', () => {
     // too, and where the variable did not exist before: bash prints 5 after both.)
     assert.strictEqual(variable(end('x=0; f() { local x=l; g; }; g() { declare -g x=5; }; f'), 'x')?.value, '5');
     assert.strictEqual(variable(end('f() { local x=l; declare -g x=5; }; f'), 'x')?.value, '5');
+    // (Where the variable did not exist on the other paths; and a local over a variable that may be readonly, or may be
+    // a caller's readonly local: bash makes it on some paths, so its value is not known.)
+    for (const src of ['f() { if [ -t 0 ]; then local x=1; fi; x=2; }; f', 'f() { if [ -t 0 ]; then local x=1; fi; unset x; }; f']) {
+      assert.strictEqual(variable(end(src), 'x')?.value, undefined, src);
+    }
+    for (const src of ['x=1; [ -t 0 ] && readonly x; f() { local x=2; : in; }; f', 'x=0; h() { if [ -t 0 ]; then local -r x=1; fi; g; }; g() { local x=2; : in; }; h']) {
+      assert.strictEqual(variable(before(src, ': in'), 'x')?.value, undefined, src);
+    }
+    // (A write after an `unset` that showed the caller's variable is the shell's: a pipeline stage loses it.)
+    const src = 'g() { local x=g; h; }; h() { unset x; echo a | read x; }; x=1; g';
+    const m = model(src);
+    const read = descendants(m.root, ['command']).find((c) => c.text === 'read x')!;
+    assert.ok(m.writes(read).has('x') && !m.local(read, 'x'));
   });
   it('a recursive call, and calls too deep, are guessed from what the body changes', () => {
     assert.strictEqual(set(end('f() { if a; then set -f; return; fi; f; }; f'), 'noglob'), 'unknown');

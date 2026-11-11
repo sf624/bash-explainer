@@ -1317,6 +1317,8 @@ Rare corners, dropped (YAGNI). Kind: `bug`.
 
 ## Function scopes (found reviewing #827, 2026-11-11)
 
-Rare corners, dropped (YAGNI). Kind: `bug`. It predates #827.
+Rare corners, dropped (YAGNI). Kind: `bug`. Each predates #827.
 
 - **`declare -g` on some paths only, of a name local there.** `f() { local x=l; if c; then declare -g x=5; fi; }; x=1; f; echo "$x"`: the walk sets what the outermost frame restores on every path, so it shows `5` after the call, where bash gives `1` when `c` fails.
+- **`declare -g` from a function whose walk is reused, or not walked.** `f() { declare -g x=5; }; g() { local x=l; f; }; h() { local x=l; f; }; x=1; g; x=2; h; [ "$x" = 5 ]`: bash says true; we decide false. What `declare -g` sets in the frame of a caller (the value it restores) is not set again where the walk of `f` is reused, nor by a body not walked.
+- **`declare -g` in a subshell, of a name local in the caller.** `g() { local x=l; echo | declare -g x=5; ( declare -g x=6 ); }; x=1; g; [ "$x" = 1 ]`: bash says true; we decide false. The subshell sets what the caller's frame restores, which the shell itself does not see.

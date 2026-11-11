@@ -18,7 +18,7 @@ import { attribute, type Attribute, type CommandEntry, environmentHas, exportFro
 import { builtinExit, definitionExit, exitRefusal } from '../posixexits';
 import { changedByBash, optionRoles, readDeclarationWords, type Declaration } from '../vars';
 import { ExpansionError, exitSignal, type Frame, NAME, type Operand, processIn, type Target } from './shared';
-import { hide, notKnown, revealed, whose } from './scopes';
+import { hide, notKnown, outerOf, revealed, whose } from './scopes';
 import { restrictedFromHere } from './child';
 import { execTraps, trapCommand, trapSignals } from './traps';
 import type { Walker } from './walker';
@@ -463,9 +463,16 @@ export class WalkBuiltins {
       // it may be one already: both).
       if (whom === 'other' || whom === 'mixed') {
         // bash refuses a local copy of a readonly global variable ("readonly variable"), which stays as it is; a
-        // caller's readonly local may be hidden.
-        if (hidden?.attrs.r?.state === 'on' && !hidden.scope) continue;
-        hide(frame, name, hidden);
+        // caller's readonly local may be hidden. Where it may be either, or may be readonly: either, not known.
+        const ro = hidden?.attrs.r?.state ?? 'off';
+        if (ro === 'on' && !hidden!.scope) continue;
+        // (Where it may be this call's local already, what it hides is the variable on the other paths.)
+        const outer = whom === 'mixed' ? outerOf(hidden!) : { v: hidden };
+        if (outer) hide(frame, name, outer.v);
+        if (ro !== 'off' && (!hidden!.scope || 'mixed' in hidden!.scope)) {
+          st = this.w.put(st, 'variables', name, { ...notKnown(hidden!), attrs: { ...hidden!.attrs, r: { state: 'unknown', at: n } }, scope: { mixed: this.w.frames.length } });
+          continue;
+        }
         // It keeps the export attribute of the one it hides, and no other (bash's make_local_variable). (With
         // localvar_inherit, it starts with the value and attributes of the one it hides: not followed. So does dash's
         // `local`, and sh may be dash: `local IFS` keeps the IFS of the caller there. zsh's starts empty.)
@@ -475,7 +482,11 @@ export class WalkBuiltins {
         // (Also that of the environment's, when the script has not set it: `exportFromEnvironment`.)
         const kept: Record<string, Attribute> = !hidden ? { x: exportFromEnvironment(name, n) } : x && (x.state !== 'off' || x.environment) ? { x: { ...x, at: n } } : {};
         const fresh = this.w.put(st, 'variables', name, { declared: 'on', set: inherit === 'off' || inherit === 'default' ? 'off' : 'unknown', attrs: kept, at: n, scope: { depth: this.w.frames.length } });
-        st = whom === 'mixed' ? merge([fresh, st], this.w.posix) : fresh;
+        // (After it, the variable is this call's on every path.)
+        if (whom === 'mixed') {
+          const both = merge([fresh, st], this.w.posix);
+          st = { ...both, variables: both.variables.with(name, { ...both.variables.get(name)!, scope: { depth: this.w.frames.length } }) };
+        } else st = fresh;
       }
       // `declare -g x` while `x` is local (or a prefix assignment of a call): the global one, which the outermost frame
       // that hides it restores. (That frame is the walk's, not the path's: one on some paths only is not followed so,
@@ -598,7 +609,7 @@ export class WalkBuiltins {
     // (Each frame hides what an outer one has, down to the shell's own.)
     let s = st.variables.get(name)?.scope;
     for (let depth = this.w.frames.length; depth >= 1 && s !== undefined; depth--) {
-      if (s === 'mixed') return 'mixed';
+      if ('mixed' in s) return 'mixed';
       if (s.depth !== depth) continue;
       frame = this.w.frames[depth - 1];
       s = frame.saved.get(name)?.scope;
@@ -611,7 +622,7 @@ export class WalkBuiltins {
     // A local of a calling function, or a prefix assignment of a call: unset removes it, and the variable it hides shows
     // again. Whose it is not known: nor is what it gives.
     const v = st.variables.get(target);
-    if (v?.scope === 'mixed') return this.w.put(st, 'variables', target, notKnown(v));
+    if (v?.scope && 'mixed' in v.scope) return this.w.put(st, 'variables', target, notKnown(v));
     const shown = revealed(this.w, v, target, this.w.frames.length);
     if (shown) {
       this.w.reveals++;

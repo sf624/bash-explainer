@@ -53,14 +53,44 @@ export interface VariableState {
 
 /**
  * The call whose variable it is: by the depth of its frame in the walk (1: the outermost call), and whether it is a
- * prefix assignment of the call (`x=1 f`), which an `unset` in the body removes. `mixed`: on some paths only, or of
- * different calls.
+ * prefix assignment of the call (`x=1 f`), which an `unset` in the body removes. `mixed`: the call at that depth's on
+ * some paths (a local or a prefix assignment), and on the others (`outer`, none when there are none) the variable
+ * there, of a shallower call or the shell's own (absent: `v` undefined).
  */
-export type Scope = { readonly depth: number; readonly temporary?: true } | 'mixed';
+export type Scope = { readonly depth: number; readonly temporary?: true } | { readonly mixed: number; readonly outer?: { readonly v: VariableState | undefined } };
+
+/** The deepest call whose variable it may be (0: none, the shell's own). */
+const deepest = (s: Scope | undefined): number => (!s ? 0 : 'mixed' in s ? s.mixed : s.depth);
+
+/** Whether two states of a variable are the same, for `sameState`. */
+function sameVariable(x: VariableState, y: VariableState): boolean {
+  const k = Object.keys(x.attrs);
+  return x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && sameScope(x.scope, y.scope)
+    && k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state && x.attrs[l].environment === y.attrs[l]?.environment));
+}
 
 /** Whether two scopes are the same (none: the shell's own variable). */
-export const sameScope = (a: Scope | undefined, b: Scope | undefined): boolean =>
-  a === b || (typeof a === 'object' && typeof b === 'object' && a.depth === b.depth && !a.temporary === !b.temporary);
+export function sameScope(a: Scope | undefined, b: Scope | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || 'mixed' in a !== 'mixed' in b) return false;
+  if (!('mixed' in a)) return !('mixed' in b) && a.depth === b.depth && !a.temporary === !b.temporary;
+  const [x, y] = [a.outer, (b as typeof a).outer];
+  return a.mixed === (b as typeof a).mixed && (x === y || (!!x && !!y && (x.v === y.v || (!!x.v && !!y.v && sameVariable(x.v, y.v)))));
+}
+
+/**
+ * The scope of `name` after two paths where it is `a` and `b`: the same, or mixed at the deeper call, with what it is
+ * on the paths where it is not that call's.
+ */
+function mergeScope(name: string, a: VariableState | undefined, b: VariableState | undefined): Scope | undefined {
+  if (sameScope(a?.scope, b?.scope)) return a?.scope;
+  const n = Math.max(deepest(a?.scope), deepest(b?.scope));
+  const part = (v: VariableState | undefined): { v: VariableState | undefined } | undefined =>
+    deepest(v?.scope) < n ? { v } : v!.scope && 'mixed' in v!.scope ? v!.scope.outer : undefined;
+  const [x, y] = [part(a), part(b)];
+  const outer = x && y ? { v: x.v || y.v ? mergeVariable(name, x.v, y.v) : undefined } : x ?? y;
+  return { mixed: n, ...(outer ? { outer } : {}) };
+}
 
 export interface FunctionState {
   /** `unknown`: defined on some paths only. */
@@ -537,7 +567,7 @@ export function mergeVariable(name: string, a: VariableState | undefined, b: Var
     const x = v.attrs.x;
     // (`if …; then unset Y; fi`: on neither path is `Y` exported unless the environment had it, as after a first `Y=1`.)
     if (start.state !== 'off' && (!x || x.state === 'off')) attrs.x = { state: 'unknown', at: x?.at ?? v.at, environment: start.environment!, atMost: true };
-    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true, ...(v.scope ? { scope: 'mixed' as const } : {}) };
+    return { declared: tri(v.declared, 'off'), set: tri(v.set, 'off'), attrs, at: v.at, kept: true, ...(v.scope ? { scope: mergeScope(name, a, b) } : {}) };
   }
   const attrs: Record<string, Attribute> = {};
   for (const l of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])) {
@@ -547,7 +577,7 @@ export function mergeVariable(name: string, a: VariableState | undefined, b: Var
     attrs[l] = x && y ? { state: tri(x.state, y.state), at: later(x.at, y.at), ...(x.environment && y.environment ? { environment: x.environment, ...(x.atMost || y.atMost ? { atMost: true as const } : {}) } : {}) } : { state: tri((x ?? y)!.state, 'off'), at: (x ?? y)!.at };
   }
   const source = a.source === b.source ? a.source : undefined;
-  const scope = sameScope(a.scope, b.scope) ? a.scope : 'mixed';
+  const scope = mergeScope(name, a, b);
   return { declared: tri(a.declared, b.declared), set: tri(a.set, b.set), attrs, value: a.value === b.value ? a.value : undefined, ...(source ? { source } : {}), at: later(a.at, b.at), ...(a.kept || b.kept ? { kept: true as const } : {}), ...(scope ? { scope } : {}) };
 }
 
@@ -649,12 +679,8 @@ function sameHashed(x: CommandEntry, y: CommandEntry): boolean {
  * values, `VariableState.source`: a call reuses a walk whose entry differs only in those, `sourcesApart`).
  */
 export function sameState(a: ShellState, b: ShellState): boolean {
-  const attrs = (x: VariableState, y: VariableState): boolean => {
-    const k = Object.keys(x.attrs);
-    return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state && x.attrs[l].environment === y.attrs[l]?.environment);
-  };
   return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
-    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && sameScope(x.scope, y.scope) && attrs(x, y)))
+    && NameMap.same(a.variables, b.variables, sameVariable)
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)

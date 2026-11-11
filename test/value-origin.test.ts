@@ -91,6 +91,9 @@ const ROWS: readonly Row[] = [
   { script: 'f() { if maybe; then local x=2; fi; x=9; }; x=1; f; use 1 "$x"', origins: { 1: null } },
   { script: 'f() { local x=2; x=9; }; x=1; f; use 1 "$x"; g() { if maybe; then unset x; fi; }; k() { local x=3; g; use 2 "$x"; }; k', origins: { 1: 'x=1', 2: null } },
   { script: 'x=1; f() { for x in a; do local x; done; use 1 "$x"; }; f; use 2 "$x"', origins: { 1: null, 2: null } },
+  // (A `return` before the `local`, and a local in a loop: the caller's variable stays.)
+  { script: 'name=world; greet() { [ -n "$1" ] || return 1; local name=$1; use 1 "$name"; }; greet bob; greet; use 2 "$name"', origins: { 1: null, 2: 'name=world' } },
+  { script: 'x=1; f() { for i in 1 2; do local x=$i; done; }; f; use 1 "$x"', origins: { 1: 'x=1' } },
   // A prefix assignment: the command's words are expanded before it; a function sees it.
   { script: 'p=a; p=b use 1 "$p"', origins: { 1: 'p=a' } },
   { script: 'p=a; p=b :; use 1 "$p"; q=a; q=b eval :; use 2 "$q"', origins: { 1: 'p=a', 2: 'q=a' } },

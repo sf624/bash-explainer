@@ -8,24 +8,40 @@ import type { Walker } from './walker';
 
 /**
  * Whose the variable `v` is, for the frame at `depth`: a local of that call (`this`), a prefix assignment of it
- * (`temporary`: `x=1 f`), another call's or the shell's own (`other`), or not known (`mixed`).
+ * (`temporary`: `x=1 f`), another call's or the shell's own (`other`), or not known (`mixed`: maybe this call's).
  */
 export function whose(v: VariableState | undefined, depth: number): 'this' | 'temporary' | 'other' | 'mixed' {
   const s = v?.scope;
-  if (s === 'mixed') return 'mixed';
+  if (s && 'mixed' in s) return s.mixed >= depth ? 'mixed' : 'other';
   if (!s || s.depth !== depth) return 'other';
   return s.temporary ? 'temporary' : 'this';
 }
 
-/** `value` put in place of `prev`: in the scope of `prev`, unless it says one of its own (a key `scope`, even undefined). */
+/** Whether `v` is a local of a call, or its prefix assignment, on every path (`StateModel.local`: a write that is the call's). */
+export const ofCall = (v: VariableState | undefined): boolean => !!v?.scope && 'depth' in v.scope;
+
+/**
+ * `value` put in place of `prev`: in the scope of `prev`, unless it says one of its own (a key `scope`, even
+ * undefined). Where `prev` is mixed, the value is put on the other paths too, in what the variable is there.
+ */
 export function inScope(prev: VariableState | undefined, value: VariableState): VariableState {
-  return prev?.scope !== undefined && !Object.hasOwn(value, 'scope') ? { ...value, scope: prev.scope } : value;
+  const s = prev?.scope;
+  if (!s || Object.hasOwn(value, 'scope')) return value;
+  if (!('mixed' in s) || !s.outer) return { ...value, scope: s };
+  return { ...value, scope: { mixed: s.mixed, outer: { v: s.outer.v ? inScope(s.outer.v, value) : value } } };
 }
 
-/** `v` as the walk does not know it: whether it is set, to what, and whose. */
+/** `v` as the walk does not know it: whether it is set, and to what, also on the paths where it is another call's. */
 export function notKnown(v: VariableState): VariableState {
   const { value: _value, source: _source, ...rest } = v;
-  return { ...rest, declared: 'unknown', set: 'unknown', scope: 'mixed' };
+  const s = v.scope;
+  const outer = s && 'mixed' in s && s.outer ? { outer: { v: s.outer.v && notKnown(s.outer.v) } } : {};
+  return { ...rest, declared: 'unknown', set: 'unknown', ...(s && 'mixed' in s ? { scope: { mixed: s.mixed, ...outer } } : {}) };
+}
+
+/** What the variable `v`, mixed at `depth`, is on the paths where it is not that call's (none: there are none). */
+export function outerOf(v: VariableState): { v: VariableState | undefined } | undefined {
+  return v.scope && 'mixed' in v.scope ? v.scope.outer : undefined;
 }
 
 /**
@@ -48,7 +64,7 @@ export function hide(frame: Frame, name: string, hidden: VariableState | undefin
  */
 export function revealed(w: Walker, v: VariableState | undefined, name: string, depth: number): { hidden: VariableState | undefined } | undefined {
   const s = v?.scope;
-  if (typeof s !== 'object' || (s.depth === depth && !s.temporary)) return undefined;
+  if (!s || 'mixed' in s || (s.depth === depth && !s.temporary)) return undefined;
   const frame = w.frames[s.depth - 1];
   /* c8 ignore next -- a variable is in the scope of a frame on the stack: leaving a frame restores those of its scope */
   if (!frame) return undefined;
@@ -59,8 +75,9 @@ export function revealed(w: Walker, v: VariableState | undefined, name: string, 
 /**
  * `end` as the function (or `${ …; }`) of `frame`, at `depth`, returns: what its locals and prefix assignments hide
  * is restored, where they are still its own (not where an `unset` removed them, or on paths where it made none:
- * merged where that is not known), and its `local -` options. A `local GLOBIGNORE` going out of scope sets GLOBIGNORE
- * again, or unsets it: dotglob follows, as for an assignment or `unset`.
+ * merged where that is not known, and no longer this call's), and its `local -` options. A `local GLOBIGNORE` going
+ * out of scope sets GLOBIGNORE again, or unsets it: dotglob follows, as for an assignment or `unset`. (Each path of the
+ * body that returns is left on its own: a `return` before the `local` leaves the caller's variable as it was.)
  */
 export function leaveFrame(w: Walker, frame: Frame, end: ShellState, depth: number): ShellState {
   const restore = (st: ShellState, names: readonly string[]): ShellState => {
@@ -74,11 +91,17 @@ export function leaveFrame(w: Walker, frame: Frame, end: ShellState, depth: numb
   const sure: string[] = [];
   const maybe: string[] = [];
   for (const name of frame.saved.keys()) {
-    const k = whose(end.variables.get(name), depth);
-    if (k === 'this' || k === 'temporary') sure.push(name);
+    const v = end.variables.get(name);
+    const k = whose(v, depth);
+    if (k === 'this' || k === 'temporary' || (k === 'mixed' && !outerOf(v!))) sure.push(name);
     else if (k === 'mixed') maybe.push(name);
   }
   end = restore(end, sure);
-  if (maybe.length) end = merge([end, restore(end, maybe)], w.posix);
+  // (Mixed: what the frame hides on its paths, and on the others what the variable is there.)
+  if (maybe.length) {
+    let others = end;
+    for (const name of maybe) others = { ...others, variables: others.variables.with(name, outerOf(end.variables.get(name)!)!.v) };
+    end = merge([restore(end, maybe), others], w.posix);
+  }
   return frame.options ? { ...end, set: frame.options } : end;
 }
