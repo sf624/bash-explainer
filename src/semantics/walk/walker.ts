@@ -26,7 +26,7 @@ import { WalkConditions } from './conditions';
 import { WalkExpansions } from './expansions';
 import { kept, temporaries, temporary } from './temporaries';
 import { forStatement } from './forloop';
-import { inScope, leaveFrame } from './scopes';
+import { inScope, leaveFrame, ofCall } from './scopes';
 import { type HostCall, hostRun, type HostRun } from './host';
 import { ATTRS, attributesChange, notWalked, unsettledBodies, widen } from './widen';
 import { changesWords, ExpansionError, type Frame, OPAQUE, processIn, type SetAt, type Statement, type Target, WalkAgain } from './shared';
@@ -197,7 +197,7 @@ export class Walker {
       this.lastAt.set(k, this.node!);
       for (const c of this.collecting) c.add(k);
     }
-    const writes = kind === 'variables' ? this.varWrites[this.frames.some((f) => f.saved.has(name)) ? 'local' : 'shell'] : undefined;
+    const writes = kind === 'variables' ? this.varWrites[ofCall(value as unknown as VariableState | undefined) ? 'local' : 'shell'] : undefined;
     writes?.set(this.node!, (writes.get(this.node!) ?? new Set<string>()).add(name));
     return { ...st, [kind]: (st[kind] as NameMap<Entry<K>>).with(name, value) };
   }
@@ -1095,14 +1095,14 @@ export class Walker {
     } finally {
       this.targets.pop();
     }
-    end = functionExit(entry, def, merge([end, ...target.returns], this.posix));
     this.frames.pop();
     this.stack.pop();
     this.expand = outer;
     this.collecting.pop();
     // (`f() ( … )` runs its body in a subshell.)
     if (body.type === 'subshell') return entry;
-    return leaveFrame(this, frame, end, this.frames.length + 1);
+    const depth = this.frames.length + 1;
+    return functionExit(entry, def, merge([end, ...target.returns].map((p) => leaveFrame(this, frame, p, depth)), this.posix));
   }
 
   /**

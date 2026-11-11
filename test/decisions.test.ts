@@ -99,6 +99,13 @@ describe('decisions of the state model against bash (test/support/decisions.ts)'
       // (`unset` of a caller's local, or of the call's prefix assignment, shows what it hides.)
       'v=1; f() { local v=5; g; @; }; g() { unset v; }; f', 'v=1; f() { unset v; @; }; v=2 f', 'v=2; f() { local v=1; v=3 g; @; }; g() { unset v; }; f',
       'f() { local v=2; v=3; }; v=1; f',
+      // (The second review: a readonly global refuses a later local; a `return` before the `local`; a local made on some
+      // paths of an earlier call; a local in a loop. bash decides each as the model.)
+      'f() { [ "$1" = a ] && return; local v=2; }; v=1; f a; readonly v; g() { local v=2 2>/dev/null; @; }; g',
+      'f() { if [ -t 0 ]; then local v=2; fi; :; }; v=1; f; readonly v; g() { local v=2 2>/dev/null; @; }; g',
+      'v=1; greet() { [ -n "$1" ] || return 1; local v=$1; }; greet bob; greet', 'f() { if [ -t 0 ]; then local v=l; fi; v=9; }; v=2; f; g() { local v=g2; }; g; v=1; g',
+      'usage() { [ $# -eq 0 ] && return 1; local v; for v; do :; done; }; count() { local v=0; v=5; }; for v in 1; do :; done; usage; count',
+      'f() { for i in 1 2; do local v=$i; done; }; v=1; f', 'f() { while [ -t 0 ]; do local v=2; done; }; v=1; f',
     ];
     // (A value not known reaches the test, or two values do.)
     const undecided = [

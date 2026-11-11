@@ -159,10 +159,11 @@ export class WalkExpansions {
       this.w.frames.pop();
     }
     // (Its status is its last command's, or the one `return` gives.)
-    end = merge([end, ...target.returns, ...target.aborts, ...target.maybes], this.w.posix);
+    // (Each path leaves the frame on its own: src/semantics/walk/scopes.ts.)
+    const paths = [end, ...target.returns, ...target.aborts, ...target.maybes];
     pushAll(this.w.statement.deferred, target.jumps.map((j) => ({ ...j, st: leave(j.st) })));
-    if (reply && !this.w.silent) this.replies.set(c, [...(this.replies.get(c) ?? []), replyText(end.variables.get('REPLY')!)]);
-    return leave(end);
+    if (reply && !this.w.silent) this.replies.set(c, [...(this.replies.get(c) ?? []), replyText(merge(paths, this.w.posix).variables.get('REPLY')!)]);
+    return merge(paths.map(leave), this.w.posix);
   }
 
   /**
