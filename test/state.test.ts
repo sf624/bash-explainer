@@ -425,6 +425,10 @@ describe('shell state: function bodies run at their calls', () => {
     // (`unset` in a function of the call's prefix assignment, or of a caller's: the variable from before shows again.)
     assert.strictEqual(variable(end('x=0; f() { unset x; x=2; }; x=1 f'), 'x')?.value, '2');
     assert.strictEqual(variable(end('x=0; g() { unset x; }; f() { g; x=2; }; x=1 f'), 'x')?.value, '2');
+    // (`declare -g` sets what the outermost frame that hides the variable restores, from a call deeper than the local's
+    // too, and where the variable did not exist before: bash prints 5 after both.)
+    assert.strictEqual(variable(end('x=0; f() { local x=l; g; }; g() { declare -g x=5; }; f'), 'x')?.value, '5');
+    assert.strictEqual(variable(end('f() { local x=l; declare -g x=5; }; f'), 'x')?.value, '5');
   });
   it('a recursive call, and calls too deep, are guessed from what the body changes', () => {
     assert.strictEqual(set(end('f() { if a; then set -f; return; fi; f; }; f'), 'noglob'), 'unknown');
