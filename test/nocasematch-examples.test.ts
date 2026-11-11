@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Analyzer } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { runContained, scoped } from './support/contained';
+import { runContained } from './support/contained';
 
 // The examples of `[[ =~ ]]`, `[[ == ]]` and `case` follow `nocasematch`: surely on, their strings are those bash gives with it on; where it may be on,
 // there is no example. Bash runs once over every string the examples show (the table below), with the option on and off.
@@ -43,7 +43,6 @@ for (const [state, nocase] of [[ON, true], [OFF, false]] as const) {
 describe('examples under nocasematch', () => {
   it('the strings of each example are those bash gives, with nocasematch on and off', async function () {
     this.timeout(60000);
-    if (!scoped) return this.skip();
     const dir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), 'nocase-'));
     try {
       const checks: { row: Row; s: string; want: boolean }[] = [];
@@ -91,5 +90,37 @@ describe('examples under nocasematch', () => {
       'if c; then shopt -s nocasematch; fi; [[ $ans == y* ]]',
       'if c; then shopt -s nocasematch; fi; case $ans in y*) :;; esac',
     ]) assert.strictEqual(exampleLines(src), undefined, src);
+  });
+
+  it('after `source`, nocasematch is taken as set before: the examples and the plain pattern stay', () => {
+    for (const src of ['source ./x.sh; [[ $a =~ ^y$ ]]', '. ./x.sh; [[ $a == y* ]]', 'eval "$x"; case $a in y*) :;; esac']) {
+      const ex = exampleLines(src);
+      assert.ok(ex && ex.yes.length > 0, src);
+    }
+    // (`y` has no wildcard: read as plain text, as before `source` it is, so the test example is made.)
+    const tests = analyzer.explainLine(parser.parse('source ./x.sh; [[ $a == y ]]'), 0, 'bash').examples;
+    assert.ok(tests.some((e) => e.kind === 'test'));
+  });
+
+  it('under nocaseglob a file pattern with [:upper:] gets no example, as bash folds neither', async () => {
+    const ex = analyzer.explainLine(parser.parse('shopt -s nocaseglob; ls [[:upper:]]*'), 0, 'bash').examples;
+    assert.ok(!ex.some((e) => e.kind === 'glob'));
+    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), 'nocase-'));
+    try {
+      for (const f of ['abc', 'Abc', 'xyz']) fs.writeFileSync(path.join(dir, f), '');
+      const r = await runContained(['bash', '-c', 'shopt -s nocaseglob; echo [[:upper:]]*; echo [a-z]bc'], dir);
+      assert.strictEqual(r.stdout, 'Abc\nAbc abc\n');
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+  });
+
+  it('`${x//[[:lower:]]/X}` under nocasematch is as bash gives it', async () => {
+    const ex = analyzer.explainLine(parser.parse('shopt -s nocasematch; x=aBc; y=${x//[[:lower:]]/X}; echo "$y"'), 0, 'bash');
+    const text = JSON.stringify(ex);
+    // (bash does not fold the class: `XBX`; the model does not claim a value it cannot give.)
+    assert.ok(!text.includes('XXX"') && !text.includes('`XXX`'), 'a value XXX');
+    const r = await runContained(['bash', '-c', 'shopt -s nocasematch; x=aBc; echo "${x//[[:lower:]]/X}"'], os.tmpdir());
+    assert.strictEqual(r.stdout, 'XBX\n');
   });
 });

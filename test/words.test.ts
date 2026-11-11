@@ -810,9 +810,9 @@ describe('words: a pattern with no wildcard (plainPatternText)', () => {
     };
     assert.strictEqual(plain('case $x in a) ;; esac', 'a'), 'a');
     assert.strictEqual(plain('case $x in a*) ;; esac', 'a*'), undefined);
-    // (Code the walk does not read may have set nocasematch or changed a value: the pattern stays one.)
-    assert.strictEqual(plain('eval "$c"; [[ $x == abc ]]', 'abc'), undefined);
-    assert.strictEqual(plain('source ./x.sh; [[ $x == abc ]]', 'abc'), undefined);
+    // (Code the walk does not read is taken not to set nocasematch: nocasematchIn. A value it may change is not known.)
+    assert.strictEqual(plain('eval "$c"; [[ $x == abc ]]', 'abc'), 'abc');
+    assert.strictEqual(plain('source ./x.sh; [[ $x == abc ]]', 'abc'), 'abc');
     assert.strictEqual(plain('p=a; source ./x.sh; [[ $x == $p ]]', '$p'), undefined);
     assert.strictEqual(plain('p=a; [[ $x == $p ]]', '$p'), 'a');
     assert.strictEqual(plain('shopt -s nocasematch; case $x in a) ;; esac', 'a'), undefined);

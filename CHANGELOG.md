@@ -14,7 +14,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- With `shopt -s nocasematch`, the example of `[[ $x =~ re ]]` no longer lists `Y` as not matching `^(y|yes)$`, and where nocasematch may be on, `[[ ]]` and `case` patterns show no example.
+- With `shopt -s nocasematch` on, the example of `[[ $x =~ re ]]` ignores case as bash does (`Y` matches `^(y|yes)$`); where nocasematch may be on, `[[ ]]` and `case` patterns show no example.
 
 ## 0.13.0
 

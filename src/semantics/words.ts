@@ -673,7 +673,7 @@ class Evaluator {
     const nocase = op[0] === '/' ? on(option(this.st, 'shopt', 'nocasematch'), 'shopt', 'nocasematch', false) : 'off';
     if (nocase === 'unknown') return undefined;
     const re = globToRegex(pattern, 'value', { nocase: nocase === 'on' });
-    /* c8 ignore next -- a guard: a pattern without extended globs always converts. */
+    // (No regex for an extended glob, or for `[[:upper:]]` under nocasematch, which bash does not fold.)
     if (!re) return undefined;
     if (op[0] === '#' || op[0] === '%') return out(withoutAffix(op, value, re));
     // `${x/p/r}`, `${x//p/r}`, `${x/#p/r}`, `${x/%p/r}`. An unquoted `&` in the replacement is the match (patsub_replacement).

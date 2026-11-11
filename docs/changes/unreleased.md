@@ -27,3 +27,6 @@ A variable whose value the script makes known is read in the language of the com
 
 - **Regex.** With `shopt -s nocasematch` on, the example of `[[ $ans =~ ^(y|yes)$ ]]` ignores case as bash does: `Y` and `YES` are in "Matches", not in "Does not match". Where nocasematch may be on (`if …; then shopt -s nocasematch; fi`), there is no example. Before, it matched case-sensitively whatever the option.
 - **Patterns.** The same for `[[ $x == pat ]]` and `case`: no example where nocasematch may be on. With it on, `[[:upper:]]` and `[[:lower:]]` in a pattern get no example, since bash does not fold those classes in a pattern (it does in `=~`).
+- **Classes.** With nocasematch on, `[[:upper:]]` and `[[:lower:]]` in a `[[ == ]]` or `case` pattern get no example, and under nocaseglob none for a file pattern (`shopt -s nocaseglob; ls [[:upper:]]*` lists only `Abc` of `abc Abc xyz`): bash folds the ranges of `[a-z]` but not those classes.
+- **Replacements.** The same fix reaches `${x//pat/rep}` under nocasematch: `shopt -s nocasematch; x=aBc; y=${x//[[:lower:]]/X}` was shown as `XXX`; bash gives `XBX`, and the value is now left unknown.
+- **After `source`, `.` or `eval`.** nocasematch is taken as set before (a sourced file almost never turns it on), as the examples always did; the plain-text reading of a pattern (`[[ $x == y ]]`) now does too. Before, it gave up there.
