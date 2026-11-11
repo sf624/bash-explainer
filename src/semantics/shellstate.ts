@@ -755,7 +755,18 @@ export function merge(states: ShellState[], posix = false): ShellState {
   const paths = states.filter((s) => !s.unreachable);
   if (!paths.length) return states[0];
   const m = MERGERS[posix ? 'on' : 'off'];
-  return paths.reduce((a, b) => (a === b ? a : { ...eachKind(m, (k, f) => NameMap.merge(a[k] as NameMap<Entry<typeof k>>, b[k] as NameMap<Entry<typeof k>>, f)), ...mergeScalars(a, b) }));
+  // (An object written out: the walk merges often, and `eachKind` would make a list and closures each time.)
+  return paths.reduce((a, b) => (a === b ? a : {
+    set: NameMap.merge(a.set, b.set, m.set),
+    shopt: NameMap.merge(a.shopt, b.shopt, m.shopt),
+    variables: NameMap.merge(a.variables, b.variables, m.variables),
+    functions: NameMap.merge(a.functions, b.functions, m.functions),
+    aliases: NameMap.merge(a.aliases, b.aliases, m.aliases),
+    disabled: NameMap.merge(a.disabled, b.disabled, m.disabled),
+    hashed: NameMap.merge(a.hashed, b.hashed, m.hashed),
+    traps: NameMap.merge(a.traps, b.traps, m.traps),
+    ...mergeScalars(a, b),
+  }));
 }
 
 /**

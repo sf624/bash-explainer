@@ -126,9 +126,9 @@ describe('the merge of the states a node ran with, on read', function () {
     const model = shellState(tree, 'bash');
     const echo = descendants(tree.root, ['command']).find((c) => c.text === 'echo "$x"')!;
     // (Set on both paths, to `a` on one and `b` on the other.)
-  const x = model.at(echo).run.variables.get('x');
-  assert.strictEqual(x?.set, 'on');
-  assert.strictEqual(x?.value, undefined);
+    const x = model.at(echo).run.variables.get('x');
+    assert.strictEqual(x?.set, 'on');
+    assert.strictEqual(x?.value, undefined);
   });
 
   it('keeps values and order, reads each name once, and drops its sources once all are read', () => {
@@ -147,6 +147,12 @@ describe('the merge of the states a node ran with, on read', function () {
       const eager = merge([a, b, c], posix);
       assert.ok(equal(lazy, eager), `posix ${posix}`);
     }
+    // (The status, errexitWhy and opaque are folded over every path, not the first and the last: here only the middle one differs.)
+    const mid: ShellState = { ...a, status: 1, opaque: true, errexitWhy: 'off-in-substitution' };
+    const ends = { ...a, variables: a.variables.with('x', v('3')) };
+    const three = mergeOnRead([a, mid, ends]);
+    assert.deepStrictEqual([three.status, three.opaque, three.errexitWhy], [undefined, true, 'off-in-substitution']);
+    assert.ok(equal(three, merge([a, mid, ends])));
     const lazy = mergeOnRead([a, b]);
     const vars = lazy.variables;
     const x = vars.get('x');
@@ -162,8 +168,24 @@ describe('the merge of the states a node ran with, on read', function () {
     assert.deepStrictEqual([...vars.keys()], [...merge([a, b]).variables.keys()]);
     assert.strictEqual([...vars].find(([k]) => k === 'x')?.[1], x, 'the object read before');
     assert.strictEqual(vars.get('x'), x, 'and after');
-    const buckets = (vars as unknown as { buckets: (ReadonlyMap<string, VariableState> & { sources?: unknown })[] }).buckets;
-    for (const bucket of buckets) assert.strictEqual(bucket?.sources, undefined);
+    const bucketsOf = (m: NameMap<VariableState>) => (m as unknown as { buckets: (ReadonlyMap<string, VariableState> & { sources?: unknown })[] }).buckets;
+    for (const bucket of bucketsOf(vars)) assert.strictEqual(bucket?.sources, undefined);
+    // (A bucket merged on read is a `ReadonlyMap`: each of its ways to be read, on a bucket not read before.)
+    const eagerBuckets = bucketsOf(merge([a, b]).variables);
+    const lazyBuckets = () => bucketsOf(mergeOnRead([a, b]).variables).map((l, i) => [l, eagerBuckets[i]] as const).filter(([l, e]) => l && l !== e);
+    assert.ok(lazyBuckets().length > 0);
+    for (const [l, e] of lazyBuckets()) assert.deepStrictEqual([...l.entries()], [...e.entries()]);
+    for (const [l, e] of lazyBuckets()) assert.deepStrictEqual([...l.keys()], [...e.keys()]);
+    for (const [l, e] of lazyBuckets()) assert.deepStrictEqual([...l.values()], [...e.values()]);
+    for (const [l, e] of lazyBuckets()) {
+      const each: [string, VariableState][] = [];
+      l.forEach((w, k, map) => {
+        assert.strictEqual(map, l);
+        each.push([k, w]);
+      });
+      assert.deepStrictEqual(each, [...e]);
+    }
+    for (const [l, e] of lazyBuckets()) for (const k of [...e.keys(), 'w']) assert.strictEqual(l.has(k), e.has(k), k);
     // (Every way to read a bucket merged on read gives the same.)
     const fresh = () => mergeOnRead([a, b]).variables;
     const all = [...merge([a, b]).variables];
