@@ -79,12 +79,14 @@ export function plainCopy(word: SyntaxNode): SyntaxNode | undefined {
  * one plain assignment that gave the variable its value on every path to `part` (`VariableState.source`: `x='^a'`,
  * `local x=…`, `declare -r x=…`, `readonly X=…`, `export x=…`), where `part` is a plain copy (`copiedName`),
  * `expansionValue` gives its value, and the word's static text is that value. None after two paths with two words
- * (`if c; then p=a; else p=a; fi`), after `p+=b`, or where the value is made of other words (`p=$q`). Which assignment
+ * (`if c; then p=a; else p=a; fi`), after `p+=b`, where the value is made of other words (`p=$q`), or for a variable a
+ * function call reached with another word than the walk it reused (`StateModel.mixedSources`). Which assignment
  * reaches `part` is the walk's, not the text's order: `f() { grep -E "$re" file; }; re='^a'; f` copies `'^a'`.
  */
 export function valueOrigin(part: SyntaxNode, model: StateModel): SyntaxNode | undefined {
   const name = copiedName(part);
-  const value = name === undefined ? undefined : expansionValue(part, model);
+  // (Not a variable a reused walk of a function may hold another call's word of: `StateModel.mixedSources`.)
+  const value = name === undefined || model.mixedSources.has(name) ? undefined : expansionValue(part, model);
   if (!value) return undefined;
   // (The state the word model read the variable in, as `expansionValue` did: `part` is in a word, and the variable is
   // in the state, since one the script never set has no value there.)

@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { shellState } from '../src/semantics/state';
-import { valueOrigin, valueUses } from '../src/semantics/values';
+import { expansionValue, valueOrigin, valueUses } from '../src/semantics/values';
 import { staticWordText } from '../src/staticword';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { ancestor, descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
@@ -40,8 +40,11 @@ const ROWS: readonly Row[] = [
   { script: 'f() { use 1 "$p"; }; p=a; f; f', origins: { 1: 'p=a' } },
   { script: 'f() { use 1 "$p"; }; f; p=a; f', origins: { 1: null } },
   { script: 'f() { use 1 "$p"; }; p=a; f; p=b; f', origins: { 1: null } },
-  // (Two calls with the same value from two words: the second is no run of the first's walk, `sameState`.)
-  { script: 'f() { use 1 "$p"; }; p=a; f; p=a; f', origins: { 1: null } },
+  // (Two calls with the same value from two words: the second reuses the first's walk, which holds the first word, in the
+  // body and after the call: `p` is in `mixedSources`.)
+  { script: 'f() { use 1 "$p"; }; p=a; f; p=a; f; use 2 "$p"', origins: { 1: null, 2: null } },
+  // (Five calls, past `WALKS_PER_FUNCTION`: each reuses the first walk, and `re` keeps its one word.)
+  { script: `f() { use 1 "$re"; }; re=^a; ${'rc=0; f; '.repeat(5)}use 2 "$re"`, origins: { 1: 're=^a', 2: 're=^a' } },
   { script: 'f() { p=b; }; p=a; use 1 "$p"; f; use 2 "$p"', origins: { 1: 'p=a', 2: 'p=b' } },
   // Subshells: an assignment in one is not seen after it.
   { script: 'p=a; (p=b; use 1 "$p"); use 2 "$p"; (use 3 "$p"); echo "$(use 4 "$p")"', origins: { 1: 'p=b', 2: 'p=a', 3: 'p=a', 4: 'p=a' } },
@@ -122,6 +125,15 @@ async function runAll(scripts: readonly string[]): Promise<Map<string, string[]>
 }
 
 describe('the origin of a value against bash (valueOrigin, src/semantics/values.ts)', () => {
+  it('keeps the value at a use in a function called five times (one walk, reused)', () => {
+    const tree = parser.parse(`f() { grep -E "$re" g; }; re=^a; ${'rc=0; f; '.repeat(5)}`);
+    const model = shellState(tree, 'bash', { read: 'script' });
+    const part = descendants(tree.root, ['simple_expansion'])[0];
+    assert.strictEqual(expansionValue(part, model)?.text, '^a');
+    assert.strictEqual(valueOrigin(part, model)?.text, '^a');
+    assert.ok(model.mixedSources.has('rc') && !model.mixedSources.has('re'));
+  });
+
   it('names the assignments each row pins', () => {
     const wrong = ROWS.flatMap((row) => {
       const { uses } = usesOf(row.script);
