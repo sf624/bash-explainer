@@ -179,6 +179,8 @@ const moves = new CursorMoves(); // the reader's moves of the cursor not yet sen
 /** The live region that says what the line the cursor moved to is about (the editor page only). */
 let announcer: LineAnnouncer | undefined;
 
+/** The Undo of the toast after the hint's switch to POSIX sh (#746), while it shows: any other change of the shell takes it away (`changeSettings`). */
+let shUndo: ToastSpec['action'];
 /** The Problems strip and list under the editor; a click on a problem, ‹ › and F8 (on the page) select it in the editor. */
 const strip: ProblemStrip | undefined = mode.hasChrome ? new ProblemStrip({
   lang: () => lang, cursor: () => editor.cursor(), spans: () => editor.problemSpans(),
@@ -452,6 +454,7 @@ $<HTMLSelectElement>('lang').addEventListener('change', (e) => {
 function changeSettings(next: Settings): void {
   // A link's language stays until the setting itself changes.
   const languageChanged = next.language !== settings.language;
+  if (shUndo && next.shell !== settings.shell && toast.current?.action === shUndo) toast.hide();
   settings = next;
   editor.setWrap(settings['editor.wrap']);
   editor.setBlockOutline(settings.blockOutline);
@@ -496,13 +499,9 @@ function setChoice(key: 'shell' | 'yq', value: string): void {
   const next = { ...settings, [key === 'shell' ? 'shell' : 'yq.flavor']: value };
   // Only values the setting takes (a copy of another version may offer others).
   if (readSettings(changedSettings(next), 'panel').warnings.length) return;
-  if (key === 'shell' && toast.current?.action === shUndo) toast.hide();
   changeSettings(next);
   settingsDialog?.refresh();
 }
-
-/** The Undo of the toast after the hint's switch to POSIX sh (#746), while it shows: any other change of the shell takes it away. */
-let shUndo: ToastSpec['action'];
 
 /** A place the focus can go to as a whole: the editor's, the explanation's (F6's stops), or the toast's. */
 type Stop = 'editor' | 'settings' | 'grabber' | 'panel' | 'toast';
