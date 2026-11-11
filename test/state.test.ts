@@ -437,6 +437,9 @@ describe('shell state: function bodies run at their calls', () => {
     for (const src of ['x=1; [ -t 0 ] && readonly x; f() { local x=2; : in; }; f', 'x=0; h() { if [ -t 0 ]; then local -r x=1; fi; g; }; g() { local x=2; : in; }; h']) {
       assert.strictEqual(variable(before(src, ': in'), 'x')?.value, undefined, src);
     }
+    // (A local on some paths over the call's prefix assignment: the call's on every path, and it starts with its value.)
+    const temp = 'x=g; f() { if [ -t 0 ]; then local x; fi; : in; }; x=t f';
+    assert.deepStrictEqual([variable(before(temp, ': in'), 'x')?.value, variable(end(temp), 'x')?.value], ['t', 'g']);
     // (A write after an `unset` that showed the caller's variable is the shell's: a pipeline stage loses it.)
     const src = 'g() { local x=g; h; }; h() { unset x; echo a | read x; }; x=1; g';
     const m = model(src);
