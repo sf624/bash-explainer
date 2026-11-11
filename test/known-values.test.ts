@@ -226,6 +226,15 @@ describe('a known value read in the language of its command (known-values.md, st
     });
   });
 
+  // (A function called more than `WALKS_PER_FUNCTION` times, with entries that differ only in the words that gave their
+  // values: each call reuses the first walk, so the use keeps its value and its reading. Each `rc=0` is another word.)
+  it('a function called five times, after assignments of the same text', () => {
+    const src = `re='^TODO'\nsearch() { grep -E "$re" notes.txt; }\n${'rc=0; search || rc=1\n'.repeat(5)}`;
+    const t = valueToken(explain(src, 1));
+    assert.strictEqual(t?.value?.text, '^TODO');
+    assert.ok(t.value.reading!.tokens.length > 0);
+  });
+
   describe('one command reading', () => {
     it('a custom spec of the command: its words as the spec reads them, so no language and no reading', () => {
       const e = explain("re='^a'\ngrep -E \"$re\" f\n", 1, 'en', { customCommands: { grep: { summary: 'My grep' } } });

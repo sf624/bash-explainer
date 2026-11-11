@@ -254,6 +254,17 @@ export class NameMap<V> implements ReadonlyMap<string, V> {
     return new NameMap(buckets, size);
   }
 
+  /** The names whose values differ (by `eq`) between two maps of the same names: a bucket the two share is not read. */
+  static differing<V>(a: NameMap<V>, b: NameMap<V>, eq: (x: V, y: V) => boolean): string[] {
+    const out: string[] = [];
+    a.buckets.forEach((x, i) => {
+      const y = b.buckets[i];
+      if (x === y) return;
+      for (const [k, v] of x!) if (!eq(v, y!.get(k)!)) out.push(k);
+    });
+    return out;
+  }
+
   /** Whether the two maps hold equal values (by `eq`) under the same names. */
   static same<V>(a: NameMap<V>, b: NameMap<V>, eq: (x: V, y: V) => boolean): boolean {
     if (a === b) return true;
@@ -609,18 +620,27 @@ function sameOutcomes(a: readonly HashOutcome[], b: readonly HashOutcome[]): boo
 }
 
 /** Whether two entries of the table of `hash -p` say the same (the nodes aside). */
+/**
+ * The variables whose value word (`VariableState.source`) differs between two states `sameState` holds the same: a
+ * function call that reuses the walk of the one for the other leaves the first one's words in the body and after it.
+ */
+export const sourcesApart = (a: ShellState, b: ShellState): string[] => NameMap.differing(a.variables, b.variables, (x, y) => x.source === y.source);
+
 function sameHashed(x: CommandEntry, y: CommandEntry): boolean {
   return x === y || (x.state === y.state && x.value === y.value && (x.state !== 'unknown' || sameOutcomes(x.may!, y.may!)));
 }
 
-/** Whether two states say the same (the nodes where things changed aside). */
+/**
+ * Whether two states say the same (the nodes where things changed aside, and the words that gave the variables their
+ * values, `VariableState.source`: a call reuses a walk whose entry differs only in those, `sourcesApart`).
+ */
 export function sameState(a: ShellState, b: ShellState): boolean {
   const attrs = (x: VariableState, y: VariableState): boolean => {
     const k = Object.keys(x.attrs);
     return k.length === Object.keys(y.attrs).length && k.every((l) => x.attrs[l].state === y.attrs[l]?.state && x.attrs[l].environment === y.attrs[l]?.environment);
   };
   return a === b || (a.status === b.status && !a.unreachable === !b.unreachable && !a.opaque === !b.opaque && a.errexitWhy === b.errexitWhy && NameMap.same(a.set, b.set, (x, y) => x === y) && NameMap.same(a.shopt, b.shopt, (x, y) => x === y)
-    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && x.source === y.source && !x.kept === !y.kept && attrs(x, y)))
+    && NameMap.same(a.variables, b.variables, (x, y) => x === y || (x.declared === y.declared && x.set === y.set && x.value === y.value && !x.kept === !y.kept && attrs(x, y)))
     && NameMap.same(a.functions, b.functions, (x, y) => x === y || (x.state === y.state && x.def === y.def && x.exported === y.exported && x.readonly === y.readonly))
     && NameMap.same(a.aliases, b.aliases, (x, y) => x === y || (x.state === y.state && x.value === y.value))
     && NameMap.same(a.disabled, b.disabled, (x, y) => x === y || x.state === y.state)

@@ -13,7 +13,7 @@ import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env'
 import { NESTED_DEPTH, type NestedScript, type NotRead } from '../nested';
 import {
   attribute, EMPTY, type Entry, type FunctionState, type Kind, environmentHas, merge, NameMap, option,
-  POSIX_ON, reached, type ShellState, sameState, tri, type Tri, unreachable, type VariableState, withStatus,
+  POSIX_ON, reached, type ShellState, sameState, sourcesApart, tri, type Tri, unreachable, type VariableState, withStatus,
 } from '../shellstate';
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
@@ -71,6 +71,8 @@ export class Walker {
   readonly hostCalls = new Map<SyntaxNode, HostCall>();
   /** The `source` and `.` commands run. */
   readonly sources: SyntaxNode[] = [];
+  /** The variables a function call reached with another value word than the walk it reused (`StateModel.mixedSources`). */
+  readonly mixedSources = new Set<string>();
   /** The first top-level statement of the unit of each top-level statement. */
   readonly unitStart = new Map<SyntaxNode, SyntaxNode>();
   /**
@@ -1007,6 +1009,8 @@ export class Walker {
       const unit = this.unitTarget();
       if (seen) {
         exit = seen.exit;
+        // (The walk holds the words of its own entry: those that differ here are no origin of a value, `valueOrigin`.)
+        for (const name of sourcesApart(seen.entry, st)) this.mixedSources.add(name);
         if (unit && unit.dead === this.mode.dead) pushAll(unit.aborts, seen.aborts);
         for (const m of seen.maybes) this.abort(m, false);
         for (const key of seen.changed) {

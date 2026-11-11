@@ -27,8 +27,9 @@ function snippet(name: string, code: string): void {
 const cases: { name: string; code: string; found: string[] }[] = [
   { name: 'reads', code: "export function a() { return [v.value, v.source, st.variables.get('x')?.value, st.variables.get('x')!.source]; }", found: ['value v.value', 'source v.source', "value st.variables.get('x')?.value", "source st.variables.get('x')!.source"] },
   { name: 'destructured', code: "export function a() { const { value, source: s } = v; const { at } = v; const { value: w } = st.variables.get('x') ?? v; return [value, s, at, w]; }", found: ['value value', 'source source: s', 'value value: w'] },
+  { name: 'element-access', code: "export function a(k: string) { return [v['value'], st.variables.get('x')?.['source'], v[`value`], v[k as 'at']]; }", found: ["value v['value']", "source st.variables.get('x')?.['source']", 'value v[`value`]'] },
   // Another type's `value` or `source`, and the other fields of the state, are not.
-  { name: 'others', code: "declare const o: { value: string; source: string }; export function a() { const { value } = o; return [o.value, o.source, value, v.set, v.at, v.kept, st.variables.get('x')?.attrs]; }", found: [] },
+  { name: 'others', code: "declare const o: { value: string; source: string }; export function a() { const { value } = o; return [o.value, o.source, o['value'], value, v.set, v.at, v.kept, st.variables.get('x')?.attrs]; }", found: [] },
 ];
 for (const c of cases) snippet(c.name, c.code);
 

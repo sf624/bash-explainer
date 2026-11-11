@@ -1259,6 +1259,25 @@ All three predate the PR; they are in the explanation of `[[ =~ ]]` for a litera
 - **Verdict:** dropped for now, 2026-11-11 (a PR of its own may fix the example). Kind: `contradiction` in a rare combination.
 - **Input and what is wrong:** With `shopt -s nocasematch`, `[[ x =~ ^[a\-z]$ ]]` gives status 2 under REG_ICASE in glibc, but we show an example.
 
+## From known values, step 4 (#790)
+
+Found in the review of #824. The first and the third predate it.
+
+### A value after a line bash never reaches under `set -e`
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `contradiction` in a rare combination.
+- **Input and what is wrong:** `set -e; p=$(false); echo "$p"`: the shell ends at `p=$(false)`, but Meaning gives `$p` the value `""` on the line after.
+
+### An origin for `p=$(true)x` but not for `p="$(true)x"`
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `missing-explanation`.
+- **Input and what is wrong:** `p=$(true)x; grep "$p" f` has the origin `p=$(true)x` (`staticWordText` reads the empty `$(true)` as nothing), but `p="$(true)x"` has none, though its value `x` is known.
+
+### `export x` gives a lowercase variable never set the value `""`
+
+- **Verdict:** dropped (YAGNI), 2026-11-11. Kind: `contradiction` in a rare combination.
+- **Input and what is wrong:** `export x; echo "$x"`: Meaning gives `$x` the value `""`, but `x` may come from the environment with a value (lowercase names are only unlikely there).
+
 ## Decisions recorded on 2026-11-06
 
 - The three choices that waited on the maintainer (#640): the CLI exits with status 141, quietly, on a closed pipe ("CLI crashes on a closed pipe (EPIPE)", #644); the README choices stay open ("A lighter README for the first visit", #682); the outside-feedback fixes rank between "Usability: "In short" without nesting, and the length measured again" and "Usability: the phone's sheet".

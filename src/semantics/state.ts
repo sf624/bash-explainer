@@ -117,6 +117,12 @@ export interface StateModel {
   readonly text: string;
   /** The root of that tree (`valueUses`, src/semantics/values.ts, reads its expansions). */
   readonly root: SyntaxNode;
+  /**
+   * The variables whose value word (`VariableState.source`) a function call did not follow: it reused the walk of an
+   * entry that differs only in those words (`p=a; f; p=a; f`), so the body and what follows keep the first call's.
+   * `valueOrigin` gives none of them.
+   */
+  readonly mixedSources: ReadonlySet<string>;
   /** The function definitions the host calls once the script has run (bats' tests and hooks), and how (src/semantics/walk/host.ts). */
   readonly hostCalls: ReadonlyMap<SyntaxNode, HostCall>;
   /** The commands of the script that define each function and alias, in source order, wherever they run. */
@@ -680,6 +686,7 @@ function buildModel(tree: SyntaxTree, shell: Shell | undefined, posix: boolean, 
     host,
     text: tree.text,
     root: tree.root,
+    mixedSources: w.mixedSources,
     assigned: new Set([...w.lastChange.keys()].filter((k) => k.startsWith('variables ')).map((k) => k.slice('variables '.length))),
     definitions: { functions: w.functionDefs, aliases: w.aliases.defs },
     sources: w.sources,

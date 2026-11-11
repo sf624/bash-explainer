@@ -6,8 +6,8 @@ import { base, counted as countedAny, enclosing, isAllowed, lineOf, sourceFiles,
 // variable's `value` or `source` from the shell state (`VariableState`, src/semantics/shellstate.ts) outside src/semantics/. The value an
 // expansion gives comes from `expansionValue`, and the assignment it copies from `valueOrigin` (src/semantics/values.ts), which apply the
 // model's rules (the trust, a state the same on every path, not dead, nothing failing around it); the state's fields alone do not. The scan
-// asks the type checker which interface a property read belongs to: a `.value` or `.source` of a `VariableState` (also `?.`, and a
-// destructuring `const { value } = v`), not one of another type of the same name.
+// asks the type checker which interface a property read belongs to: a `.value` or `.source` of a `VariableState` (also `?.`, `v['value']`
+// and a destructuring `const { value } = v`), not one of another type of the same name.
 // `npx tsx test/support/value-source.ts` prints the matches as the known list's entries (counts per file, function and kind), `--lines` the places.
 
 export type Kind = 'value' | 'source';
@@ -54,6 +54,9 @@ export function scanTyped(checker: ts.TypeChecker, sf: ts.SourceFile, rel: strin
   const visit = (n: ts.Node): void => {
     // `v.value`, `v?.source`, `st.variables.get(x)?.value`.
     if (ts.isPropertyAccessExpression(n) && FIELDS.has(n.name.text) && checker.getSymbolAtLocation(n.name)?.declarations?.some(ofVariableState)) add(n, n.name.text as Kind);
+    // `v['value']`, `st.variables.get(x)?.['source']`.
+    if (ts.isElementAccessExpression(n) && ts.isStringLiteralLike(n.argumentExpression) && FIELDS.has(n.argumentExpression.text)
+      && stateField(checker, checker.getTypeAtLocation(n.expression), n.argumentExpression.text)) add(n, n.argumentExpression.text as Kind);
     // `const { value, source: s } = v`.
     if (ts.isBindingElement(n) && ts.isObjectBindingPattern(n.parent)) {
       const prop = n.propertyName ?? n.name;
