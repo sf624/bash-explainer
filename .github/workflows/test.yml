@@ -488,6 +488,8 @@ jobs:
 
       # (No npm ci: the script reads files with Node.js's own modules, and the runner's Node.js runs it.)
       - name: Check that the README images are up to date
+        # (`shell: bash` runs it with pipefail, so a `git show` that fails stops it.)
+        shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
