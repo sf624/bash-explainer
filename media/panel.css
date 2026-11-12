@@ -1807,3 +1807,48 @@ body.vscode-high-contrast-light .text code.ev-word.recv-word {
     border-color: Highlight;
   }
 }
+
+/* PROTOTYPE: key points (src/ui/keyPoints.ts, media/panel.js `drawKeyPoints`), only with ?keypoints=a|b on the web page. */
+#keypoints { margin: 0 0 0.6rem; }
+.kp-title { display: block; margin: 0 0 0.3rem; font-weight: 600; }
+.kp-list { list-style: none; margin: 0; padding: 0; }
+.kp-list > li { margin: 0 0 0.25rem; }
+button.kp-point {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.6rem;
+  border: 0;
+  border-left: 3px solid var(--vscode-focusBorder, #0078d4);
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+button.kp-point:disabled { cursor: default; }
+button.kp-point:hover:not(:disabled) .kp-text { text-decoration: underline; }
+.kp-code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-weight: 600;
+  white-space: pre-wrap;
+}
+#kp-details {
+  display: block;
+  margin: 0 0 0.6rem;
+  padding: 0.2rem 0;
+  border: 0;
+  background: none;
+  color: var(--vscode-textLink-foreground, #0066bf);
+  font: inherit;
+  cursor: pointer;
+}
+#kp-details[hidden] { display: none; }
+#kp-details:hover { text-decoration: underline; }
+.kp-chevron { display: inline-block; transition: transform 0.1s; }
+#kp-details[aria-expanded="true"] .kp-chevron { transform: rotate(90deg); }
+body.kp-folded #notes, body.kp-folded #whole-line, body.kp-folded #tree, body.kp-folded #line-role, body.kp-folded #examples { display: none; }
+/* Variant B: a key row gets the accent bar and its text full weight; a commonplace row's text is muted (the theme's description colour). */
+.row.kp-key { box-shadow: inset 3px 0 0 var(--vscode-focusBorder, #0078d4); background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08)); }
+.row.kp-key > .code { font-weight: 700; }
+.row.kp-quiet > .text, .row.kp-quiet > .code { color: var(--c-muted); }

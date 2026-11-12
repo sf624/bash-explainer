@@ -274,6 +274,9 @@ function pushTheme(): void {
   compareView?.sendState();
 }
 
+/** PROTOTYPE (src/ui/keyPoints.ts): the key points block, with `?keypoints=a` (details folded) or `?keypoints=b` (rows marked). */
+const KEY_POINTS = ((v) => (v === 'a' || v === 'b' ? v : undefined))(new URLSearchParams(location.search).get('keypoints'));
+
 /** The line of the cursor changed, or the text, or the settings: the panel (or, on the compare page, both copies) follow. */
 function updatePanel(): void {
   if (compareView) return compareView.sendState();
@@ -291,7 +294,7 @@ function updatePanel(): void {
     lang, explanation, file: scriptName(), line, lineText: doc.lines[line] ?? '', doc, wrap: settings['editor.wrap'],
     choice: choice(), detected: auto, placement: settings['examples.placement'],
     animations: settings['panel.animations'], issues: problemsShown, shown: issueFilter(doc, settings, 'web'), web: true, state: panel.panelState(),
-    cursor: editor.cursor().col, moved: moves.take(),
+    cursor: editor.cursor().col, moved: moves.take(), ...(KEY_POINTS ? { keyPoints: KEY_POINTS } : {}),
   });
   panel.show(update, line);
   yqLine = { options: update.dialect.yqs, value: update.dialect.yq };

@@ -16,6 +16,7 @@ import { readingNodes } from '../reading';
 import { lineParts, lineRuns, showsLineBox } from './lineBox';
 import { panelTools, viewControlForms } from './panelHead';
 import type { PanelBase } from './themePalette';
+import { type KeyVariant, keyPoints } from './keyPoints';
 
 // The explanation panel (media/panel.js) as both the extension and the web page drive it.
 
@@ -155,6 +156,8 @@ export interface PanelLine {
   state?: PanelState;
   /** The cursor's column, when it is on `line`: the glob example of its stage starts open (`RowOptions.cursor`). */
   cursor?: number;
+  /** PROTOTYPE: the key points block (src/ui/keyPoints.ts), off unless the web page has `?keypoints=a` or `?keypoints=b`. */
+  keyPoints?: KeyVariant;
   /** The reader moved the cursor, with no edit, since the line was last sent (a tap, a click, a key: src/ui/cursorMoves.ts): the panel opens the stages it is in (`ModelRow.atCursor`). */
   moved?: boolean;
 }
@@ -207,7 +210,9 @@ export function panelUpdate(p: PanelLine) {
   const { depth, receives } = { ...PANEL_DEFAULTS, ...p.state };
   const model = rowModel({ ...ex, items }, { depth, receives, ...(p.cursor === undefined ? {} : { cursor: { line: p.line, character: p.cursor } }) }, lang);
   const box = boxProblems(ex, model.places, lang, shown, p.doc?.tree);
+  const kp = p.keyPoints && ex.items.length ? keyPoints(ex, items, model, box, shown, p.lineText, lang, p.keyPoints, whole.length + explanation.examples.length) : undefined;
   return {
+    ...(kp ? { keyPoints: kp } : {}),
     type: 'update',
     // (The page's language: the web page's panel has none of its own, and the styles follow it, `:lang(ja)`.)
     lang,
@@ -259,7 +264,7 @@ export function panelUpdate(p: PanelLine) {
     // The other notes as drawn: each with its level's look (its class, its icon and the icon's name, from the
     // level table, src/levels.ts) and the word after its mark (src/messages.ts), and, where it rests on bash's
     // behaviour rather than the manual, its chip and try-it (`noteBasis`, docs/design/basis.md).
-    notes: notesByLevel(ex).filter((n) => !isListed(ex, n, shown)).map(({ text, level, label, body }) => {
+    notes: notesByLevel(ex).filter((n) => !isListed(ex, n, shown) && !kp?.usedNotes.includes(n.text)).map(({ text, level, label, body }) => {
       const basis = noteBasis(ex, text, lang);
       const { className, codicon, name } = LEVELS[level];
       // (A note that is no problem is a fact of the catalog, which has its sections.)
@@ -306,6 +311,8 @@ export const PANEL_BODY = `<div id="top">
   </div>
   <p id="short" hidden></p>
   <section id="problems" hidden></section>
+  <section id="keypoints" hidden></section>
+  <button id="kp-details" type="button" aria-expanded="false" hidden></button>
   <div id="notes"></div>
   <div id="whole-line"></div>
   <ul id="tree"></ul>

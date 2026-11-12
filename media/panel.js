@@ -336,6 +336,7 @@
     drawViewRow(msg);
 
     drawProblems(msg.problems ?? [], msg.around ?? []);
+    drawKeyPoints(msg.keyPoints, (msg.problems ?? []).length);
     // Each note with the icon of its level in place of its mark, and the word that names the level in bold: the icon's
     // shape and the word say it without the colour. The class, the icon and its name come from the level table
     // (src/levels.ts, through `panelUpdate`).
@@ -380,6 +381,85 @@
     drawViews();
     if (tools) updateToggle();
     requestAnimationFrame(syncLine);
+  }
+
+  // ---------------------------------------------------------------- PROTOTYPE: key points (src/ui/keyPoints.ts)
+
+  /** Whether the details are open in variant A, kept while the same line is drawn again. */
+  let kpOpen = false;
+  let kpLine = '';
+
+  /**
+   * The block "Key points" under the problems: each point its code and its sentence, a button that goes to its row. Variant A folds
+   * everything below behind one control that says how much is there; variant B marks the rows (`kp-key`, `kp-quiet`).
+   */
+  function drawKeyPoints(/** @type {any} */ kp, /** @type {number} */ msg_problems) {
+    const box = $('keypoints');
+    const details = $('kp-details');
+    document.body.classList.toggle('kp-a', kp?.variant === 'a');
+    document.body.classList.toggle('kp-b', kp?.variant === 'b');
+    if (!kp) {
+      box.hidden = true;
+      details.hidden = true;
+      document.body.classList.remove('kp-folded');
+      return;
+    }
+    if (shownLine !== kpLine) kpOpen = false;
+    kpLine = shownLine;
+    box.hidden = kp.points.length === 0;
+    const title = document.createElement('strong');
+    title.className = 'kp-title';
+    title.id = 'kp-title';
+    title.textContent = kp.label;
+    const list = document.createElement('ul');
+    list.className = 'kp-list';
+    list.setAttribute('aria-labelledby', 'kp-title');
+    for (const p of kp.points) {
+      const li = document.createElement('li');
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'kp-point';
+      const code = document.createElement('code');
+      code.className = 'kp-code';
+      code.textContent = p.code;
+      const text = document.createElement('span');
+      text.className = 'kp-text';
+      text.append(...inline(p.text));
+      go.append(code, ' ', text);
+      if (p.row !== undefined) go.addEventListener('click', () => {
+        if (kp.variant === 'a' && !kpOpen) setDetails(true);
+        toRow(p.row, -1);
+      });
+      else go.disabled = true;
+      li.append(go);
+      list.append(li);
+    }
+    box.replaceChildren(title, list);
+    // Variant B: the rows the points lead to stand out; the commonplace ones are quieter.
+    for (const [path, mark] of Object.entries(kp.rowMarks ?? {})) {
+      const row = document.querySelector(`#tree li[data-path="${path}"] > .item > .row`);
+      if (row && kp.variant === 'b') row.classList.add(mark === 'key' ? 'kp-key' : 'kp-quiet');
+    }
+    // (Variant A folds only where it has points to show: a line with none keeps its rows open, so that the top is never "In short" alone
+    // above a closed fold. The problems box counts as points.)
+    const folds = kp.variant === 'a' && (kp.points.length > 0 || (msg_problems ?? 0) > 0);
+    details.hidden = !folds;
+    if (folds) {
+      details.textContent = '';
+      const chevron = document.createElement('span');
+      chevron.className = 'kp-chevron';
+      chevron.setAttribute('aria-hidden', 'true');
+      chevron.textContent = '▸';
+      details.append(chevron, ' ', kp.details.label);
+      setDetails(kpOpen);
+      details.onclick = () => setDetails(!kpOpen);
+    } else document.body.classList.remove('kp-folded');
+  }
+
+  function setDetails(/** @type {boolean} */ open) {
+    kpOpen = open;
+    document.body.classList.toggle('kp-folded', !open);
+    $('kp-details').setAttribute('aria-expanded', String(open));
   }
 
   /**
