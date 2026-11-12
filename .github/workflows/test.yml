@@ -472,6 +472,38 @@ jobs:
           test "$ERRORS" -gt 0
           test ! -e "$RUNNER_TEMP/ran"
 
+  readme-images:
+    # The README images (shown on the Marketplace) must show the UI of a release; scripts/images-hash.mjs tells
+    # whether they were recorded with the UI of this commit. On a pull request, stale images are only a warning, so
+    # that a change of the UI need not wait for a recording; on a release pull request (one that changes `version`
+    # in package.json), they fail it, before the tag is pushed (the Release workflow checks again).
+    name: README images
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # (No npm ci: the script reads files with Node.js's own modules, and the runner's Node.js runs it.)
+      - name: Check that the README images are up to date
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          version=$(jq -r .version package.json)
+          base_version=$(git show "$BASE_SHA:package.json" | jq -r .version)
+          echo "version: $base_version (base), $version (this pull request)"
+          if node scripts/images-hash.mjs --check; then
+            exit 0
+          fi
+          if [ "$version" != "$base_version" ]; then
+            echo "::error ::The README images must be re-recorded before releasing $version (run the README images workflow)."
+            exit 1
+          fi
+          echo "::warning ::The README images need re-recording before the next release (run the README images workflow)."
+
   bash-ast:
     # Compares our syntax tree with bash's own parser through bash-ast (test/bash-ast.test.ts), and the commands
     # the tokens of the explanations lie in (test/command-tokens.test.ts).
