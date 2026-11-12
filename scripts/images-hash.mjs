@@ -1,9 +1,9 @@
 // The README images show the UI: the hover, the panel and the name hints. This hashes the files
-// that decide how those look, so a release can tell whether the images were recorded with them.
+// that decide how those look, so CI can tell whether the images were recorded with them.
 // Usage: node scripts/images-hash.mjs [--write | --check]
 //   (no option)  print the hash
 //   --write      store it in images/readme/.source-hash (the recording script does this)
-//   --check      exit 1 when the stored hash differs (the Release workflow does this)
+//   --check      exit 1 when the stored hash differs (the Test workflow on a pull request, and the Release workflow)
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

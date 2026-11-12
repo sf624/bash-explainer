@@ -56,7 +56,7 @@ The [README images workflow](../.github/workflows/readme-images.yml) runs the sa
 
 ### Keeping them up to date
 
-A full recording also writes `images/readme/.source-hash`: a hash of the files that decide how the images look (`src/ui/`, `media/`, `images/readme/demo.sh`, `hints.sh` and the recording script; not the explanations' wording). The Release workflow runs `node scripts/images-hash.mjs --check` before publishing and stops when the hash differs, so the Marketplace never shows images of an older UI. Re-record them by hand (above), merge the pull request, then push the tag again.
+A full recording also writes `images/readme/.source-hash`: a hash of the files that decide how the images look (`src/ui/`, `media/`, `images/readme/demo.sh`, `hints.sh` and the recording script; not the explanations' wording). `node scripts/images-hash.mjs --check` compares it with the files. On a pull request, the Test workflow warns when the hash differs, and fails a release pull request (one that changes `version` in `package.json`); the Release workflow runs the check again before publishing and stops when the hash differs, so the Marketplace never shows images of an older UI. Re-record them by hand (above), close and reopen the pull request the workflow opens so that its checks start, and merge it before the release pull request.
 
 ### In WSL
 
