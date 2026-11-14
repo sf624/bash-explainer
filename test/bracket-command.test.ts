@@ -61,12 +61,16 @@ describe('`[` is a command with arguments, as `test` is', () => {
 
   it('is said in "In short" as the test it is, not as a command that is run', () => {
     const said = (src: string, lang: 'en' | 'ja' = 'en', line = 0) => explain(src, lang, line).sentence;
-    assert.strictEqual(said('[ -a file ]'), 'Tests the condition in `[ … ]`.');
-    assert.strictEqual(said('[ -a file ]', 'ja'), '`[ … ]` の条件を判定する。');
-    assert.strictEqual(said('[ -a file ] > o'), 'Tests the condition in `[ … ]`, with stdout (fd 1) to `o`.');
-    assert.strictEqual(said('[ -f x ] && echo y'), 'Tests the condition in `[ … ]`; if that succeeds, runs `echo` (print arguments to stdout, separated by spaces).');
-    assert.strictEqual(said('[ -f x ] && echo y', 'ja'), '`[ … ]` の条件を判定する。成功したら、`echo`（引数を空白区切りで標準出力に表示する）を実行する。');
-    assert.strictEqual(said('if [ -a f ]; then :; fi'), 'If the test `[ … ]` succeeds, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).');
+    // (A test of one unary operator says its condition, the row's (#843); one of two words is said as the test it is.)
+    assert.strictEqual(said('[ -a file ]'), 'Tests whether `file` exists.');
+    assert.strictEqual(said('[ -a file ]', 'ja'), '`file` が存在するかを判定する。');
+    assert.strictEqual(said('[ "$a" = b ]'), 'Tests the condition in `[ … ]`.');
+    assert.strictEqual(said('[ "$a" = b ]', 'ja'), '`[ … ]` の条件を判定する。');
+    assert.strictEqual(said('[ -a file ] > o'), 'Tests whether `file` exists, with stdout (fd 1) to `o`.');
+    assert.strictEqual(said('[ -f x ] && echo y'), 'Tests whether `x` is an existing regular file; if that succeeds, runs `echo` (print arguments to stdout, separated by spaces).');
+    assert.strictEqual(said('[ -f x ] && echo y', 'ja'), '`x` が通常ファイルとして存在するかを判定する。成功したら、`echo`（引数を空白区切りで標準出力に表示する）を実行する。');
+    assert.strictEqual(said('if [ -a f ]; then :; fi'), 'If `f` exists, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).');
+    assert.strictEqual(said('if [ "$a" = b ]; then :; fi'), 'If the test `[ … ]` succeeds, runs `:` (no-op that always succeeds; used in `while :` or to evaluate expansions).');
     // (A line that closes the block has no record of the command, which the name says.)
     assert.strictEqual(said('while [ -a f ]\ndo\n  :\ndone', 'en', 3), '`done` ends the `while` loop of line 1: repeats the body on line 3 while the test `[ … ]` succeeds.');
     // (The other commands of the line keep what they were said with: `-p` of `mkdir`.)
@@ -116,7 +120,8 @@ describe('`[` is a command with arguments, as `test` is', () => {
     const t = top('[[ -a file ]]');
     assert.deepStrictEqual([t.kind, t.label, t.frame, t.name], ['test', '[[ -a file ]]', 'compound', undefined]);
     assert.ok(t.explanation.includes('shell syntax, not a command'), t.explanation);
-    assert.strictEqual(explain('[[ -a file ]]').sentence, 'Tests the condition in `[[ … ]]`.');
+    assert.strictEqual(explain('[[ -a file ]]').sentence, 'Tests whether `file` exists.');
+    assert.strictEqual(explain('[[ $a == b ]]').sentence, 'Tests the condition in `[[ … ]]`.');
     assert.strictEqual(explain('[[ -a file ]]').summary, 'test [[ -a file ]]');
     assert.deepStrictEqual(t.children.filter((c) => c.kind === 'test').map((c) => c.label), ['-a file']);
   });

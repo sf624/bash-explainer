@@ -10,7 +10,7 @@ import { declaresNames } from '../argv/query';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import type { CommandSpec, OperandSpec } from '../argv/spec';
 import { builtins } from '../dict/builtins';
-import { describeFind, findWords, type FindNode, operatorTexts, parseFind, strayWords } from '../embedded/find';
+import { describeFind, findReading, findWords, type FindNode, operatorTexts, parseFind, strayWords } from '../embedded/find';
 import { lineLabel } from '../i18n';
 import { shorten } from '../label';
 import { fact } from '../messages';
@@ -23,9 +23,9 @@ import { docLine } from '../semantics/state';
 import { isPlainWord, literalContent, staticWordText, staticWordValue, surelyHasSlash } from '../staticword';
 import { replaceNode } from '../rewrite';
 import { field, fields, inStrayHead, type SyntaxNode } from '../syntax/tree';
-import { bracketShape, type CommandTest, commandTest, type TestRules } from '../testexpr';
+import { type BracketTest, bracketShape, type CommandTest, commandTest, type TestRules } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
-import type { Explainer } from './context';
+import { type Explainer, type StatementRead, WORD_READ } from './context';
 import { embedded } from './embedded';
 import { testExample } from './examples';
 import { nested, sortTokens } from './nodes';
@@ -36,7 +36,7 @@ import { NO_SPEC, programBasis, resolve, restrictedAt, restrictedCall, shellVari
 import { findRefusal } from './find-refusal';
 import { eachText, withReadings } from './operand-texts';
 import { joinedScript, scriptTokens, slotNotes, trapNote, withScript } from './scripts';
-import { testTokens } from './tests';
+import { bracketCondition, testTokens } from './tests';
 import { word } from './words';
 import { pushAll } from '../lists';
 import { isBash } from '../shellfeatures';
@@ -320,6 +320,14 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
   });
   if (!tree || apart) return [...read(0, nodes.length), ...empty];
   const exprArgs = nodes;
+  // (What find does with the expression, for the command's own reading (`WORD_READ`): where find takes it, and each of its words gives
+  // one field the word model knows, the text the reading says, so that the reading is the whole of it.)
+  const known = nodes.every((x, i) => {
+    const f = fieldsIn(x, cx.state);
+    return f?.length === 1 && f[0] === words[i];
+  });
+  const whole = !refusal && !none.length && known && !strayWords(tree).length ? findReading(tree, cx.lang) : undefined;
+  if (whole !== undefined) cx.memo(WORD_READ).set(nodes[0], whole);
 
   const opTok = (idx: number, text: string): Token[] => [cx.tok(exprArgs[idx], 'operator', text)];
   const build = (n: FindNode): Token[] => {
@@ -356,6 +364,25 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
   }, ...empty.filter((_, k) => !inside(k))];
 }
 
+/** `[ -f x]`, `[ -f $x]`: the `]` of `[` is glued to the last word. (With a word not known, the pitfall says it.) */
+const gluedClose = (test: CommandTest, bracket: boolean): boolean => {
+  const last = test.words[test.words.length - 1];
+  return bracket && !test.close && !!last && /\S\]$/.test(last.text);
+};
+
+/** The expression of `test` or `[`, where it is read as bash reads it (`testArgs`): none where `[` is not closed. */
+const readTest = (test: CommandTest, bracket: boolean): BracketTest | undefined => (test.test && !test.unclosed && !gluedClose(test, bracket) ? test.test : undefined);
+
+/**
+ * What the expression of the command `n`'s own `test` or `[` tests, for the sentence of the line (`bracketCondition` of
+ * src/explain/tests.ts): where it is read as bash reads it, and bash surely evaluates it: not where its `]` may be missing (`[ -n "$a"`,
+ * which a value `]` would close), which the row reads as the expression meant.
+ */
+export function testCondition(cx: Explainer, n: SyntaxNode, test: CommandTest, bracket: boolean): StatementRead | undefined {
+  const read = test.malformed || (bracket && !test.close) ? undefined : readTest(test, bracket);
+  return read && bracketCondition(cx, n, read);
+}
+
 /**
  * The tokens of the arguments of `test` or `[` (`test`, from src/testexpr.ts): the expression, and the last `]` of `[`
  * (`bracket`). Where the expression is not known to be read (bash fails on it, or a word is not known), the words
@@ -363,8 +390,7 @@ function findExpression(cx: Explainer, all: SyntaxNode[], spec: CommandSpec): To
  */
 export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracket: boolean, builtin: boolean): Token[] {
   const last = test.words[test.words.length - 1];
-  // (`[ -f x]`, `[ -f $x]`: the `]` is glued to the last word. With a word not known, the pitfall says it.)
-  const glued = bracket && !test.close && !!last && /\S\]$/.test(last.text);
+  const glued = gluedClose(test, bracket);
   // (In the condition of `if [ -f a ] then`, bash stops at the syntax error: the command never runs, and the syntax error is what is said.)
   if (!inStrayHead(n)) {
     // (The rewrite puts a space before the `]`; none when the `]` is escaped, `b\]`, which a space leaves a character.)
@@ -373,10 +399,11 @@ export function testArgs(cx: Explainer, n: SyntaxNode, test: CommandTest, bracke
     if (test.malformed) cx.note(fact(cx.lang, 'test-malformed', { name: bracket ? '[' : 'test' }), n);
   }
   let inner: Token[];
-  if (test.test && !test.unclosed && !glued) {
-    testExample(cx, n, bracketShape(test.test), '[');
+  const read = readTest(test, bracket);
+  if (read) {
+    testExample(cx, n, bracketShape(read), '[');
     // (bash's builtin reads the words as 4.1 says, and its primaries are those of 6.4.)
-    inner = testTokens(cx, n, test.test, test.test.expr, builtin ? ['4.1', '6.4'] : undefined);
+    inner = testTokens(cx, n, read, read.expr, builtin ? ['4.1', '6.4'] : undefined);
   } else inner = cx.subs(test.words);
   if (!test.close) return inner;
   return [...inner, cx.tok(test.close, 'argument', cx.text('test-last-bracket'))];

@@ -5,7 +5,7 @@
 import type { Kind, TestPart, Token } from '../analyzer-types';
 import { arithLiteralIn, evalArith, invalidLiteral } from '../arith';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
-import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, rematchClause, testOperandTexts, unaryTestOperands, unaryTestOps } from '../dict/syntax';
+import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, rematchClause, testOperandTexts, unaryTestOperands, unaryTestOps, unaryTestPredicates } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
 import type { EmbeddedToken } from '../embedded/types';
@@ -22,7 +22,8 @@ import { givesOneField } from '../semantics/nofield';
 import { isPlainWord, staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, hasError, nameText, type SyntaxNode } from '../syntax/tree';
 import { type BracketTest, collation, type TestExpr, testRange } from '../testexpr';
-import type { Explainer } from './context';
+import { type Explainer, memoKey, STATEMENT_READ, type StatementRead } from './context';
+import { unaryHolds } from '../messages-tokens-compound';
 import { matchExample, regexExample, testExample } from './examples';
 import { regexReachedInDocument, regexRightOf, regexValueReading } from './embedded';
 import { fromEmbedded, same, skeletal, sortTokens } from './nodes';
@@ -83,6 +84,9 @@ export function test(cx: Explainer, n: SyntaxNode): Token {
     const children = open === '((' ? arithChildren(cx, n) : cx.subs(n.namedChildren);
     // (No badge on `[[`: its kind, a test, says what it is; the badge is for `time`, which has another meaning.)
     const t = cx.tok(n, 'test', expl, children);
+    // (A test of one unary expression, `[[ -n $x ]]`: its condition is what the statement tests.)
+    const only = open === '[[' && n.namedChildren.length === 1 ? cx.memo(UNARY_READ).get(n.namedChildren[0]) : undefined;
+    if (only) cx.memo(STATEMENT_READ).set(n, only);
     t.summary = cx.s(`条件判定 ${shorten(n.text, 40)}`, `test ${shorten(n.text, 40)}`);
     skeletal(t, n, true);
     return t;
@@ -100,7 +104,7 @@ function tildeTokens(cx: Explainer, words: readonly SyntaxNode[]): Token[] {
  */
 export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: TestExpr, refs?: readonly string[]): Token[] {
   const words = b.words;
-  const slice = (from: number, to: number) => n.text.slice(words[from].nodes[0].startIndex - n.startIndex, words[to].nodes[words[to].nodes.length - 1].endIndex - n.startIndex);
+  const slice = (from: number, to: number) => wordsText(n, b, from, to);
   const [first, last] = testRange(e);
   const make = (kind: Kind, explanation: string, children: Token[], parts: () => TestPart[]): Token => ({
     kind, label: shorten(slice(first, last)), explanation, children, ...(refs ? { refs } : {}),
@@ -133,7 +137,7 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
     case 'unary': {
       const op = words[e.op].text!;
       const d = unaryTestOps[op];
-      return [make('test', cx.s(`条件: \`${slice(e.arg, e.arg)}\` が${cx.t(d)}`, `Condition: \`${slice(e.arg, e.arg)}\` ${cx.t(d)}`), operandTokens(e.arg, isPlainWord),
+      return [make('test', cx.text('test-unary', { operand: slice(e.arg, e.arg), what: cx.t(d) }), operandTokens(e.arg, isPlainWord),
         () => [operator(e.op, cx.t(d)), ...operand(e.arg, op, unaryTestOperands[op])])];
     }
     case 'binary': {
@@ -155,6 +159,29 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
       return [make('test', said, [...testTokens(cx, n, b, e.left, refs), ...testTokens(cx, n, b, e.right, refs)], () => [operator(e.op, said)])];
     }
   }
+}
+
+/** The text of the words `from` to `to` of the test `b` of the command `n`, as written. */
+const wordsText = (n: SyntaxNode, b: BracketTest, from: number, to: number): string =>
+  n.text.slice(b.words[from].nodes[0].startIndex - n.startIndex, b.words[to].nodes[b.words[to].nodes.length - 1].endIndex - n.startIndex);
+
+/** The condition of a unary test (`unaryHolds`) with its predicate alone: what the sentence of the line says the test tests. */
+function unaryRead(cx: Explainer, operand: string, op: string): StatementRead {
+  const [ja, en] = unaryHolds({ operand, what: cx.t(unaryTestPredicates[op]) });
+  return { kind: 'condition', text: cx.s(ja, en) };
+}
+
+/** The condition of a unary expression of `[[ ]]`, for the test whose only expression it is (`test`). */
+const UNARY_READ = memoKey<StatementRead>('unaryRead');
+
+/**
+ * What the expression of `test` or `[` (`b`, read as bash reads it, of the command `n`) tests, for the sentence of the line
+ * (`STATEMENT_READ`): the condition of a unary expression whose operand gives one field (as its parts say it: `testParts`);
+ * undefined for any other, whose row says its operands and its operator apart.
+ */
+export function bracketCondition(cx: Explainer, n: SyntaxNode, b: BracketTest): StatementRead | undefined {
+  const e = b.expr;
+  return e.type === 'unary' && givesOneField(b.words[e.arg].nodes[0], cx.state) ? unaryRead(cx, wordsText(n, b, e.arg, e.arg), b.words[e.op].text!) : undefined;
 }
 
 /**
@@ -336,6 +363,7 @@ export function unary(cx: Explainer, n: SyntaxNode): Token {
   }
   const d = unaryTestOps[op];
   if (d && !inArithmetic(n)) {
+    cx.memo(UNARY_READ).set(n, unaryRead(cx, operand.text, op));
     return cx.tok(n, 'test', cx.text('test-unary', { operand: operand.text, what: cx.t(d) }), [...cx.subs([operand].filter((x) => !isPlainWord(x))), ...tildeTokens(cx, [operand].filter(isPlainWord))]);
   }
   return cx.tok(n, 'operator', cx.text('arith-unary', { op }), cx.subs(n.namedChildren));

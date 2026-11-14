@@ -223,6 +223,19 @@ export function roleLanguage(role: ArgRole, isFn: boolean | 'maybe'): EmbeddedLa
 }
 
 /**
+ * The words of the parse (its own, not those of a subcommand or of a command it runs) that the command reads in one of the
+ * languages `langs`, by its spec: an operand, the value of an option in a word of its own or in the option's word
+ * (`-es/a/b/`, `--expression=s/a/b/`, a letter of a cluster).
+ */
+export function languageWords(parse: ArgvParse, langs: ReadonlySet<EmbeddedLang>): number[] {
+  const reads = (r: ArgRole): boolean => {
+    const lang = r.role === 'operand' || r.role === 'value' ? r.spec?.lang : r.role === 'option' && r.value?.attached !== undefined ? r.value.spec?.lang : undefined;
+    return !!lang && langs.has(lang);
+  };
+  return parse.roles.flatMap(({ word, role }) => ((role.role === 'cluster' ? role.letters : [role]).some(reads) ? [word] : []));
+}
+
+/**
  * What the names of an operand of `type: 'variable'` with `acts` stand for in the parse, by the options its `names`
  * lists (src/argv/spec.ts `NameOptions`): a variable, a function, the name reference itself; `either`, the variable if
  * there is one, else the function (`unset NAME`); `none`, the options conflict and the builtin acts on no name

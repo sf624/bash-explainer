@@ -491,35 +491,40 @@ export const bash53Variables: Record<string, Text> = wordTable({
   BASH_MONOSECONDS: tx('参照するたびに、システムの単調増加する時計の秒数になる', "the seconds of the system's monotonic clock, each time it is read"),
 });
 
-/** Unary test operators used in `[ ]`, `[[ ]]` and `test`. */
-export const unaryTestOps: Record<string, Text> = {
-  '-a': tx('存在する（`-e` と同じ。非推奨）', 'exists (same as `-e`, obsolescent)'),
-  '-g': tx('setgid ビットが付いている', 'has the setgid bit set'),
-  '-u': tx('setuid ビットが付いている', 'has the setuid bit set'),
-  '-k': tx('スティッキービットが付いている', 'has the sticky bit set'),
-  '-O': tx('実効ユーザー ID が所有している', 'is owned by the effective user ID'),
-  '-G': tx('実効グループ ID が所有している', 'is owned by the effective group ID'),
-  '-N': tx('前回読んでから変更されている', 'was modified since it was last read'),
-  '-R': tx('参照変数（nameref）として設定された変数名である', 'is the name of a variable set as a name reference'),
-  '-e': tx('存在する（種類は問わない）', 'exists'),
-  '-f': tx('通常ファイルとして存在する', 'is an existing regular file'),
-  '-d': tx('ディレクトリとして存在する', 'is an existing directory'),
-  '-L': tx('シンボリックリンクである', 'is a symbolic link'),
-  '-h': tx('シンボリックリンクである', 'is a symbolic link'),
-  '-r': tx('読み取り可能である', 'is readable'),
-  '-w': tx('書き込み可能である', 'is writable'),
-  '-x': tx('実行可能である', 'is executable'),
-  '-s': tx('空でないファイルである（サイズ > 0）', 'is a non-empty file'),
-  '-p': tx('名前付きパイプ(FIFO)である', 'is a named pipe'),
-  '-S': tx('ソケットである', 'is a socket'),
-  '-b': tx('ブロックデバイスである', 'is a block device'),
-  '-c': tx('キャラクタデバイスである', 'is a character device'),
-  '-t': tx('端末に接続されたファイルディスクリプタである', 'is a file descriptor open on a terminal'),
-  '-z': tx('空文字列である（長さ 0）', 'is an empty string'),
-  '-n': tx('空文字列でない（長さ 1 以上）', 'is a non-empty string'),
-  '-v': tx('設定済みの変数名である', 'is the name of a set variable'),
-  '-o': tx('有効になっているシェルオプション名である', 'is an enabled shell option'),
+/**
+ * The unary test operators of `[ ]`, `[[ ]]` and `test`, by what each tests: the predicate (`unaryTestPredicates`), and what its row adds after it (`unaryTestOps`,
+ * the two together). The sentence of the line says the predicate only (src/linesentence.ts).
+ */
+const UNARY_TESTS: Record<string, [Text, Text?]> = {
+  '-a': [tx('存在する', 'exists'), tx('（`-e` と同じ。非推奨）', ' (same as `-e`, obsolescent)')],
+  '-g': [tx('setgid ビットが付いている', 'has the setgid bit set')],
+  '-u': [tx('setuid ビットが付いている', 'has the setuid bit set')],
+  '-k': [tx('スティッキービットが付いている', 'has the sticky bit set')],
+  '-O': [tx('実効ユーザー ID が所有している', 'is owned by the effective user ID')],
+  '-G': [tx('実効グループ ID が所有している', 'is owned by the effective group ID')],
+  '-N': [tx('前回読んでから変更されている', 'was modified since it was last read')],
+  '-R': [tx('参照変数（nameref）として設定された変数名である', 'is the name of a variable set as a name reference')],
+  '-e': [tx('存在する', 'exists'), tx('（種類は問わない）', '')],
+  '-f': [tx('通常ファイルとして存在する', 'is an existing regular file')],
+  '-d': [tx('ディレクトリとして存在する', 'is an existing directory')],
+  '-L': [tx('シンボリックリンクである', 'is a symbolic link')],
+  '-h': [tx('シンボリックリンクである', 'is a symbolic link')],
+  '-r': [tx('読み取り可能である', 'is readable')],
+  '-w': [tx('書き込み可能である', 'is writable')],
+  '-x': [tx('実行可能である', 'is executable')],
+  '-s': [tx('空でないファイルである', 'is a non-empty file'), tx('（サイズ > 0）', '')],
+  '-p': [tx('名前付きパイプ(FIFO)である', 'is a named pipe')],
+  '-S': [tx('ソケットである', 'is a socket')],
+  '-b': [tx('ブロックデバイスである', 'is a block device')],
+  '-c': [tx('キャラクタデバイスである', 'is a character device')],
+  '-t': [tx('端末に接続されたファイルディスクリプタである', 'is a file descriptor open on a terminal')],
+  '-z': [tx('空文字列である', 'is an empty string'), tx('（長さ 0）', '')],
+  '-n': [tx('空文字列でない', 'is a non-empty string'), tx('（長さ 1 以上）', '')],
+  '-v': [tx('設定済みの変数名である', 'is the name of a set variable')],
+  '-o': [tx('有効になっているシェルオプション名である', 'is an enabled shell option')],
 };
+export const unaryTestPredicates: Record<string, Text> = Object.fromEntries(Object.entries(UNARY_TESTS).map(([op, [said]]) => [op, said]));
+export const unaryTestOps: Record<string, Text> = Object.fromEntries(Object.entries(UNARY_TESTS).map(([op, [said, aside]]) => [op, aside ? tx(said.ja + aside.ja, said.en + aside.en) : said]));
 
 /** `=`, `==` and `!=` inside `[[ ]]`, where the right side is a pattern (in `[ ]` and `test` it is plain text: see `binaryTestOps`). */
 export const extendedEqualOps: Record<string, Text> = {

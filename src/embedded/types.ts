@@ -15,6 +15,12 @@ export interface EmbeddedToken {
   group?: number;
   /** A token a hole makes (`isHole`), or about one: where it stands, for the text the catalog has (src/explain/embedded.ts). */
   hole?: HoleMark;
+  /**
+   * On a program's only top-level token: what the program does, in one clause, where that is the whole of it with the options given
+   * (sed's `-n`): the token's text without its label and its asides, from the same words. The sentence of the line says it
+   * (`STATEMENT_READ`, src/explain/context.ts); the row never shows it.
+   */
+  reading?: string;
 }
 
 /** Where a hole stands, in a position of data of its language; each has a text of the catalog (`hole-…`). */

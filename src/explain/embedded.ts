@@ -30,7 +30,7 @@ import { docLine, type StateModel } from '../semantics/state';
 import { copyingWord, knownCopy, plainCopy, valueUses } from '../semantics/values';
 import { finishedApart, saysProblemIn } from '../linefinish';
 import type { ValueReader } from '../messages-tokens-argv';
-import { type CommandContext, type CommandRead, type Explainer, memoKey } from './context';
+import { type CommandContext, type CommandRead, type Explainer, memoKey, WORD_READ } from './context';
 import { awkOptions, dateRun, globExample, guardedExample, inputSource, ioExample, pushExample, programsGiven, regexExample } from './examples';
 import { jqExamples, jqFormat, jqVars, yqExample } from './examples-jq';
 import { fillHoles, holeSink, type HoleSink, holesRead, holeText } from './holes';
@@ -346,11 +346,19 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
   const taken = removedBackslashes(lit);
   const bash = taken.length ? cx.text('embedded-backslash-removed', { taken }) : undefined;
   const note = bash && r.note ? r.note + cx.s('。', '; ') + bash : bash ?? r.note;
+  // (A program of one top-level token whose reader says what it does whole, with no hole in it: what the command does with the word.)
+  const [only, ...more] = r.tokens;
+  if (SCRIPTS[lang] && !lit.holes && !more.length && only?.reading !== undefined && !errorIn(only)) cx.memo(WORD_READ).set(a, only.reading);
   return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note, ...(holes ? { holes: holes.spans } : {}) };
 }
 
+/** Whether a reader's token, or one under it, is an error. */
+const errorIn = (t: EmbeddedToken): boolean => t.kind === 'error' || t.children.some(errorIn);
+
 /** The languages that are code: a hole that stops their reader says the script depends on it, and how a value is passed as data. */
 const SCRIPTS: Partial<Record<EmbeddedLang, { data?: string }>> = { sed: {}, awk: { data: '`-v name=value`' }, jq: { data: '`--arg name value`' }, yq4: {}, perl: {} };
+/** The languages of code (`SCRIPTS`): a command whose words hold one program of them does what that program does. */
+export const PROGRAMS: ReadonlySet<EmbeddedLang> = new Set(Object.keys(SCRIPTS) as EmbeddedLang[]);
 
 /** The holes of the shell line of `cx` (`Explainer.holesSaid`): a newline in a regex's value may make two patterns of the command. */
 const sinkOf = (cx: Explainer): HoleSink => holeSink(cx.lang, cx.holesSaid, true);

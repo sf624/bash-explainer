@@ -188,8 +188,12 @@ class AwkExplainer {
     if (action) children.push(action);
     const first = (pattern[0] ?? this.toks[start]).start;
     let explanation: string;
-    if (!action) explanation = s(`${when}を出力する（アクションを省略すると \`print\` と同じ）`, `print ${when} (no action means \`print\`)`);
-    else if (!pattern.length) {
+    // (A rule of a pattern alone prints what it selects, which is the whole of a program of it alone: `EmbeddedToken.reading`.)
+    let printed: string | undefined;
+    if (!action) {
+      printed = s(`${when}を出力する`, `print ${when}`);
+      explanation = printed + s('（アクションを省略すると `print` と同じ）', ' (no action means `print`)');
+    } else if (!pattern.length) {
       // `{ … }` alone: the rule is just its action.
       return { ...action, explanation: s('ルール: すべての行に対して `{ }` 内の文を順に実行する', 'Rule: run the statements in `{ }` for every line') };
     }
@@ -197,7 +201,9 @@ class AwkExplainer {
       ? s('最初の行を読む前に1回だけ `{ }` 内を実行する（初期化など）', 'run `{ }` once before reading any input (setup)')
       : s('すべての行を読み終えた後に1回だけ `{ }` 内を実行する（集計結果の出力など）', 'run `{ }` once after all input is read (e.g. print totals)');
     else explanation = s(`${when}に対して \`{ }\` 内を実行する`, `run \`{ }\` for ${when}`);
-    return this.tok(first, actionEnd, 'block', s('ルール: ', 'Rule: ') + explanation, children);
+    const t = this.tok(first, actionEnd, 'block', s('ルール: ', 'Rule: ') + explanation, children);
+    // (A special pattern alone, `BEGIN`, is no rule that prints: awk refuses it.)
+    return printed === undefined || /^(BEGIN|END)(FILE)?$/.test(this.text(pattern)) ? t : { ...t, reading: printed };
   }
 
   private pattern(toks: Lex[]): { token: EmbeddedToken; when: string } {

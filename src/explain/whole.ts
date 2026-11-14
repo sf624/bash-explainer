@@ -12,7 +12,7 @@ import type { SyntaxNode } from '../syntax/tree';
 import { keep } from '../tokenkept';
 import { finishLine } from '../linefinish';
 import { COMMAND_SAID, type CommandSaid } from './commands';
-import type { Explainer, LineExplainer, LineInit, Whole } from './context';
+import { type Explainer, type LineExplainer, type LineInit, STATEMENT_READ, type StatementRead, type Whole } from './context';
 
 type Kept = Whole | { thrown: unknown };
 
@@ -44,6 +44,7 @@ function explainedOnce(cx: LineExplainer, explained: (cx: Explainer) => Token): 
     saidNotes, noteInfo: saidNotes.map((n) => basisGate(cx.noteOf(n), cx.opts.basis)), saidFacts, saidAnchors,
     texts: new Set([...saidNotes, ...cx.facts.map((f) => f.text), ...cx.anchors.map((a) => a.text)]),
     commands: cx.memo(COMMAND_SAID),
+    reads: cx.memo(STATEMENT_READ),
     later: { examples: [], sentences: new Map() },
   };
 }
@@ -75,7 +76,16 @@ export function wholeOf(lang: string, init: LineInit, n: SyntaxNode, explained: 
 
 /** What each simple command explained on the line is (`COMMAND_SAID`), with those of the statements it reads. */
 export function commandsSaid(cx: LineExplainer): ReadonlyMap<SyntaxNode, CommandSaid> {
-  const own = cx.memo(COMMAND_SAID);
-  if (cx.wholes.length === 1 && !own.size) return cx.wholes[0].commands as ReadonlyMap<SyntaxNode, CommandSaid>;
-  return new Map([...cx.wholes.flatMap((w) => [...w.commands as ReadonlyMap<SyntaxNode, CommandSaid>]), ...own]);
+  return withWholes(cx, cx.memo(COMMAND_SAID), (w) => w.commands as ReadonlyMap<SyntaxNode, CommandSaid>);
+}
+
+/** What a reader read of the words of each statement explained on the line (`STATEMENT_READ`), with those of the statements it reads. */
+export function readsSaid(cx: LineExplainer): ReadonlyMap<SyntaxNode, StatementRead> {
+  return withWholes(cx, cx.memo(STATEMENT_READ), (w) => w.reads);
+}
+
+/** A memo of the line (`own`), with the same memo of each statement over several lines it reads (`of`). */
+function withWholes<V>(cx: LineExplainer, own: ReadonlyMap<SyntaxNode, V>, of: (w: Whole) => ReadonlyMap<SyntaxNode, V>): ReadonlyMap<SyntaxNode, V> {
+  if (cx.wholes.length === 1 && !own.size) return of(cx.wholes[0]);
+  return new Map([...cx.wholes.flatMap((w) => [...of(w)]), ...own]);
 }
