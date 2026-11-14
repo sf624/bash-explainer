@@ -15,6 +15,14 @@ const endBefore = (p: { what: string; gap: string; co?: string; closer: string }
   p.co ? `\`${p.closer}\` の前でリストを終え、${waitJa(p)}` : `\`${p.closer}\` の前でリストを終える`,
   p.co ? `End of the list before \`${p.closer}\`: ${waitEn(p)}` : `End of the list before \`${p.closer}\``];
 
+/**
+ * A unary test's condition (`what`: what the operator tests, in the line's language): the text of its row after `Condition: `
+ * (`test-unary`), and, with the predicate alone (`unaryTests`), the condition the sentence of the line says (src/linesentence.ts).
+ */
+export const unaryHolds = ({ operand, what }: { operand: string; what: string }): readonly [ja: string, en: string] => [
+  `\`${operand}\` が${what}`,
+  `\`${operand}\` ${what}`];
+
 export const COMPOUND_TEXTS = {
   /** `do … done`: the body of a loop, which is no command of its own. */
   'loop-body': tokenText(() => [
@@ -198,10 +206,11 @@ export const COMPOUND_TEXTS = {
   'test-negation': tokenText<{ operand: string }>(({ operand }) => [
     `否定: \`${operand}\` が偽なら真`,
     `Negation: true if \`${operand}\` is false`]),
-  /** `[[ -f a ]]` (`what`: what the operator tests, in the line's language). */
-  'test-unary': tokenText<{ operand: string; what: string }>(({ operand, what }) => [
-    `条件: \`${operand}\` が${what}`,
-    `Condition: \`${operand}\` ${what}`]),
+  /** `[[ -f a ]]`, `[ -f a ]` (`what`: what the operator tests, in the line's language). */
+  'test-unary': tokenText<{ operand: string; what: string }>((p) => {
+    const [ja, en] = unaryHolds(p);
+    return [`条件: ${ja}`, `Condition: ${en}`];
+  }),
   /** `$((-a))`. */
   'arith-unary': tokenText<{ op: string }>(({ op }) => [`算術の単項演算 \`${op}\``, `Arithmetic unary operator \`${op}\``]),
   /** `$((1 +))`: an operator with no operand (`abandons`: in an expansion, which abandons the command of the script). */

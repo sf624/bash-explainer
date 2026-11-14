@@ -118,6 +118,12 @@ const stops = (lang: Lang, unsure: boolean): string => (unsure
   ? pick(lang, 'この行まで来ると、シェルは構文エラーで止まる', 'if the shell reaches this line, it stops with a syntax error')
   : pick(lang, 'シェルは構文エラーで止まる', 'the shell stops with a syntax error'));
 
+/**
+ * The condition of `if`, `while` or `until`: the command whose success it is, as a noun (`the test \`[ … ]\``), or the condition its
+ * reader read of a test (`holds`; `copula`: its Japanese ends in a noun, which takes `である` before `間` and `まで`, not before `なら`).
+ */
+export type Condition = string | { holds: string; copula?: boolean };
+
 /** The clauses of a sentence (`S.x(lang, …)`). */
 export const S = {
   /** `if a then b; fi`: the line is a syntax error, whatever it seems to say. */
@@ -127,10 +133,13 @@ export const S = {
     const [ja, en] = syntaxErrorWhat(what);
     return `${stops(lang, unsure)}${what.kind === 'unreadable' ? '' : pick(lang, `（${ja}）`, ` (${en})`)}`;
   },
-  /** A command run: its name, what it does (its spec's summary), the options given and what they do, its redirections. */
-  runs: (lang: Lang, noun: string, options: string, io: string, status?: number): string => (lang === 'ja'
-    ? `${noun}を${options ? `${options}を付けて` : ''}実行する${status === undefined ? '' : `（終了ステータス ${status}）`}${ioPart(io)}`
-    : `runs ${noun}${options ? ` using ${options}` : ''}${status === undefined ? '' : ` with status ${status}`}${io ? `, with ${io}` : ''}`),
+  /**
+   * A command run: its name, what it does (its spec's summary), the options given and what they do, its redirections; or, where a
+   * reader read what it does with its words (`does`: find's expression, a program of one command), its name and that.
+   */
+  runs: (lang: Lang, noun: string, options: string, io: string, status?: number, does?: string): string => (lang === 'ja'
+    ? `${noun}を${options ? `${options}を付けて` : ''}実行${does ? 'し' : 'する'}${status === undefined ? '' : `（終了ステータス ${status}）`}${does ? `、${does}` : ''}${ioPart(io)}`
+    : `runs ${noun}${options ? ` using ${options}` : ''}${status === undefined ? '' : ` with status ${status}`}${io ? `, with ${io}` : ''}${does ? `: ${lowerFirst(does)}` : ''}`),
   /** An assignment before a command's name: what the command runs with. */
   prefixSet: (lang: Lang, name: string, value: string): string => pick(lang, `${name}は${value}`, `${name} set to ${value}`),
   /** A command as a noun: its name and what it does (`glossed`). */
@@ -140,6 +149,8 @@ export const S = {
   calls: (lang: Lang, name: string, io: string): string => (lang === 'ja' ? `関数${name}を呼び出す${ioPart(io)}` : `calls the function ${name}${io ? `, with ${io}` : ''}`),
   /** `[ … ]` or `test`: the condition its words make. */
   tests: (lang: Lang, written: string, io: string): string => (lang === 'ja' ? `${written}の条件を判定する${ioPart(io)}` : `tests the condition in ${written}${io ? `, with ${io}` : ''}`),
+  /** A test whose condition its reader read (`holds`: `` `x` is an empty string ``). */
+  testsWhether: (lang: Lang, holds: string, io: string): string => (lang === 'ja' ? `${holds}かを判定する${ioPart(io)}` : `tests whether ${holds}${io ? `, with ${io}` : ''}`),
   /** A command with no name: the variables it sets (`assigned`), or none and only its redirections. */
   sets: (lang: Lang, assigned: string, io: string): string => (lang === 'ja' ? `${assigned}代入する${ioPart(io)}` : `sets ${assigned}${io ? `, with ${io}` : ''}`),
   /** One variable set, and its value. */
@@ -213,18 +224,18 @@ export const S = {
   runsBody: (lang: Lang, body: string): string => pick(lang, `${body}を実行する`, `runs ${body}`),
   nothing: (lang: Lang): string => pick(lang, '何もしない', 'does nothing'),
 
-  // The constructs: what each does.
-  ifThen: (lang: Lang, subject: string, then: string, otherwise: string | undefined): string => (lang === 'ja'
-    ? `${subject}が成功したら、${then}${otherwise ? `。そうでなければ、${otherwise}` : ''}`
-    : `if ${subject} succeeds, ${then}${otherwise ? `; otherwise, ${otherwise}` : ''}`),
+  // The constructs: what each does. (A condition is a command that succeeds, or a test whose condition its reader read: `Condition`.)
+  ifThen: (lang: Lang, cond: Condition, then: string, otherwise: string | undefined): string => (lang === 'ja'
+    ? `${typeof cond === 'string' ? `${cond}が成功したら` : `${cond.holds}なら`}、${then}${otherwise ? `。そうでなければ、${otherwise}` : ''}`
+    : `if ${typeof cond === 'string' ? `${cond} succeeds` : cond.holds}, ${then}${otherwise ? `; otherwise, ${otherwise}` : ''}`),
   /** The branches of an `if` below its first, as an open `if` says them: `elif`, `else`. */
   branchesBelow: (lang: Lang, words: string): string => pick(lang, `下の${words}に進む`, `goes on to the ${words} below`),
   thenPart: (lang: Lang): string => pick(lang, '`then` 以下を実行する', 'runs what follows `then`'),
   /** `elif` and `else`: what runs when no condition before succeeded. */
   otherwise: (lang: Lang, clause: string): string => pick(lang, `そうでなければ、${clause}`, `otherwise, ${clause}`),
-  whileLoop: (lang: Lang, until: boolean, subject: string, body: string): string => (lang === 'ja'
-    ? `${subject}が成功する${until ? 'まで' : '間'}、${body}をくり返す`
-    : `repeats ${body} ${until ? 'until' : 'while'} ${subject} succeeds`),
+  whileLoop: (lang: Lang, until: boolean, cond: Condition, body: string): string => (lang === 'ja'
+    ? `${typeof cond === 'string' ? `${cond}が成功する` : `${cond.holds}${cond.copula ? 'である' : ''}`}${until ? 'まで' : '間'}、${body}をくり返す`
+    : `repeats ${body} ${until ? 'until' : 'while'} ${typeof cond === 'string' ? `${cond} succeeds` : cond.holds}`),
   forLoop: (lang: Lang, variable: string, values: string, body: string): string => pick(lang,
     `${variable}を${values}に順に設定して、${body}を実行する`, `runs ${body} with ${variable} set to ${values}, one at a time`),
   /** A `for` or `select` whose words give no word: bash runs its body no time. */

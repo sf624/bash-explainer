@@ -48,6 +48,25 @@ export interface MemoKey<V> { readonly name: string; readonly value?: V }
 export const memoKey = <V>(name: string): MemoKey<V> => ({ name });
 
 /**
+ * What a reader read of the words of a statement, in one clause, where that is the whole of what the statement does with them
+ * (docs/design/panel-redesign.md, P5): find's expression, a program of one command (sed, awk), what the statement does
+ * (`does`); a test's condition (`condition`). The text is the row's own, from the same function, without the row's label and
+ * asides (marked text). The sentence of the line says it (src/linesentence.ts), by the statement's node (a simple command, `[[ ]]`).
+ */
+export interface StatementRead {
+  kind: 'does' | 'condition';
+  text: string;
+  /** A condition whose Japanese ends in a noun (`空文字列`), which takes `である` where it ends a clause (`空文字列である間`), not before `なら`. */
+  copula?: true;
+}
+export const STATEMENT_READ = memoKey<StatementRead>('statementRead');
+/**
+ * What a reader read of one word of a command, by the word: the program of a language of code in it (`EmbeddedToken.reading`), or
+ * find's expression from it; the command's own reading takes it where it is its only such word (src/explain/commands.ts).
+ */
+export const WORD_READ = memoKey<string>('wordRead');
+
+/**
  * The walk over the nodes, which the line filter of the context calls back (the dispatch, src/explain/dispatch.ts),
  * and the explanation of a line of a string read as a script (src/analyzer.ts gives both).
  */
@@ -87,6 +106,8 @@ export interface Whole {
   readonly texts: ReadonlySet<string>;
   /** What each simple command of the statement is (`COMMAND_SAID`). */
   readonly commands: ReadonlyMap<SyntaxNode, unknown>;
+  /** What a reader read of the words of its statements (`STATEMENT_READ`). */
+  readonly reads: ReadonlyMap<SyntaxNode, StatementRead>;
   /** What only a line that asks for it reads, made once: its examples (with a title that names their command, or not), its sentences (`SentenceInput.kept`), its reading tree. */
   readonly later: { examples: [Example[]?, Example[]?]; sentences: Map<string, unknown>; reading?: LineExplanation['reading'] };
 }

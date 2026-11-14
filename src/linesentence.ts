@@ -1,7 +1,9 @@
 // "In short": one sentence for each line with code (docs/design/panel-redesign.md, P5), at the top of the panel's
 // Meaning view (`LineExplanation.sentence`). It is composed, not looked up: from the tree (a list, a pipeline, a loop,
 // a condition, the words that open and close a block), from what each command is and does (`CommandSaid`, recorded by
-// src/explain/commands.ts with the summary its token shows, and the options given), from the words bash gives
+// src/explain/commands.ts with the summary its token shows, and the options given; or, where a reader read in one clause
+// what the command does with its words, that reading: `StatementRead`, find's expression, a sed or awk program of one
+// command, a test's condition), from the words bash gives
 // (src/argvline.ts: the value an assignment gives, a redirection's target, a loop's words, with P4's placeholders for
 // what is known only at run time), and from the status model (a pipeline's status, what `set -e` does when the
 // statement fails). The shapes with a sentence of their own are idioms (src/idioms.ts, `idiomSaid`). The texts are in
@@ -10,19 +12,22 @@
 // Its rules: it never states a fact a problem of the line states (a clause is left out where a problem of the line is
 // one of the catalog's facts that say it, the entry's `says`: `SentenceInput.problems`); no code span in it holds more than one shell word of the line
 // (it names commands by their names and words by what they give, never a stretch of the line); and it is never what a
-// row of the line says alone. test/linesentence.test.ts checks them over the corpus.
+// row of the line says alone: a reading a row gives of a command's words is said as what that command does, with the
+// command and the construct around it, and without the row's label and asides (it holds no row's text whole).
+// test/linesentence.test.ts checks them over the corpus.
 import type { ArgvWord, LineExplanation } from './analyzer-types';
 import { argvWords } from './argvline';
 import { dupTarget, redirects } from './dict/syntax';
 import type { CommandSaid } from './explain/commands';
+import type { StatementRead } from './explain/context';
 import { effEndRow, intersects, isBlockLike } from './explain/nodes';
 import { redirectParts } from './explain/redirections';
 import { type Lang, lineRangeLabel } from './i18n';
 import { idiomSaid, type IdiomSpeaker } from './idioms';
-import { codeSpan, shorten } from './label';
+import { codeSpan, nestsParens, shorten } from './label';
 import { clausesOf, isProblemNote, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
-import { EMPTY, ioSaid, listSaid, S, sentenceEnd } from './messages-sentence';
+import { type Condition, EMPTY, ioSaid, listSaid, S, sentenceEnd } from './messages-sentence';
 import { resolveRun, testSpecAt } from './semantics/names';
 import { ownSubshells, STATEMENTS } from './semantics/env';
 import { attribute, docLine } from './semantics/state';
@@ -38,6 +43,8 @@ export interface SentenceInput {
   status: StatusModel;
   /** What each simple command explained on the line is (src/explain/commands.ts). */
   commands: ReadonlyMap<SyntaxNode, CommandSaid>;
+  /** What a reader read of the words of each statement explained on the line, in one clause (`STATEMENT_READ`): said in place of what the command does. */
+  reads: ReadonlyMap<SyntaxNode, StatementRead>;
   /** The codes of the problems of the line (fact ids, style checks): a clause one of them says is left out (`clausesOf`). */
   problems: ReadonlySet<string>;
   /** The sentences of a statement over several lines, which says the same on each of them, kept by what they depend on (`Whole`): each would read all of it. */
@@ -99,8 +106,9 @@ function composed(input: SentenceInput, pieces: Piece[]): Sentence | undefined {
     return { text: sentenceEnd(input.lang, [said]), clauses: [] };
   }
   let said!: Sentence;
-  for (const brief of [0, 1, 2] as const) {
-    const c = new Composer(input, brief);
+  // (What a reader read of the words, where it fits, then what the commands do, as without it: `LEVELS`.)
+  for (const [brief, reads] of input.reads.size ? LEVELS : LEVELS.filter(([, r]) => !r)) {
+    const c = new Composer(input, brief, reads);
     said = { text: sentenceEnd(input.lang, pieces.flatMap((p, i) => c.piece(p, i))), clauses: [...c.said] };
     // (The facts of the models are said whatever the length: the budget is for what the commands do.)
     if (said.text.replace(/`/g, '').length - c.factsLength <= FULL[input.lang]) break;
@@ -108,8 +116,13 @@ function composed(input: SentenceInput, pieces: Piece[]): Sentence | undefined {
   return said;
 }
 
-/** How much a sentence says of each command: what it does and the options given (0), what it does (1), its name (2). */
+/**
+ * How much a sentence says of each command: what it does and the options given (0), what it does (1), its name (2). What it does is
+ * what a reader read of its words, where there is a reading (`SentenceInput.reads`), else its spec's summary.
+ */
 type Brief = 0 | 1 | 2;
+/** The levels a sentence is tried at, from the longest: with the readings (what a command does, with its options and without), then as without them. */
+const LEVELS: readonly (readonly [Brief, boolean])[] = [[0, true], [1, true], [0, false], [1, false], [2, false]];
 
 /**
  * A part of the line the sentence says: a statement on it (or one over several lines, which the line is part of), the
@@ -216,7 +229,7 @@ class Composer implements IdiomSpeaker {
   factsLength = 0;
   private readonly lang: Lang;
 
-  constructor(private readonly input: SentenceInput, private readonly brief: Brief) {
+  constructor(private readonly input: SentenceInput, private readonly brief: Brief, private readonly reads: boolean) {
     this.lang = input.lang;
   }
 
@@ -299,14 +312,17 @@ class Composer implements IdiomSpeaker {
       case 'do_group': return body();
       case 'if_statement': {
         const branches = n.namedChildren.filter((c) => c.type === 'elif_clause' || c.type === 'else_clause');
-        return [S.ifThen(lang, this.subject(headOf(n)), this.clauses(bodyOf(n)), undefined), ...branches.map((b) => this.describe(b))].join(lang === 'ja' ? '。' : '; ');
+        return [S.ifThen(lang, this.condition(headOf(n)), this.clauses(bodyOf(n)), undefined), ...branches.map((b) => this.describe(b))].join(lang === 'ja' ? '。' : '; ');
       }
-      case 'elif_clause': return S.otherwise(lang, S.ifThen(lang, this.subject(headOf(n)), this.clauses(bodyOf(n)), undefined));
+      case 'elif_clause': return S.otherwise(lang, S.ifThen(lang, this.condition(headOf(n)), this.clauses(bodyOf(n)), undefined));
       case 'else_clause': return S.otherwise(lang, body());
       case 'case_item': return S.caseItem(lang, this.patterns(n), this.clauses(bodyOf(n)));
       case 'function_definition': return S.defines(lang, codeSpan(field(n, 'name')!.text), undefined);
       case 'arithmetic_command': return S.arith(lang);
-      case 'extended_test': return S.testExt(lang);
+      case 'extended_test': {
+        const holds = this.read(n, 'condition');
+        return holds === undefined ? S.testExt(lang) : S.testsWhether(lang, holds.text, '');
+      }
       default: return this.opens(n);
     }
   }
@@ -317,11 +333,11 @@ class Composer implements IdiomSpeaker {
     switch (n.type) {
       case 'if_statement': {
         const below = [...new Set(n.namedChildren.filter((c) => c.type === 'elif_clause' || c.type === 'else_clause').map((c) => codeSpan(tokenOf(c, c.startPosition.row)!.text)))];
-        return S.ifThen(lang, this.subject(headOf(n)), S.thenPart(lang), below.length ? S.branchesBelow(lang, listSaid(lang, below)) : undefined);
+        return S.ifThen(lang, this.condition(headOf(n)), S.thenPart(lang), below.length ? S.branchesBelow(lang, listSaid(lang, below)) : undefined);
       }
-      case 'elif_clause': return S.otherwise(lang, S.ifThen(lang, this.subject(headOf(n)), S.thenPart(lang), undefined));
+      case 'elif_clause': return S.otherwise(lang, S.ifThen(lang, this.condition(headOf(n)), S.thenPart(lang), undefined));
       case 'else_clause': return S.otherwise(lang, S.runsBody(lang, this.body(n)));
-      case 'while_statement': return this.redirectedIdiom(n) ?? idiomSaid(n, this.input.status, lang, this) ?? S.whileLoop(lang, n.children[0].type === 'until', this.subject(headOf(n)), this.body(n));
+      case 'while_statement': return this.redirectedIdiom(n) ?? idiomSaid(n, this.input.status, lang, this) ?? S.whileLoop(lang, n.children[0].type === 'until', this.condition(headOf(n)), this.body(n));
       case 'for_statement': {
         const values = this.values(n);
         return values === undefined ? S.noWords(lang, this.body(n)) : S.forLoop(lang, this.loopVariable(n), values, this.body(n));
@@ -462,6 +478,21 @@ class Composer implements IdiomSpeaker {
     return out.join(this.lang === 'ja' ? '。' : '; ');
   }
 
+  /** The condition of `if`, `while` or `until`: what a reader read of a test that is all of it, or the subject of "succeeds". */
+  private condition(cond: readonly SyntaxNode[]): Condition {
+    const r = cond.length === 1 ? this.read(cond[0], 'condition') : undefined;
+    return r === undefined ? this.subject(cond) : { holds: r.text, ...(r.copula ? { copula: true } : {}) };
+  }
+
+  /**
+   * What a reader read of a statement's words (`SentenceInput.reads`) of the kind asked, at the levels that say it (`LEVELS`), and where
+   * it holds no parentheses in parentheses, which the sentence never has (usability-9.md, U7).
+   */
+  private read(n: SyntaxNode, kind: StatementRead['kind']): StatementRead | undefined {
+    const r = this.reads ? this.input.reads.get(n) : undefined;
+    return r?.kind === kind && !nestsParens(r.text) ? r : undefined;
+  }
+
   /** The condition of `if`, `while` or `until`, as the subject of "succeeds". */
   private subject(cond: readonly SyntaxNode[]): string {
     const { lang } = this;
@@ -490,6 +521,9 @@ class Composer implements IdiomSpeaker {
     }
     // (The assignments before the name are said with the redirections: what the command runs with.)
     const io = [...assignments.map((a) => S.prefixSet(lang, codeSpan(field(a, 'name')!.text), this.value(a))), ...(redirectionsOf(c).length ? [this.io(redirectionsOf(c))] : [])].join(lang === 'ja' ? '、' : ', ');
+    // (A test whose condition its reader read, `[ -f a ]`, `test -n "$x"`: that condition.)
+    const holds = this.read(c, 'condition');
+    if (holds !== undefined) return S.testsWhether(lang, holds.text, io);
     // (A command on another line of a statement over several lines has no record of the command, as a closing line's: the model tells `[` and a function.)
     if (this.isTest(c)) return S.tests(lang, BRACKET, io);
     if (said?.kind === 'function') return S.calls(lang, codeSpan(said.names[0]), io);
@@ -501,7 +535,9 @@ class Composer implements IdiomSpeaker {
     // (`exit 1`, `return 0`: the status it gives, where it is the number written.)
     const rule = this.input.status.status(c);
     const status = rule.kind === 'given' && !rule.refused && fields(c, 'argument').some((a) => a.text === String(rule.value)) ? rule.value : undefined;
-    const clause = S.runs(lang, this.noun(c), options, io, status);
+    // (What a reader read of its words, find's expression or a program of one command, in place of what the command does.)
+    const does = this.read(c, 'does')?.text;
+    const clause = S.runs(lang, does === undefined ? this.noun(c) : this.nameOf(c), options, io, status, does);
     // (A declaration builtin's assignments, `local x=$1`: the values they give; none where its options make it name functions or print, `declare -f x=1`.)
     const how = this.declaring(c, said);
     const declared = how === 'none' ? '' : this.assigned(fields(c, 'argument').filter((x) => x.type === 'variable_assignment'), how);

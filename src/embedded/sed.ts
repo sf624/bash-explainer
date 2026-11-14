@@ -9,9 +9,9 @@ type S = (ja: string, en: string) => string;
 
 /** One-letter commands without arguments. */
 const SIMPLE: Record<string, [string, string]> = {
-  d: ['行を削除する（出力せず、次の行の処理に進む）', 'delete the line (print nothing and start the next cycle)'],
+  d: ['行を削除する', 'delete the line'],
   D: ['パターンスペースの最初の行を削除する', 'delete the first line of the pattern space'],
-  p: ['行を出力する（`-n` と組み合わせて、選んだ行だけを出力するのに使う）', 'print the line (with `-n`, prints only the selected lines)'],
+  p: ['行を出力する', 'print the line'],
   P: ['パターンスペースの最初の行を出力する', 'print the first line of the pattern space'],
   n: ['現在の行を出力して、次の行を読み込む', 'print the line and read the next one'],
   N: ['次の行を読み込んで、改行でつないで追加する', 'append the next line, joined with a newline'],
@@ -25,6 +25,18 @@ const SIMPLE: Record<string, [string, string]> = {
   z: ['パターンスペースを空にする', 'empty the pattern space'],
   F: ['入力ファイル名を出力する', 'print the input file name'],
 };
+
+/** What the row of a command of `SIMPLE` adds after what it does. */
+const ASIDES: Partial<Record<string, [string, string]>> = {
+  d: ['（出力せず、次の行の処理に進む）', ' (print nothing and start the next cycle)'],
+  p: ['（`-n` と組み合わせて、選んだ行だけを出力するのに使う）', ' (with `-n`, prints only the selected lines)'],
+};
+
+/**
+ * The commands of `SIMPLE` whose text is the whole of what a script of that command alone does, with `-n` given (`true`) or not: `d`
+ * deletes what auto-print would print; `p` with `-n` prints only what it selects (without `-n` it prints those lines twice).
+ */
+const WHOLE: Partial<Record<string, boolean>> = { d: false, p: true };
 
 /**
  * Where the bracket expression that opens at `at` ends, as GNU sed finds the end of a regex: after its `]` (one first, or after
@@ -218,10 +230,12 @@ class SedParser {
     }
     this.i++;
     const cmdTok = (expl: string) => this.tok(ci, ci + 1, 'command', expl);
-    const done = (summary: string, extra: EmbeddedToken[] = []) => {
+    // (`whole`: what the command does is the whole of what a script of it alone does, said without the aside, `EmbeddedToken.reading`.)
+    const done = (summary: string, extra: EmbeddedToken[] = [], whole?: string) => {
       const forWhom = range ? s(`${target}に対して: `, `For ${target}: `) : '';
       // (With no address, the command's word is the whole of it, and says what the command says: no part of its own.)
-      return this.tok(start, this.i, 'command', forWhom + summary, [...children, ...extra.filter((x) => x.start !== start || x.end !== this.i)]);
+      const t = this.tok(start, this.i, 'command', forWhom + summary, [...children, ...extra.filter((x) => x.start !== start || x.end !== this.i)]);
+      return whole === undefined ? t : { ...t, reading: this.readingFor(range ? target : undefined, whole) };
     };
 
     if (c === 's') return this.substitute(start, children, range ? target : undefined);
@@ -236,7 +250,8 @@ class SedParser {
     }
     if (SIMPLE[c]) {
       const [ja, en] = SIMPLE[c];
-      return done(s(ja, en), [cmdTok(`\`${c}\`: ${s(ja, en)}`)]);
+      const aside = ASIDES[c] ? s(...ASIDES[c]) : '';
+      return done(s(ja, en) + aside, [cmdTok(`\`${c}\`: ${s(ja, en)}${aside}`)], WHOLE[c] === this.quiet ? s(ja, en) : undefined);
     }
     if (c === 'q' || c === 'Q') {
       this.skipSpaces();
@@ -291,6 +306,14 @@ class SedParser {
     return this.tok(ci, ci + 1, 'error', s(`不明な sed コマンド \`${c}\``, `Unknown sed command \`${c}\``), children);
   }
 
+  /**
+   * What a command does to the lines of its address (`target`; none for every line), as the sentence of the line says it: one clause, with no
+   * colon, where the row has "For …: " (`EmbeddedToken.reading`).
+   */
+  private readingFor(target: string | undefined, does: string): string {
+    return target === undefined ? does : this.s(`${target}に対して、${does}`, `on ${target}, ${does}`);
+  }
+
   private substitute(start: number, children: EmbeddedToken[], target: string | undefined): EmbeddedToken {
     const { src, s } = this;
     const sAt = this.i - 1;
@@ -326,8 +349,10 @@ class SedParser {
 
     let global = false;
     let nth: string | undefined;
+    const flags: string[] = [];
     while (this.i < src.length && /[gpiIeMm0-9w]/.test(src[this.i])) {
       const f = src[this.i];
+      flags.push(f);
       const fs = this.i;
       if (f === 'w') {
         this.i++;
@@ -365,12 +390,15 @@ class SedParser {
     // (A blank is named after its code: `codeShown`. In Japanese the space after the code is part of it.)
     const shown = (ja: boolean) => repText ? codeShown(repText, ja, ' ') : ja ? '空文字 ' : 'nothing';
     const shownPat = (ja: boolean) => patText ? codeShown(patText, ja, ' ') : ja ? '直前に使った正規表現 ' : 'the last regex';
-    const summary = s(
-      `置換: ${shownPat(true)}に一致した部分（各行の${which}）を ${shown(true)}に置き換える`,
-      `Substitute: replace ${which} of ${shownPat(false)} on each line with ${shown(false)}`,
+    const replaces = s(
+      `${shownPat(true)}に一致した部分（各行の${which}）を ${shown(true)}に置き換える`,
+      `replace ${which} of ${shownPat(false)} on each line with ${shown(false)}`,
     );
     const forWhom = target ? s(`${target}に対して: `, `For ${target}: `) : '';
-    return this.tok(start, this.i, 'command', forWhom + summary, [...children, ...parts]);
+    const t = this.tok(start, this.i, 'command', forWhom + s('置換: ', 'Substitute: ') + replaces, [...children, ...parts]);
+    // (What it does is the whole of a script of it alone where auto-print prints each line, and no flag but `g` or a number is given:
+    // `p`, `w` and `e` do more, `i`, `m` and `M` change what matches.)
+    return this.quiet || flags.some((f) => !/[g0-9]/.test(f)) ? t : { ...t, reading: this.readingFor(target, replaces) };
   }
 
   /** `&`, `\1`… and case conversions in the replacement of `s`. */

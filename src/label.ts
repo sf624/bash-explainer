@@ -272,3 +272,14 @@ export function codeSpan(text: string): string {
   const padded = text.startsWith('`') || text.endsWith('`') || (text.startsWith(' ') && text.endsWith(' ') && /[^ ]/.test(text));
   return padded ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
 }
+
+/** Whether a text has parentheses in parentheses, outside its code spans (`(…)` of `$(…)` is code). */
+export function nestsParens(text: string): boolean {
+  let depth = 0;
+  for (const ch of text.replace(/(`+)(.+?)\1/g, '')) {
+    if (ch === '(' || ch === '（') depth++;
+    else if (ch === ')' || ch === '）') depth--;
+    if (depth > 1) return true;
+  }
+  return false;
+}

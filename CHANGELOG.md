@@ -6,7 +6,12 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Changed
 
+- "In short" now says what a command does with its words where the explanation reads all of them: find's expression, a sed or awk script of one command, and a test such as `[ -z "$1" ]` ("If `"$1"` is an empty string, …"). Before, it said only what the command does in general, or "the test `[ … ]` succeeds".
 - On the web page, the POSIX sh hint's button now says "Switch to POSIX sh", and a toast with Undo says the shell changed. Before, it said "Check as POSIX sh" and changed the shell silently.
+
+### Fixed
+
+- find's expression is explained in the order find runs it: in `find . -print -name x` the print happens for every file, and `-exec … \;` followed by more is a test that the rest needs (`-exec grep -q foo {} \; -print` prints only the files where grep succeeds). Before, an action written before a test was said as if it came after it.
 
 ## 0.14.0
 

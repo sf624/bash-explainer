@@ -491,35 +491,45 @@ export const bash53Variables: Record<string, Text> = wordTable({
   BASH_MONOSECONDS: tx('参照するたびに、システムの単調増加する時計の秒数になる', "the seconds of the system's monotonic clock, each time it is read"),
 });
 
-/** Unary test operators used in `[ ]`, `[[ ]]` and `test`. */
-export const unaryTestOps: Record<string, Text> = {
-  '-a': tx('存在する（`-e` と同じ。非推奨）', 'exists (same as `-e`, obsolescent)'),
-  '-g': tx('setgid ビットが付いている', 'has the setgid bit set'),
-  '-u': tx('setuid ビットが付いている', 'has the setuid bit set'),
-  '-k': tx('スティッキービットが付いている', 'has the sticky bit set'),
-  '-O': tx('実効ユーザー ID が所有している', 'is owned by the effective user ID'),
-  '-G': tx('実効グループ ID が所有している', 'is owned by the effective group ID'),
-  '-N': tx('前回読んでから変更されている', 'was modified since it was last read'),
-  '-R': tx('参照変数（nameref）として設定された変数名である', 'is the name of a variable set as a name reference'),
-  '-e': tx('存在する（種類は問わない）', 'exists'),
-  '-f': tx('通常ファイルとして存在する', 'is an existing regular file'),
-  '-d': tx('ディレクトリとして存在する', 'is an existing directory'),
-  '-L': tx('シンボリックリンクである', 'is a symbolic link'),
-  '-h': tx('シンボリックリンクである', 'is a symbolic link'),
-  '-r': tx('読み取り可能である', 'is readable'),
-  '-w': tx('書き込み可能である', 'is writable'),
-  '-x': tx('実行可能である', 'is executable'),
-  '-s': tx('空でないファイルである（サイズ > 0）', 'is a non-empty file'),
-  '-p': tx('名前付きパイプ(FIFO)である', 'is a named pipe'),
-  '-S': tx('ソケットである', 'is a socket'),
-  '-b': tx('ブロックデバイスである', 'is a block device'),
-  '-c': tx('キャラクタデバイスである', 'is a character device'),
-  '-t': tx('端末に接続されたファイルディスクリプタである', 'is a file descriptor open on a terminal'),
-  '-z': tx('空文字列である（長さ 0）', 'is an empty string'),
-  '-n': tx('空文字列でない（長さ 1 以上）', 'is a non-empty string'),
-  '-v': tx('設定済みの変数名である', 'is the name of a set variable'),
-  '-o': tx('有効になっているシェルオプション名である', 'is an enabled shell option'),
+/**
+ * What a unary test operator of `[ ]`, `[[ ]]` and `test` tests: the predicate (`said`; in Japanese without the `である` a noun takes at the
+ * end of a clause, `copula`), and what its row adds after it (`aside`). The row says them together (`unaryTestOps`); the sentence of the line
+ * says the predicate only, in the form its frame takes (`空文字列なら`, `空文字列である間`; src/linesentence.ts).
+ */
+export interface UnaryTest { said: Text; aside?: Text; copula?: true }
+const UNARY_TESTS: Record<string, UnaryTest> = {
+  '-a': { said: tx('存在する', 'exists'), aside: tx('（`-e` と同じ。非推奨）', ' (same as `-e`, obsolescent)') },
+  '-g': { said: tx('setgid ビットが付いている', 'has the setgid bit set') },
+  '-u': { said: tx('setuid ビットが付いている', 'has the setuid bit set') },
+  '-k': { said: tx('スティッキービットが付いている', 'has the sticky bit set') },
+  '-O': { said: tx('実効ユーザー ID が所有している', 'is owned by the effective user ID') },
+  '-G': { said: tx('実効グループ ID が所有している', 'is owned by the effective group ID') },
+  '-N': { said: tx('前回読んでから変更されている', 'was modified since it was last read') },
+  '-R': { said: tx('参照変数（nameref）として設定された変数名', 'is the name of a variable set as a name reference'), copula: true },
+  '-e': { said: tx('存在する', 'exists'), aside: tx('（種類は問わない）', '') },
+  '-f': { said: tx('通常ファイルとして存在する', 'is an existing regular file') },
+  '-d': { said: tx('ディレクトリとして存在する', 'is an existing directory') },
+  '-L': { said: tx('シンボリックリンク', 'is a symbolic link'), copula: true },
+  '-h': { said: tx('シンボリックリンク', 'is a symbolic link'), copula: true },
+  '-r': { said: tx('読み取り可能', 'is readable'), copula: true },
+  '-w': { said: tx('書き込み可能', 'is writable'), copula: true },
+  '-x': { said: tx('実行可能', 'is executable'), copula: true },
+  '-s': { said: tx('空でないファイル', 'is a non-empty file'), aside: tx('（サイズ > 0）', ''), copula: true },
+  '-p': { said: tx('名前付きパイプ(FIFO)', 'is a named pipe'), copula: true },
+  '-S': { said: tx('ソケット', 'is a socket'), copula: true },
+  '-b': { said: tx('ブロックデバイス', 'is a block device'), copula: true },
+  '-c': { said: tx('キャラクタデバイス', 'is a character device'), copula: true },
+  '-t': { said: tx('端末に接続されたファイルディスクリプタ', 'is a file descriptor open on a terminal'), copula: true },
+  '-z': { said: tx('空文字列', 'is an empty string'), aside: tx('（長さ 0）', ''), copula: true },
+  '-n': { said: tx('空文字列でない', 'is a non-empty string'), aside: tx('（長さ 1 以上）', '') },
+  '-v': { said: tx('設定済みの変数名', 'is the name of a set variable'), copula: true },
+  '-o': { said: tx('有効になっているシェルオプション名', 'is an enabled shell option'), copula: true },
 };
+/** What each unary primary of a test tests (`UnaryTest`). */
+export const unaryTests: Readonly<Record<string, UnaryTest>> = UNARY_TESTS;
+/** The predicate in a clause of its own (with `である` where the Japanese is a noun). */
+const predicate = (t: UnaryTest): Text => (t.copula ? tx(`${t.said.ja}である`, t.said.en) : t.said);
+export const unaryTestOps: Record<string, Text> = Object.fromEntries(Object.entries(UNARY_TESTS).map(([op, t]) => [op, t.aside ? tx(predicate(t).ja + t.aside.ja, predicate(t).en + t.aside.en) : predicate(t)]));
 
 /** `=`, `==` and `!=` inside `[[ ]]`, where the right side is a pattern (in `[ ]` and `test` it is plain text: see `binaryTestOps`). */
 export const extendedEqualOps: Record<string, Text> = {
