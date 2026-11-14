@@ -401,6 +401,19 @@ describe('every test of find, in each place of the sentence (#844)', () => {
   it('spaces a Latin word or a number from the Japanese after it, and nothing else (`jaGlue`)', () => {
     assert.deepStrictEqual([jaGlue('1 KiB', 'を超える'), jaGlue('root', 'かつ'), jaGlue('2', 'なら'), jaGlue('KiB', '、かつ'), jaGlue('バイト', 'を'), jaGlue('）', 'なら')],
       ['1 KiB を超える', 'root かつ', '2 なら', 'KiB、かつ', 'バイトを', '）なら']);
+    // (And kana or kanji before Latin letters or an option; not before a number, `8日`, nor before a bracket.)
+    assert.deepStrictEqual([jaGlue('なら', 'NUL 区切り'), jaGlue('なら', '-fprint x'), jaGlue('かつ', '8日'), jaGlue('なら', '「rm」'), jaGlue('、', 'NUL')],
+      ['なら NUL 区切り', 'なら -fprint x', 'かつ8日', 'なら「rm」', '、NUL']);
+  });
+
+  it('takes no `する` after an action it says as written, in Japanese (#844)', () => {
+    const tree = (expr: string) => parseFind(expr.split(' '), (w) => (w === '-fprint' || w === '-name' ? 1 : 0))!;
+    assert.strictEqual(describeFind(tree('-fprint ref'), 'ja'), '検索条件と処理: -fprint ref');
+    assert.strictEqual(describeFind(tree('-name x -fprint ref'), 'ja'), '検索条件と処理: 名前が x に一致するなら -fprint ref');
+    assert.strictEqual(describeFind(tree('-name x -print -fprint ref'), 'ja'), '検索条件と処理: 名前が x に一致するなら表示する、-fprint ref');
+    assert.strictEqual(describeFind(tree('-fprint ref -name x'), 'ja'), '検索条件と処理: -fprint ref、続けて名前が x に一致する');
+    assert.strictEqual(describeFind(tree('-name x -print -delete'), 'ja'), '検索条件と処理: 名前が x に一致するなら表示して削除する');
+    assert.strictEqual(findReading(tree('-name x -print0'), 'ja'), '名前が x に一致するなら NUL 区切りで表示する');
   });
 
   it('says each one in English as a condition of "if …, print it"', () => {

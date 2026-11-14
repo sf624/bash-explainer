@@ -185,16 +185,20 @@ interface Phrase {
   tail?: string;
   /** In Japanese, a phrase that ends in a verb or an adjective (`超える`, `より新しい`): it has no noun to stand before `かつ`. */
   verb?: true;
+  /** The primary's words as written, which this reader has no phrase for: they take no `する` as an action. */
+  raw?: true;
   aside?: string;
   unread?: true;
 }
 
 /**
- * Japanese text joined to what follows it (`かつ`, `なら`, a particle): a space between a word of Latin letters or digits and kana or
- * kanji, as docs/japanese-style.md asks of code and of numbers (`1 KiB を`, `root かつ`, `2 なら`).
+ * Japanese text joined to what follows it (`かつ`, `なら`, a particle, a phrase): a space between a word of Latin letters or digits and the
+ * kana or kanji after it, and between kana or kanji and a word of Latin letters after them, as docs/japanese-style.md asks of code and of
+ * numbers (`1 KiB を`, `root かつ`, `2 なら`, `なら NUL 区切り`). A number after Japanese is not spaced: `かつ8日以上前`, as `8日` itself.
  */
 export function jaGlue(a: string, b: string): string {
-  return a + (/[A-Za-z0-9]$/.test(a) && /^[ぁ-ゖァ-ヺー一-鿿]/.test(b) ? ' ' : '') + b;
+  const ja = /[ぁ-ゖァ-ヺー一-鿿]/;
+  return a + ((/[A-Za-z0-9]$/.test(a) && ja.test(b.charAt(0))) || (ja.test(a.slice(-1)) && /^[A-Za-z-]/.test(b)) ? ' ' : '') + b;
 }
 
 /** A short phrase for a primary, e.g. `-mtime +7` → "modified more than 7 days ago". */
@@ -331,7 +335,7 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = 
           : verb(said(s(`${x[nm[1]][0]}時刻が ${a} の${x[nm[2]][0]}時刻より新しい`, `${x[nm[1]][1]} more recently than ${a} was ${x[nm[2]][1]}`)));
       }
       // (A primary this reader has no phrase for: its words as written.)
-      return said(p.name + (a ? ` ${a}` : ''), undefined, true);
+      return { ...said(p.name + (a ? ` ${a}` : ''), undefined, true), raw: true };
     }
   }
 }
@@ -353,6 +357,9 @@ const prunes = (n: FindNode): boolean => (n.type === 'primary' ? n.name === '-pr
  */
 function describe(n: FindNode, lang: Lang, asides = true, form?: 'stem' | 'test' | 'noun', asTest = false): string | undefined {
   const s = pick(lang);
+  // (An action as a verb, `する` after its noun in Japanese; one unread is its words as written.)
+  const rawOf = (c: FindNode): boolean => c.type === 'primary' && !!phrase(c, lang).raw;
+  const acted = (c: FindNode, t: string): string => (rawOf(c) ? t : s(`${t}する`, t));
   const all = (nodes: readonly FindNode[]): string[] | undefined => {
     const out = nodes.map((c) => describe(c, lang, asides));
     return out.every((x) => x !== undefined) ? out as string[] : undefined;
@@ -361,7 +368,7 @@ function describe(n: FindNode, lang: Lang, asides = true, form?: 'stem' | 'test'
     case 'primary': {
       const p = phrase(n, lang, asTest);
       const said = p.text + (form === 'noun' ? '' : p.ends ?? '') + (p.tail ?? '');
-      const text = isAction(n) && !asTest && form === undefined ? s(`${said}する`, said) : said;
+      const text = isAction(n) && !asTest && !p.raw && form === undefined ? s(`${said}する`, said) : said;
       return asides ? text + (p.aside ?? '') : p.unread ? undefined : text;
     }
     // (What is inside once: as an argument of each language it would be read twice for each level.)
@@ -394,7 +401,7 @@ function describe(n: FindNode, lang: Lang, asides = true, form?: 'stem' | 'test'
       // (A test after an action, `-delete -name x`, does not keep the action from running: each is said in its order, and the expression
       // has no reading. Nor has one where an action is inside a part, `\( -name x -print \) -name y`.)
       if (!inOrder) {
-        return asides ? texts.map((t, i) => (tests[i] ? t : s(`${t}する`, t))).join(s('、続けて', ', then ')) : undefined;
+        return asides ? texts.map((t, i) => (tests[i] ? t : acted(n.children[i], t))).join(s('、続けて', ', then ')) : undefined;
       }
       // (In Japanese, a test before `かつ` stands as a noun: one that ends in a verb or an adjective, and a negation, has none, and the
       // expression has no reading; its row says it with `、かつ`.)
@@ -402,12 +409,15 @@ function describe(n: FindNode, lang: Lang, asides = true, form?: 'stem' | 'test'
       const nounless = (c: FindNode): boolean => c.type === 'not' || (c.type === 'primary' && !!phrase(c, lang).verb);
       if (!asides && lang === 'ja' && conds.slice(0, -1).some(([c]) => nounless(c))) return undefined;
       const condText = lang === 'ja'
-        ? conds.reduce((out, [c, t], i) => (i ? jaGlue(out, (nounless(conds[i - 1][0]) ? '、かつ' : 'かつ') + t) : t), '')
+        ? conds.reduce((out, [, t], i) => (i ? jaGlue(jaGlue(out, nounless(conds[i - 1][0]) ? '、かつ' : 'かつ'), t) : t), '')
         : conds.map(([, t]) => t).join(' and ');
       const acts = texts.filter((_, i) => !tests[i]);
       if (!acts.length) return condText;
-      const actText = s(`${acts.join('して')}する`, acts.join(', then '));
-      return condText ? s(jaGlue(condText, `なら${actText}`), `if ${condText}, ${actText}`) : actText;
+      // (In Japanese the actions are joined with `して` and end in `する`; where one is unread, its words as written, each is said apart.)
+      const actions = n.children.filter((_, i) => !tests[i]);
+      const actText = lang === 'en' ? acts.join(', then ')
+        : actions.some(rawOf) ? acts.map((t, i) => acted(actions[i], t)).join('、') : `${acts.reduce((out, t) => jaGlue(jaGlue(out, 'して'), t))}する`;
+      return condText ? s(jaGlue(jaGlue(condText, 'なら'), actText), `if ${condText}, ${actText}`) : actText;
     }
   }
 }
