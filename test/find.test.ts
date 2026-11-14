@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
-import { describeFind, findReading, parseFind } from '../src/embedded/find';
+import { describeFind, findReading, jaGlue, parseFind } from '../src/embedded/find';
 import { commands } from '../src/dict/commands';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens } from './support/explain';
@@ -262,6 +262,8 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.strictEqual(said('-name one -o -name blk -print'), 'Conditions and actions: if name matches one, do nothing; otherwise, if name matches blk, print it');
     assert.strictEqual(said('-name one -o -name blk -print', 'ja'), '検索条件と処理: 名前が one に一致するなら何もしない。そうでなければ、名前が blk に一致するなら表示する');
     assert.strictEqual(findReading(tree('-name one -o -name blk -print'), 'en'), undefined);
+    // (A group or a negation in a branch is looked into for an action.)
+    assert.strictEqual(said('( -name one ) -o ! -name blk -print'), 'Conditions and actions: if (name matches one), do nothing; otherwise, if not (name matches blk), print it');
     // (With `-prune`, each branch acts: said as one clause.)
     assert.strictEqual(findReading(tree('-name one -prune -o -name blk -print'), 'en'), 'if name matches one, skip it without descending, or if name matches blk, print it');
     // (An action inside a part: said as before, with no reading.)
@@ -394,6 +396,11 @@ describe('every test of find, in each place of the sentence (#844)', () => {
     assert.strictEqual(row(['-size', '+1k', '-type', 'f'], 'ja'), 'サイズが 1 KiB を超える（単位に切り上げて比べる）、かつ通常ファイルなら表示する（処理の指定が無いので `-print` が補われる）');
     assert.strictEqual(reading(['-type', 'f', '-size', '+1k'], 'ja'), '通常ファイルかつサイズが 1 KiB を超えるなら表示する');
     assert.strictEqual(reading(['-user', 'root', '-type', 'f'], 'ja'), '所有者が root かつ通常ファイルなら表示する');
+  });
+
+  it('spaces a Latin word or a number from the Japanese after it, and nothing else (`jaGlue`)', () => {
+    assert.deepStrictEqual([jaGlue('1 KiB', 'を超える'), jaGlue('root', 'かつ'), jaGlue('2', 'なら'), jaGlue('KiB', '、かつ'), jaGlue('バイト', 'を'), jaGlue('）', 'なら')],
+      ['1 KiB を超える', 'root かつ', '2 なら', 'KiB、かつ', 'バイトを', '）なら']);
   });
 
   it('says each one in English as a condition of "if …, print it"', () => {
