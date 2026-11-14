@@ -12,6 +12,8 @@ import { explainHostedLine, extractShell, hostKind } from '../src/hosts';
 import { lineSentence, problemCodes } from '../src/linesentence';
 import { clausesOf, MESSAGES, type FactId, isProblem, type SentenceClause } from '../src/messages';
 import { jaSpaced, listSaid } from '../src/messages-sentence';
+import { ASIDES as SED_ASIDES, WHOLE as SED_WHOLE } from '../src/embedded/sed';
+import { unaryTests } from '../src/dict/syntax';
 import { codeSpan } from '../src/label';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { shellState } from '../src/semantics/state';
@@ -245,7 +247,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     // unread, several programs, a test of two words, `sudo find`, a reading that would nest parentheses or pass the length).
     ["find . \\( -name '*.log' -o -name '*.tmp' \\) -mtime +7 -print", 0, "Runs `find`: if (name matches *.log, or name matches *.tmp) and modified at least 8 days ago, print it.", "`find` を実行し、（名前が *.log に一致する、または名前が *.tmp に一致する）かつ8日以上前に更新されたなら表示する。"],
     ["find . -name '*.c'", 0, "Runs `find`: if name matches *.c, print it.", "`find` を実行し、名前が *.c に一致するなら表示する。"],
-    ["find . -size +10k -delete", 0, "Runs `find`: if size over 10 KiB, delete it.", "`find` を実行し、サイズが 10 KiBを超えるなら削除する。"],
+    ["find . -size +10k -delete", 0, "Runs `find`: if size over 10 KiB, delete it.", "`find` を実行し、サイズが 10 KiB を超えるなら削除する。"],
     ["find . -name \"$p\"", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["find . -name x -exec rm {}", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["find . -exec sh -c 'wc -l {}' \\;", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
@@ -322,6 +324,22 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["find . -name y -iname x", 0, "Runs `find`: if name matches y and name matches x (any case), print it.", "`find` を実行し、名前が y に一致かつ名前が x に一致する（大小文字区別なし）なら表示する。"],
     ["if [ -n \"$x\" ]; then a; fi", 0, "If `\"$x\"` is a non-empty string, runs `a`.", "`\"$x\"` が空文字列でないなら、`a` を実行する。"],
     ["[ -L l ]", 0, "Tests whether `l` is a symbolic link.", "`l` がシンボリックリンクかを判定する。"],
+    // (Second review of #844: an `-o` where only some branches act gives no reading; a test with no noun form before 「かつ」 in Japanese gives
+    // no reading in either language; a Latin word is spaced from the Japanese after it.)
+    ["find . -name '*.c' -o -name '*.h' -print", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -size +1k -type f", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -type f -size +1k", 0, "Runs `find`: if a regular file and size over 1 KiB, print it.", "`find` を実行し、通常ファイルかつサイズが 1 KiB を超えるなら表示する。"],
+    ["find . -newer a -type f", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -links +2 -type f", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -perm -644 -type f", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -user root -type f", 0, "Runs `find`: if owned by root and a regular file, print it.", "`find` を実行し、所有者が root かつ通常ファイルなら表示する。"],
+    ["find . -type f -user root", 0, "Runs `find`: if a regular file and owned by root, print it.", "`find` を実行し、通常ファイルかつ所有者が root なら表示する。"],
+    ["find . -size -1k -print", 0, "Runs `find`: if empty, print it.", "`find` を実行し、空なら表示する。"],
+    ["find . -size 0", 0, "Runs `find`: if empty, print it.", "`find` を実行し、空なら表示する。"],
+    ["find . -size 3 -type f", 0, "Runs `find`: if size of exactly 3 512-byte blocks and a regular file, print it.", "`find` を実行し、サイズがちょうど 3 512バイトのブロックかつ通常ファイルなら表示する。"],
+    ["find . -path ./x -prune -o -name y -print", 0, "Runs `find`: if path matches ./x, skip it without descending, or if name matches y, print it.", "`find` を実行し、パスが ./x に一致するならその中には入らずスキップする、または名前が y に一致するなら表示する。"],
+    ["find . ! -name a -type f", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -links 2", 0, "Runs `find`: if exactly 2 hard links, print it.", "`find` を実行し、ハードリンク数がちょうど 2 なら表示する。"],
 ];
 
 /** The files of the corpus: sample.sh and the other fixtures, the host files with their shell parts. */
@@ -687,12 +705,15 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
         ['find . -size -3k', 'en', ' (rounded up to whole units, less than 3)'], ['find . -size -3k', 'ja', '（単位に切り上げて 3 未満）'],
         ['find . -samefile a', 'en', ' (same inode)'], ['find . -samefile a', 'ja', '（同じ inode）'],
         ['find . -name x', 'en', ' (no action is given'], ['find . -name x', 'ja', '（処理の指定が無いので'],
-        ["sed '1d' f", 'en', ' (print nothing and start the next cycle)'], ["sed '1d' f", 'ja', '（出力せず、次の行の処理に進む）'],
-        ["sed -n '/a/p' f", 'en', ' (with `-n`, prints only the selected lines)'], ["sed -n '/a/p' f", 'ja', '（`-n` と組み合わせて'],
         ["awk 'NR>1' f", 'en', ' (no action means `print`)'], ["awk 'NR>1' f", 'ja', '（アクションを省略すると'],
-        ['[ -z "$x" ]', 'ja', '（長さ 0）'], ['[ -n "$x" ]', 'ja', '（長さ 1 以上）'], ['[ -e f ]', 'ja', '（種類は問わない）'], ['[ -s f ]', 'ja', '（サイズ > 0）'],
-        ['[ -a f ]', 'en', ' (same as `-e`, obsolescent)'], ['[ -a f ]', 'ja', '（`-e` と同じ。非推奨）'],
+        // (The asides of the tables: sed's commands, each with the `-n` its reading needs (`WHOLE`), and the unary tests.)
+        ...Object.entries(SED_ASIDES).flatMap(([c, a]) => {
+          const src = `sed ${SED_WHOLE[c] ? '-n ' : ''}'1${c}' f`;
+          return [[src, 'en', a![1]], [src, 'ja', a![0]]] as [string, 'en' | 'ja', string][];
+        }),
+        ...Object.entries(unaryTests).flatMap(([op, t]) => (['en', 'ja'] as const).filter((l) => t.aside?.[l]).map((l): [string, 'en' | 'ja', string] => [`[ ${op} f ]`, l, t.aside![l]])),
       ];
+      assert.ok(ASIDES.length >= 20, String(ASIDES.length));
       const found: string[] = [];
       for (const [src, lang, aside] of ASIDES) {
         const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, undefined, { sentence: true });
