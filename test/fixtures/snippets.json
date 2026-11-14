@@ -243,6 +243,7 @@
  "-size xyz",
  "-t 1 -a -t 2",
  "-t 1 -a -t x",
+ "-type",
  "-type q",
  "-x",
  "-z a -a -q b",

@@ -27,7 +27,7 @@ const SIMPLE: Record<string, [string, string]> = {
 };
 
 /** What the row of a command of `SIMPLE` adds after what it does. */
-const ASIDES: Partial<Record<string, [string, string]>> = {
+export const ASIDES: Partial<Record<string, [string, string]>> = {
   d: ['（出力せず、次の行の処理に進む）', ' (print nothing and start the next cycle)'],
   p: ['（`-n` と組み合わせて、選んだ行だけを出力するのに使う）', ' (with `-n`, prints only the selected lines)'],
 };
@@ -36,7 +36,7 @@ const ASIDES: Partial<Record<string, [string, string]>> = {
  * The commands of `SIMPLE` whose text is the whole of what a script of that command alone does, with `-n` given (`true`) or not: `d`
  * deletes what auto-print would print; `p` with `-n` prints only what it selects (without `-n` it prints those lines twice).
  */
-const WHOLE: Partial<Record<string, boolean>> = { d: false, p: true };
+export const WHOLE: Partial<Record<string, boolean>> = { d: false, p: true };
 
 /**
  * Where the bracket expression that opens at `at` ends, as GNU sed finds the end of a regex: after its `]` (one first, or after

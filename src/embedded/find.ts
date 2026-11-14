@@ -183,14 +183,26 @@ interface Phrase {
    */
   ends?: string;
   tail?: string;
+  /** In Japanese, a phrase that ends in a verb or an adjective (`超える`, `より新しい`): it has no noun to stand before `かつ`. */
+  verb?: true;
   aside?: string;
   unread?: true;
+}
+
+/**
+ * Japanese text joined to what follows it (`かつ`, `なら`, a particle): a space between a word of Latin letters or digits and kana or
+ * kanji, as docs/japanese-style.md asks of code and of numbers (`1 KiB を`, `root かつ`, `2 なら`).
+ */
+export function jaGlue(a: string, b: string): string {
+  return a + (/[A-Za-z0-9]$/.test(a) && /^[ぁ-ゖァ-ヺー一-鿿]/.test(b) ? ' ' : '') + b;
 }
 
 /** A short phrase for a primary, e.g. `-mtime +7` → "modified more than 7 days ago". */
 function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = false): Phrase {
   const s = pick(lang);
   const said = (text: string, aside?: string, unread?: true): Phrase => ({ text, ...(aside ? { aside } : {}), ...(unread ? { unread } : {}) });
+  // (A phrase whose Japanese ends in a verb or an adjective: `verb`, in Japanese only.)
+  const verb = (ph: Phrase): Phrase => (lang === 'ja' ? { ...ph, verb: true } : ph);
   // (A phrase whose Japanese ends in a noun of action, `ends` in the line's language: nothing in English.)
   const acted = (ph: Phrase, ends: string, tail = ''): Phrase => (lang === 'ja' ? { ...ph, ends, ...(tail ? { tail } : {}) } : { ...ph, text: ph.text + tail });
   const a = p.args[0] ?? '';
@@ -240,9 +252,9 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = 
     case '-amin': return age('分', 'minutes', ['アクセス', 'accessed']);
     case '-ctime': return age('日', 'days', ['状態変更', 'changed'], true);
     case '-cmin': return age('分', 'minutes', ['状態変更', 'changed']);
-    case '-newer': return said(s(`更新が ${a} より新しい`, `newer than ${a}`));
-    case '-anewer': return said(s(`アクセス時刻が ${a} の更新時刻より新しい`, `accessed more recently than ${a} was modified`));
-    case '-cnewer': return said(s(`状態変更時刻が ${a} の更新時刻より新しい`, `status changed more recently than ${a} was modified`));
+    case '-newer': return verb(said(s(`更新が ${a} より新しい`, `newer than ${a}`)));
+    case '-anewer': return verb(said(s(`アクセス時刻が ${a} の更新時刻より新しい`, `accessed more recently than ${a} was modified`)));
+    case '-cnewer': return verb(said(s(`状態変更時刻が ${a} の更新時刻より新しい`, `status changed more recently than ${a} was modified`)));
     case '-size': {
       const m = /^([+-]?)(\d+)([bcwkMGTP]?)$/.exec(a);
       if (!m) return said(s(`サイズが ${a}`, `size ${a}`), undefined, true);
@@ -254,13 +266,13 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = 
       };
       const [uj, ue] = unit[u];
       // find rounds the size UP to whole units before comparing.
-      if (sign === '+') return said(s(`サイズが ${k} ${uj}を超える`, `size over ${k} ${ue}`), s('（単位に切り上げて比べる）', ' (rounded up to whole units before comparing)'));
-      if (sign === '-') {
-        return k === 1
-          ? said(s('サイズが 0（空）のものだけ', 'empty files only'), s(`（\`-1${u}\` は単位に切り上げて 1 未満、つまり空ファイルだけ）`, ` (\`-1${u}\`: size rounded up to ${ue} is less than 1, so only size 0)`))
-          : said(s(`サイズが ${Math.max(k - 1, 0)} ${uj}以下`, `size at most ${Math.max(k - 1, 0)} ${ue}`), s(`（単位に切り上げて ${k} 未満）`, ` (rounded up to whole units, less than ${k})`));
+      if (sign === '+') return verb(said(s(`サイズが ${k} ${jaGlue(uj, 'を超える')}`, `size over ${k} ${ue}`), s('（単位に切り上げて比べる）', ' (rounded up to whole units before comparing)')));
+      // (Rounded up to whole units, a size less than 1 or of exactly 0 is that of an empty file.)
+      if ((sign === '-' && k === 1) || (!sign && k === 0)) {
+        return said(s('空', 'empty'), sign ? s(`（\`-1${u}\` は単位に切り上げて 1 未満、つまり空ファイルだけ）`, ` (\`-1${u}\`: size rounded up to ${ue} is less than 1, so only size 0)`) : s('（単位に切り上げて 0 なのはサイズ 0 だけ）', ' (only size 0 rounds up to 0 units)'));
       }
-      return said(s(`サイズが切り上げて ${k} ${uj}ちょうど`, `size of exactly ${k} ${ue} after rounding up to whole units`));
+      if (sign === '-') return said(s(`サイズが ${Math.max(k - 1, 0)} ${jaGlue(uj, '以下')}`, `size at most ${Math.max(k - 1, 0)} ${ue}`), s(`（単位に切り上げて ${k} 未満）`, ` (rounded up to whole units, less than ${k})`));
+      return said(s(`サイズがちょうど ${k} ${uj}`, `size of exactly ${k} ${ue}`), s('（単位に切り上げて比べる）', ' (rounded up to whole units)'));
     }
     case '-empty': return said(s('空', 'empty'));
     case '-user': return said(s(`所有者が ${a}`, `owned by ${a}`));
@@ -271,15 +283,16 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = 
       const mode = /^[-/]/.test(a) ? a.slice(1) : a;
       const bits = permBits(mode, lang);
       const named = bits ? s(`（${bits}）`, ` (${bits})`) : '';
-      if (a.startsWith('-')) return said(s(`権限に ${mode} のビット${named}がすべて立っている（他のビットは問わない）`, `permissions include all the bits of ${mode}${named}, whatever the other bits are`));
-      if (a.startsWith('/')) return said(s(`権限に ${mode} のビット${named}が1つでも立っている`, `permissions have at least one of the bits of ${mode}${named}`));
+      if (a.startsWith('-')) return verb(said(s(`権限に ${mode} のビット${named}がすべて立っている（他のビットは問わない）`, `permissions include all the bits of ${mode}${named}, whatever the other bits are`)));
+      if (a.startsWith('/')) return verb(said(s(`権限に ${mode} のビット${named}が1つでも立っている`, `permissions have at least one of the bits of ${mode}${named}`)));
       return said(s(`権限がちょうど ${a}${named}`, `permissions exactly ${a}${named}`));
     }
     case '-links': {
       const k = a.replace(/^[+-]/, '');
-      return said(a.startsWith('+') ? s(`ハードリンク数が ${k} より多い`, `more than ${k} hard links`) : a.startsWith('-') ? s(`ハードリンク数が ${k} より少ない`, `fewer than ${k} hard links`) : s(`ハードリンク数がちょうど ${k}`, `exactly ${k} hard links`));
+      if (a.startsWith('+')) return verb(said(s(`ハードリンク数が ${k} より多い`, `more than ${k} hard links`)));
+      return a.startsWith('-') ? verb(said(s(`ハードリンク数が ${k} より少ない`, `fewer than ${k} hard links`))) : said(s(`ハードリンク数がちょうど ${k}`, `exactly ${k} hard links`));
     }
-    case '-samefile': return said(s(`ファイルが ${a} と同じ`, `the same file as ${a}`), s('（同じ inode）', ' (same inode)'));
+    case '-samefile': return said(s(`ファイルが ${a} と同一`, `the same file as ${a}`), s('（同じ inode）', ' (same inode)'));
     case '-maxdepth': return said(s(`深さ ${a} まで`, `at most ${a} level${a === '1' ? '' : 's'} deep`));
     case '-mindepth': return said(s(`深さ ${a} 以上`, `at least ${a} level${a === '1' ? '' : 's'} deep`));
     case '-readable': return said(s('読み取り可能', 'readable'));
@@ -313,9 +326,9 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = 
       const nm = /^-newer([acBm])([acBmt])$/.exec(p.name);
       if (nm) {
         const x: Record<string, [string, string]> = { a: ['アクセス', 'accessed'], c: ['状態変更', 'status changed'], B: ['作成', 'created'], m: ['更新', 'modified'] };
-        return said(nm[2] === 't'
-          ? s(`${x[nm[1]][0]}が ${a} より後`, `${x[nm[1]][1]} after ${a}`)
-          : s(`${x[nm[1]][0]}時刻が ${a} の${x[nm[2]][0]}時刻より新しい`, `${x[nm[1]][1]} more recently than ${a} was ${x[nm[2]][1]}`));
+        return nm[2] === 't'
+          ? said(s(`${x[nm[1]][0]}が ${a} より後`, `${x[nm[1]][1]} after ${a}`))
+          : verb(said(s(`${x[nm[1]][0]}時刻が ${a} の${x[nm[2]][0]}時刻より新しい`, `${x[nm[1]][1]} more recently than ${a} was ${x[nm[2]][1]}`)));
       }
       // (A primary this reader has no phrase for: its words as written.)
       return said(p.name + (a ? ` ${a}` : ''), undefined, true);
@@ -327,6 +340,8 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = 
 const isAction = (n: FindNode): boolean => n.type === 'primary' && (ACTIONS.has(n.name) || n.name === '-prune');
 /** An action that runs a command for each file and is true where it succeeds (`-exec … ;`, `-ok … ;`): followed by more, a test. */
 const runsEach = (n: FindNode): boolean => n.type === 'primary' && /^-(exec|ok)(dir)?$/.test(n.name) && !!n.ended && n.args[n.args.length - 1] === ';';
+/** Whether a part of the expression has an action (`-prune` too). */
+const acts = (n: FindNode): boolean => (n.type === 'primary' ? isAction(n) : n.type === 'not' || n.type === 'group' ? acts(n.child) : n.children.some(acts));
 /** Whether `-prune` is in the expression: with no action, the implied `-print` prints what it prunes too. */
 const prunes = (n: FindNode): boolean => (n.type === 'primary' ? n.name === '-prune' : n.type === 'not' || n.type === 'group' ? prunes(n.child) : n.children.some(prunes));
 
@@ -353,7 +368,17 @@ function describe(n: FindNode, lang: Lang, asides = true, form?: 'stem' | 'test'
     case 'not': { const inner = describe(n.child, lang, asides); return inner === undefined ? undefined : s(`「${inner}」ではない`, `not (${inner})`); }
     case 'group': { const inner = describe(n.child, lang, asides); return inner === undefined ? undefined : s(`（${inner}）`, `(${inner})`); }
     // Only at the top or in `( )`: `-o` binds the loosest.
-    case 'or': return all(n.children)?.join(s('、または', ', or '));
+    case 'or': {
+      const texts = all(n.children);
+      if (!texts) return undefined;
+      // (Where some branches act and others do not, `a -o b -print`, each is said apart, so that the action is not read as the whole's:
+      // find does nothing for a file of a branch with no action. No reading: one clause cannot say it.)
+      // (A branch with `-prune` acts too; where no branch has an action of its own, `-print` is implied for the whole, which says it.)
+      if (n.children.some(hasAction) && n.children.some((c) => !acts(c))) {
+        return asides ? texts.map((t, i) => (acts(n.children[i]) ? t : s(jaGlue(t, 'なら何もしない'), `if ${t}, do nothing`))).join(s('。そうでなければ、', '; otherwise, ')) : undefined;
+      }
+      return texts.join(s('、または', ', or '));
+    }
     case 'list': return all(n.children)?.join(s('、次に', ', then '));
     case 'and': {
       const last = n.children.length - 1;
@@ -371,11 +396,18 @@ function describe(n: FindNode, lang: Lang, asides = true, form?: 'stem' | 'test'
       if (!inOrder) {
         return asides ? texts.map((t, i) => (tests[i] ? t : s(`${t}する`, t))).join(s('、続けて', ', then ')) : undefined;
       }
-      const condText = texts.filter((_, i) => tests[i]).join(s('かつ', ' and '));
+      // (In Japanese, a test before `かつ` stands as a noun: one that ends in a verb or an adjective, and a negation, has none, and the
+      // expression has no reading; its row says it with `、かつ`.)
+      const conds = n.children.map((c, i) => [c, texts[i]] as const).filter((_, i) => tests[i]);
+      const nounless = (c: FindNode): boolean => c.type === 'not' || (c.type === 'primary' && !!phrase(c, lang).verb);
+      if (!asides && lang === 'ja' && conds.slice(0, -1).some(([c]) => nounless(c))) return undefined;
+      const condText = lang === 'ja'
+        ? conds.reduce((out, [c, t], i) => (i ? jaGlue(out, (nounless(conds[i - 1][0]) ? '、かつ' : 'かつ') + t) : t), '')
+        : conds.map(([, t]) => t).join(' and ');
       const acts = texts.filter((_, i) => !tests[i]);
       if (!acts.length) return condText;
       const actText = s(`${acts.join('して')}する`, acts.join(', then '));
-      return condText ? s(`${condText}なら${actText}`, `if ${condText}, ${actText}`) : actText;
+      return condText ? s(jaGlue(condText, `なら${actText}`), `if ${condText}, ${actText}`) : actText;
     }
   }
 }
@@ -423,7 +455,7 @@ function doneWith(n: FindNode, body: string, lang: Lang): string {
   const s = pick(lang);
   if (hasAction(n)) return body;
   const what = n.type === 'or' || n.type === 'list' ? s(`（${body}）`, `(${body})`) : body;
-  return s(`${what}なら表示する`, `if ${what}, print it`);
+  return s(jaGlue(what, 'なら表示する'), `if ${what}, print it`);
 }
 
 /** `refused`: find refuses the line (a word no predicate takes, per `strayWords`); the summary says so before what it would do. */

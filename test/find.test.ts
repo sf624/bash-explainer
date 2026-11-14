@@ -3,6 +3,7 @@ import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
 import { describeFind, findReading, parseFind } from '../src/embedded/find';
+import { commands } from '../src/dict/commands';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens } from './support/explain';
 
@@ -201,15 +202,15 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.deepStrictEqual(find('-size', '+100k'), ['k100', 'm']);
     assert.deepStrictEqual(find('-size', '-2k'), ['empty', 'one']);
     assert.deepStrictEqual(find('-size', '-1c'), ['empty']);
-    assert.match(text('-size -1k'), /empty files only/);
+    assert.match(text('-size -1k'), /^If empty \(`-1k`: size rounded up to KiB is less than 1, so only size 0\)/);
     assert.match(text('-size -3k'), /at most 2 KiB \(rounded up/);
-    assert.match(text('-size 10'), /exactly 10 512-byte blocks after rounding up/);
+    assert.match(text('-size 10'), /exactly 10 512-byte blocks \(rounded up to whole units\)/);
     assert.match(text('-size +100k'), /over 100 KiB \(rounded up/);
     assert.match(text('-size xyz'), /size xyz/);
     assert.match(describeFind(parseFind(['-size', '-1M'], () => 1)!, 'ja'), /空ファイルだけ/);
-    assert.match(describeFind(parseFind(['-size', '-3M'], () => 1)!, 'ja'), /2 MiB以下/);
-    assert.match(describeFind(parseFind(['-size', '+3M'], () => 1)!, 'ja'), /3 MiBを超える/);
-    assert.match(describeFind(parseFind(['-size', '3M'], () => 1)!, 'ja'), /3 MiBちょうど/);
+    assert.match(describeFind(parseFind(['-size', '-3M'], () => 1)!, 'ja'), /2 MiB 以下/);
+    assert.match(describeFind(parseFind(['-size', '+3M'], () => 1)!, 'ja'), /3 MiB を超える/);
+    assert.match(describeFind(parseFind(['-size', '3M'], () => 1)!, 'ja'), /ちょうど 3 MiB（単位に切り上げて比べる）/);
   });
   it('the reading "In short" says (`findReading`, #843) is the row\'s, from the same phrases, without how find counts and rounds', () => {
     const reading = (expr: string, lang: 'en' | 'ja' = 'en') => findReading(parseFind(expr.split(' '), (w) => (['-mtime', '-size', '-perm', '-type', '-exec'].includes(w) ? 1 : 0))!, lang);
@@ -219,7 +220,7 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.strictEqual(text('-mtime +7'), 'If modified at least 8 days ago (age is counted in whole days, fraction dropped: `+7` means more than 7 whole days), print it (no action is given, so `-print` is implied)');
     assert.strictEqual(reading('-mtime +7', 'ja'), '8日以上前に更新されたなら表示する');
     assert.deepStrictEqual(find('-size', '-1M'), ['empty']);
-    assert.strictEqual(reading('-size -1M'), 'if empty files only, print it');
+    assert.strictEqual(reading('-size -1M'), 'if empty, print it');
     assert.strictEqual(reading('-size +100k -print'), 'if size over 100 KiB, print it');
     assert.strictEqual(reading('-mtime -7'), 'if modified less than 7 days (168 hours) ago, print it');
     // (A primary find refuses, or one the reader has no phrase for, leaves the expression unread: no reading.)
@@ -255,6 +256,14 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.deepStrictEqual(run('-exec', 'ls', '{}', '+', '-name', 'one'), ['blk', 'empty', 'k100', 'm', 'one']);
     assert.strictEqual(said('-exec true {} + -name one'), 'Conditions and actions: run "true {}" on all at once, then name matches one');
     assert.strictEqual(findReading(tree('-exec true {} + -name one'), 'en'), undefined);
+    // (`-a` binds tighter than `-o`: `a -o b -print` prints only what b matches, and nothing for a; no `-print` is implied, an action
+    // being there. Before, the row said "name matches one, or if name matches blk, print it".)
+    assert.deepStrictEqual(run('-name', 'one', '-o', '-name', 'blk', '-print'), ['blk']);
+    assert.strictEqual(said('-name one -o -name blk -print'), 'Conditions and actions: if name matches one, do nothing; otherwise, if name matches blk, print it');
+    assert.strictEqual(said('-name one -o -name blk -print', 'ja'), '検索条件と処理: 名前が one に一致するなら何もしない。そうでなければ、名前が blk に一致するなら表示する');
+    assert.strictEqual(findReading(tree('-name one -o -name blk -print'), 'en'), undefined);
+    // (With `-prune`, each branch acts: said as one clause.)
+    assert.strictEqual(findReading(tree('-name one -prune -o -name blk -print'), 'en'), 'if name matches one, skip it without descending, or if name matches blk, print it');
     // (An action inside a part: said as before, with no reading.)
     assert.strictEqual(findReading(tree('( -name one -print ) -name two'), 'en'), undefined);
   });
@@ -340,5 +349,62 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.match(t('find . -mmin 1'), /exactly 1 minute ago/);
     assert.match(t('find . -mmin +"$M"'), /more than "\$M" minutes ago/);
     assert.match(t("find . -mindepth 2 -type f"), /at least 2 levels deep/);
+  });
+});
+
+describe('every test of find, in each place of the sentence (#844)', () => {
+  // (Each test of the find spec (`expressionSpec`), with sample values, before `-type f` (in Japanese, before `かつ`: a noun) and after it (last,
+  // before `なら`: a predicate). A phrase with no noun form gives no reading, never a broken join; the row joins it with `、かつ`.)
+  const spec = commands.find.expressionSpec!;
+  const NOT_TESTS = new Set(['-ls', '-printf', '-fprint', '-quit', '-okdir', '-H', '-P', '-L', '-exec', '-execdir', '-ok', '-delete', '-print', '-print0', '-prune', '-not', '-o', '-a', '-regextype']);
+  const SAMPLES: Record<string, string[]> = {
+    '-size': ['+1k', '-1k', '-3k', '0', '3', '-1', '+2M'], '-perm': ['644', '-644', '/222'], '-links': ['+2', '-2', '2'], '-type': ['f', 'd,l'],
+    '-user': ['root'], '-group': ['root'], '-maxdepth': ['2'], '-mindepth': ['1'],
+  };
+  const ages = ['+7', '-7', '0', '3'];
+  const arity = (w: string) => (spec.options!.find((o) => o.names.includes(w))?.value ? 1 : 0);
+  const exprs: string[][] = [];
+  for (const o of spec.options!) {
+    const name = o.names[0];
+    if (NOT_TESTS.has(name)) continue;
+    const values = !o.value ? [[]] : (SAMPLES[name] ?? (/^-[acm](time|min)$/.test(name) ? ages : ['ref'])).map((v) => [v]);
+    for (const n of o.names) for (const v of values) exprs.push([n, ...v]);
+  }
+  const reading = (w: string[], lang: 'en' | 'ja') => findReading(parseFind(w, arity)!, lang);
+  const row = (w: string[], lang: 'en' | 'ja') => describeFind(parseFind(w, arity)!, lang);
+  // (A predicate before `かつ`, `超えるかつ`; Latin letters or digits glued to `かつ` or `なら`, or to the kana after them, `KiBを`.)
+  const BROKEN = /(る|い|た|ない)(（[^）]*）)?かつ|[A-Za-z0-9](かつ|なら)|[A-Za-z][ぁ-ゖ]/;
+
+  it('says each one in Japanese with the form its place needs, or gives no reading', () => {
+    const found: string[] = [];
+    let read = 0;
+    for (const p of exprs) {
+      for (const w of [[...p, '-type', 'f'], ['-type', 'f', ...p]]) {
+        const ja = reading(w, 'ja');
+        if (ja !== undefined) read++;
+        if (ja !== undefined && BROKEN.test(ja)) found.push(`reading ${w.join(' ')}: ${ja}`);
+        const r = row(w, 'ja');
+        if (BROKEN.test(r)) found.push(`row ${w.join(' ')}: ${r}`);
+      }
+    }
+    assert.deepStrictEqual(found, []);
+    assert.ok(exprs.length > 60 && read > 60, `${exprs.length} ${read}`);
+    // (A phrase with no noun before `かつ`: no reading in either language, and the row says it with `、かつ`.)
+    assert.strictEqual(reading(['-size', '+1k', '-type', 'f'], 'en'), undefined);
+    assert.strictEqual(row(['-size', '+1k', '-type', 'f'], 'ja'), 'サイズが 1 KiB を超える（単位に切り上げて比べる）、かつ通常ファイルなら表示する（処理の指定が無いので `-print` が補われる）');
+    assert.strictEqual(reading(['-type', 'f', '-size', '+1k'], 'ja'), '通常ファイルかつサイズが 1 KiB を超えるなら表示する');
+    assert.strictEqual(reading(['-user', 'root', '-type', 'f'], 'ja'), '所有者が root かつ通常ファイルなら表示する');
+  });
+
+  it('says each one in English as a condition of "if …, print it"', () => {
+    const found: string[] = [];
+    for (const p of exprs) {
+      const en = reading([...p, '-type', 'f'], 'en');
+      if (en !== undefined && (!/^if .+, print it$/.test(en) || /\bonly\b|after rounding/.test(en))) found.push(`${p.join(' ')}: ${en}`);
+    }
+    assert.deepStrictEqual(found, []);
+    assert.strictEqual(reading(['-size', '-1k'], 'en'), 'if empty, print it');
+    assert.strictEqual(reading(['-size', '0'], 'en'), 'if empty, print it');
+    assert.strictEqual(reading(['-size', '3'], 'en'), 'if size of exactly 3 512-byte blocks, print it');
   });
 });
