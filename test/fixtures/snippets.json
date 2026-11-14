@@ -225,6 +225,7 @@
  "-f \"$f\"",
  "-f a",
  "-f a -a -f b",
+ "-mtime +1 -exec rm",
  "-mtime +7 -foo",
  "-mtime x",
  "-n",

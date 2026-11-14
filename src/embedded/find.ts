@@ -3,6 +3,7 @@ import { describeGlob, globParts } from '../expansion';
 import type { OptionSpec } from '../argv/spec';
 import { untilEnd } from '../argv/until';
 import { pick } from './types';
+import { nestsParens } from '../label';
 import type { Shell } from '../shellfeatures';
 import { staticWordValue } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
@@ -174,14 +175,27 @@ function hasAction(n: FindNode): boolean {
  * counts, rounds or refuses), which the sentence of the line leaves out (`findReading`). `unread`: find does not read the
  * primary so (an unknown one, or an argument it refuses), and the expression has no reading of its own.
  */
-interface Phrase { text: string; aside?: string; unread?: true }
+interface Phrase {
+  text: string;
+  /**
+   * In Japanese, what makes a phrase that ends in a noun of action a predicate (`一致` + `する`, `更新` + `された`), and what follows it
+   * (`tail`: `（大小文字区別なし）`): the predicate ends a clause (before `なら`, `、または`), the noun stands before `かつ`.
+   */
+  ends?: string;
+  tail?: string;
+  aside?: string;
+  unread?: true;
+}
 
 /** A short phrase for a primary, e.g. `-mtime +7` → "modified more than 7 days ago". */
-function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): Phrase {
+function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang, asTest = false): Phrase {
   const s = pick(lang);
   const said = (text: string, aside?: string, unread?: true): Phrase => ({ text, ...(aside ? { aside } : {}), ...(unread ? { unread } : {}) });
+  // (A phrase whose Japanese ends in a noun of action, `ends` in the line's language: nothing in English.)
+  const acted = (ph: Phrase, ends: string, tail = ''): Phrase => (lang === 'ja' ? { ...ph, ends, ...(tail ? { tail } : {}) } : { ...ph, text: ph.text + tail });
   const a = p.args[0] ?? '';
-  const age = (unitJa: string, unitEn: string, what: [string, string], wholeDays = false): Phrase => {
+  const age = (unitJa: string, unitEn: string, what: [string, string], wholeDays = false): Phrase => acted(ageOf(unitJa, unitEn, what, wholeDays), 'された');
+  const ageOf = (unitJa: string, unitEn: string, what: [string, string], wholeDays: boolean): Phrase => {
     const n = a.replace(/^[+-]/, '');
     const k = Number(n);
     const day = (d: number | string) => `${d} ${unitEn.replace(/s$/, d === 1 ? '' : 's')}`;
@@ -213,11 +227,11 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): Phrase {
   };
   const types: Record<string, [string, string]> = { f: ['通常ファイル', 'a regular file'], d: ['ディレクトリ', 'a directory'], l: ['シンボリックリンク', 'a symlink'], p: ['名前付きパイプ', 'a named pipe'], s: ['ソケット', 'a socket'], b: ['ブロックデバイス', 'a block device'], c: ['キャラクタデバイス', 'a character device'] };
   switch (p.name) {
-    case '-name': return said(s(`名前が ${a} に一致`, `name matches ${a}`));
-    case '-iname': return said(s(`名前が ${a} に一致（大小文字区別なし）`, `name matches ${a} (any case)`));
-    case '-path': case '-wholename': return said(s(`パスが ${a} に一致`, `path matches ${a}`));
-    case '-ipath': return said(s(`パスが ${a} に一致（大小文字区別なし）`, `path matches ${a} (any case)`));
-    case '-regex': return said(s(`パス全体が正規表現 ${a} に一致`, `the whole path matches the regex ${a}`));
+    case '-name': return acted(said(s(`名前が ${a} に一致`, `name matches ${a}`)), 'する');
+    case '-iname': return acted(said(s(`名前が ${a} に一致`, `name matches ${a}`)), 'する', s('（大小文字区別なし）', ' (any case)'));
+    case '-path': case '-wholename': return acted(said(s(`パスが ${a} に一致`, `path matches ${a}`)), 'する');
+    case '-ipath': return acted(said(s(`パスが ${a} に一致`, `path matches ${a}`)), 'する', s('（大小文字区別なし）', ' (any case)'));
+    case '-regex': return acted(said(s(`パス全体が正規表現 ${a} に一致`, `the whole path matches the regex ${a}`)), 'する');
     // (A letter find does not know it refuses: `Unknown argument to -type`.)
     case '-type': return said(a.split(',').map((t) => (types[t] ? s(types[t][0], types[t][1]) : t)).join(s('か', ' or ')), undefined, a.split(',').every((t) => types[t]) ? undefined : true);
     case '-mtime': return age('日', 'days', ['更新', 'modified'], true);
@@ -226,7 +240,7 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): Phrase {
     case '-amin': return age('分', 'minutes', ['アクセス', 'accessed']);
     case '-ctime': return age('日', 'days', ['状態変更', 'changed'], true);
     case '-cmin': return age('分', 'minutes', ['状態変更', 'changed']);
-    case '-newer': return said(s(`${a} より新しい`, `newer than ${a}`));
+    case '-newer': return said(s(`更新が ${a} より新しい`, `newer than ${a}`));
     case '-anewer': return said(s(`アクセス時刻が ${a} の更新時刻より新しい`, `accessed more recently than ${a} was modified`));
     case '-cnewer': return said(s(`状態変更時刻が ${a} の更新時刻より新しい`, `status changed more recently than ${a} was modified`));
     case '-size': {
@@ -265,7 +279,7 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): Phrase {
       const k = a.replace(/^[+-]/, '');
       return said(a.startsWith('+') ? s(`ハードリンク数が ${k} より多い`, `more than ${k} hard links`) : a.startsWith('-') ? s(`ハードリンク数が ${k} より少ない`, `fewer than ${k} hard links`) : s(`ハードリンク数がちょうど ${k}`, `exactly ${k} hard links`));
     }
-    case '-samefile': return said(s(`${a} と同じファイル`, `the same file as ${a}`), s('（同じ inode）', ' (same inode)'));
+    case '-samefile': return said(s(`ファイルが ${a} と同じ`, `the same file as ${a}`), s('（同じ inode）', ' (same inode)'));
     case '-maxdepth': return said(s(`深さ ${a} まで`, `at most ${a} level${a === '1' ? '' : 's'} deep`));
     case '-mindepth': return said(s(`深さ ${a} 以上`, `at least ${a} level${a === '1' ? '' : 's'} deep`));
     case '-readable': return said(s('読み取り可能', 'readable'));
@@ -285,11 +299,14 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): Phrase {
       const batch = p.ended && p.args[p.args.length - 1] === '+';
       const ask = p.name === '-ok' || p.name === '-okdir';
       // (find refuses a command that nothing ends, or that is empty: the note of the line says so.)
-      if (p.refused) return said(s(cmd ? `「${cmd}」を実行` : 'コマンドがない', cmd ? `run "${cmd}"` : 'no command'), s('（find は受け付けない形）', ' (find refuses this form)'), true);
+      if (p.refused) return said(s(cmd ? `「${cmd}」を実行` : 'コマンドなしで実行', cmd ? `run "${cmd}"` : 'no command'), s('（find は受け付けない形）', ' (find refuses this form)'), true);
       // (Where a word is not known here, `"$@"`, nothing may end the command, and find may still run it: how often is not known.)
       const [howJ, howE] = !p.ended ? ['', ''] : batch ? ['まとめて', ' on all at once'] : ['1件ずつ', ' for each'];
       // (Its words joined with blanks: where one holds a blank, `sh -c 'wc -l {}'`, the text does not show where each ends, and the expression has no reading.)
-      return said(s(`${ask ? '確認してから' : ''}「${cmd}」を${howJ}実行`, `${ask ? 'ask, then ' : ''}run "${cmd}"${howE}`), undefined, p.ended && !p.args.some((x) => /\s/.test(x)) ? undefined : true);
+      const unread = p.ended && !p.args.some((x) => /\s/.test(x)) ? undefined : true;
+      // (Run for each file and followed by more, it is a test: what follows runs where the command succeeds, `runsEach`.)
+      if (asTest) return acted(said(s(`${ask ? '確認のうえ' : ''}「${cmd}」が成功`, `"${cmd}" succeeds${ask ? ' after asking' : ''}`), undefined, unread), 'する');
+      return said(s(`${ask ? '確認してから' : ''}「${cmd}」を${howJ}実行`, `${ask ? 'ask, then ' : ''}run "${cmd}"${howE}`), undefined, unread);
     }
     default: {
       // -newerXY REF: the X time of the file is newer than the Y time of REF (or than the date, with t).
@@ -306,11 +323,20 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): Phrase {
   }
 }
 
+/** An action of find (`-prune` too, which is true and acts). */
+const isAction = (n: FindNode): boolean => n.type === 'primary' && (ACTIONS.has(n.name) || n.name === '-prune');
+/** An action that runs a command for each file and is true where it succeeds (`-exec … ;`, `-ok … ;`): followed by more, a test. */
+const runsEach = (n: FindNode): boolean => n.type === 'primary' && /^-(exec|ok)(dir)?$/.test(n.name) && !!n.ended && n.args[n.args.length - 1] === ';';
+/** Whether `-prune` is in the expression: with no action, the implied `-print` prints what it prunes too. */
+const prunes = (n: FindNode): boolean => (n.type === 'primary' ? n.name === '-prune' : n.type === 'not' || n.type === 'group' ? prunes(n.child) : n.children.some(prunes));
+
 /**
  * The expression as one phrase, with the asides of its primaries (`asides`, the row's) or without them (the sentence's);
- * undefined, without them, where a primary is unread (`Phrase.unread`).
+ * undefined, without them, where a primary is unread (`Phrase.unread`) or the phrase is not what find does in the order it
+ * does it. An action ends in a verb (`する`), save where an `and` joins it to more (`stem`); `-exec … ;` before more is a test
+ * (`asTest`).
  */
-function describe(n: FindNode, lang: Lang, asides = true): string | undefined {
+function describe(n: FindNode, lang: Lang, asides = true, form?: 'stem' | 'test' | 'noun', asTest = false): string | undefined {
   const s = pick(lang);
   const all = (nodes: readonly FindNode[]): string[] | undefined => {
     const out = nodes.map((c) => describe(c, lang, asides));
@@ -318,26 +344,38 @@ function describe(n: FindNode, lang: Lang, asides = true): string | undefined {
   };
   switch (n.type) {
     case 'primary': {
-      const p = phrase(n, lang);
-      return asides ? p.text + (p.aside ?? '') : p.unread ? undefined : p.text;
+      const p = phrase(n, lang, asTest);
+      const said = p.text + (form === 'noun' ? '' : p.ends ?? '') + (p.tail ?? '');
+      const text = isAction(n) && !asTest && form === undefined ? s(`${said}する`, said) : said;
+      return asides ? text + (p.aside ?? '') : p.unread ? undefined : text;
     }
     // (What is inside once: as an argument of each language it would be read twice for each level.)
     case 'not': { const inner = describe(n.child, lang, asides); return inner === undefined ? undefined : s(`「${inner}」ではない`, `not (${inner})`); }
     case 'group': { const inner = describe(n.child, lang, asides); return inner === undefined ? undefined : s(`（${inner}）`, `(${inner})`); }
     // Only at the top or in `( )`: `-o` binds the loosest.
-    case 'or': return all(n.children)?.join(s('、または ', '; or '));
-    case 'list': return all(n.children)?.join(s('。次に ', ', then '));
+    case 'or': return all(n.children)?.join(s('、または', ', or '));
+    case 'list': return all(n.children)?.join(s('、次に', ', then '));
     case 'and': {
-      // Conditions followed by actions read as "if <conditions>: <actions>".
-      const conds = n.children.filter((c) => !(c.type === 'primary' && (ACTIONS.has(c.name) || c.name === '-prune')));
-      const acts = n.children.filter((c) => !conds.includes(c));
-      const condTexts = all(conds);
-      const actTexts = all(acts);
-      if (!condTexts || !actTexts) return undefined;
-      const condText = condTexts.join(s(' かつ ', ' and '));
+      const last = n.children.length - 1;
+      // (Each part a test or an action: `-exec … ;` followed by more is a test.)
+      const tests = n.children.map((c, i) => !isAction(c) || (i < last && runsEach(c)));
+      const first = tests.indexOf(false);
+      // (In Japanese, the tests before the last one before `かつ` as nouns: `名前が x に一致かつ…`.)
+      const lastTest = tests.lastIndexOf(true);
+      const inOrder = !tests.slice(first < 0 ? tests.length : first).some(Boolean) && !n.children.some((c) => !isAction(c) && hasAction(c));
+      const parts = n.children.map((c, i) => describe(c, lang, asides, !tests[i] ? 'stem' : inOrder && i < lastTest ? 'noun' : undefined, tests[i] && isAction(c)));
+      if (parts.some((x) => x === undefined)) return undefined;
+      const texts = parts as string[];
+      // (A test after an action, `-delete -name x`, does not keep the action from running: each is said in its order, and the expression
+      // has no reading. Nor has one where an action is inside a part, `\( -name x -print \) -name y`.)
+      if (!inOrder) {
+        return asides ? texts.map((t, i) => (tests[i] ? t : s(`${t}する`, t))).join(s('、続けて', ', then ')) : undefined;
+      }
+      const condText = texts.filter((_, i) => tests[i]).join(s('かつ', ' and '));
+      const acts = texts.filter((_, i) => !tests[i]);
       if (!acts.length) return condText;
-      const actText = actTexts.join(s('して', ', then '));
-      return condText ? s(`${condText}なら${actText}`, `if ${condText}: ${actText}`) : actText;
+      const actText = s(`${acts.join('して')}する`, acts.join(', then '));
+      return condText ? s(`${condText}なら${actText}`, `if ${condText}, ${actText}`) : actText;
     }
   }
 }
@@ -377,9 +415,15 @@ export function strayWords(n: FindNode): number[] {
   }
 }
 
-/** What find does with the expression `n`, said `body`: its conditions and actions, or where it has no action, `-print` of what matches. */
+/**
+ * What find does with the expression `n`, said `body`: its conditions and actions, or where it has no action, `-print` of what
+ * matches (an expression of `-o` or `,` in parentheses, as find adds them).
+ */
 function doneWith(n: FindNode, body: string, lang: Lang): string {
-  return hasAction(n) ? body : pick(lang)(`「${body}」に当てはまるものを表示する`, `Print what matches: ${body}`);
+  const s = pick(lang);
+  if (hasAction(n)) return body;
+  const what = n.type === 'or' || n.type === 'list' ? s(`（${body}）`, `(${body})`) : body;
+  return s(`${what}なら表示する`, `if ${what}, print it`);
 }
 
 /** `refused`: find refuses the line (a word no predicate takes, per `strayWords`); the summary says so before what it would do. */
@@ -393,17 +437,24 @@ export function describeFind(n: FindNode, lang: Lang, refused = false): string {
   const late = lateGlobalOption(n);
   const pitfall = late ? s(`（\`${late}\` は検索全体に効くオプションで、書いた位置より後の条件にだけ効くわけではない。条件より後に書くと find が警告する。先頭に書く）`, ` (\`${late}\` is a global option: it limits the whole search, not only the tests after it; find warns when it follows a test, so put it first)`) : '';
   if (hasAction(n)) return s(`検索条件と処理: ${body}${idiom}${pitfall}`, `Conditions and actions: ${body}${idiom}${pitfall}`);
-  return doneWith(n, body, lang) + s('（処理の指定が無いので `-print` が補われる）', ' (no action is given, so `-print` is implied)') + idiom + pitfall;
+  const done = doneWith(n, body, lang);
+  return s(done, done.charAt(0).toUpperCase() + done.slice(1)) + s('（処理の指定が無いので `-print` が補われる）', ' (no action is given, so `-print` is implied)') + idiom + pitfall;
 }
 
 /**
  * What find does with the expression `n`, in one clause, as its row says it (`describeFind`) without the row's label and its asides (how find
  * counts days, rounds sizes; the implied `-print`, an idiom, a pitfall): the reading the sentence of the line says (src/linesentence.ts).
- * Undefined where a primary is unread (`Phrase.unread`).
+ * Undefined where a primary is unread (`Phrase.unread`), where the phrase is not in find's order (`describe`), where `-prune` has no action
+ * after it (the implied `-print` prints what it prunes too), and where the phrase would have parentheses in parentheses in either language,
+ * so that both say the same.
  */
 export function findReading(n: FindNode, lang: Lang): string | undefined {
-  const body = describe(n, lang, false);
-  return body === undefined ? undefined : doneWith(n, body, lang);
+  if (!hasAction(n) && prunes(n)) return undefined;
+  const both = (['ja', 'en'] as const).map((l) => {
+    const body = describe(n, l, false);
+    return body === undefined ? undefined : doneWith(n, body, l);
+  });
+  return both.some((t) => t === undefined || nestsParens(t)) ? undefined : both[lang === 'ja' ? 0 : 1];
 }
 
 /** For `-name`-style patterns: what the glob means. */

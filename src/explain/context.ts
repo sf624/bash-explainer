@@ -53,7 +53,12 @@ export const memoKey = <V>(name: string): MemoKey<V> => ({ name });
  * (`does`); a test's condition (`condition`). The text is the row's own, from the same function, without the row's label and
  * asides (marked text). The sentence of the line says it (src/linesentence.ts), by the statement's node (a simple command, `[[ ]]`).
  */
-export interface StatementRead { kind: 'does' | 'condition'; text: string }
+export interface StatementRead {
+  kind: 'does' | 'condition';
+  text: string;
+  /** A condition whose Japanese ends in a noun (`空文字列`), which takes `である` where it ends a clause (`空文字列である間`), not before `なら`. */
+  copula?: true;
+}
 export const STATEMENT_READ = memoKey<StatementRead>('statementRead');
 /**
  * What a reader read of one word of a command, by the word: the program of a language of code in it (`EmbeddedToken.reading`), or

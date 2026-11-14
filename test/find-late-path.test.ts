@@ -72,7 +72,7 @@ describe('a path after the start of find\'s expression', () => {
       assert.match(summary(line), /^find refuses this expression and exits with status 1, running nothing/, line);
       assert.match(summary(line, 'ja'), /^find はこの式を受け付けず/, line);
     }
-    assert.match(summary('find . -name a -o -name b'), /^Print what matches: name matches a; or name matches b/);
+    assert.match(summary('find . -name a -o -name b'), /^If \(name matches a, or name matches b\), print it/);
     assert.ok(!/refuses/.test(summary('find . -name a $more')));
   });
 });
@@ -85,12 +85,12 @@ describe('where find\'s expression starts', () => {
     for (const [line, words] of [['find . , b', [',', 'b']], ['find . , -name a', [',']], ['find . \\) b', ['\\)', 'b']]] as const) {
       for (const w of words) assert.match(said(line, w), /^starting directory/, `${line}: ${w}`);
     }
-    assert.match(summary('find . , -name a'), /^Print what matches: name matches a/);
+    assert.match(summary('find . , -name a'), /^If name matches a, print it/);
   });
   withFind('`(` and `!` start it, and a `,` after it is the operator', () => {
     assert.strictEqual(real('.', '!', '-name', 'a').status, 0);
     assert.strictEqual(real('.', '-name', 'a', ',', '-name', 'b').out, './b');
-    assert.match(summary('find . -name a , -name b'), /^Print what matches: name matches a, then name matches b/);
+    assert.match(summary('find . -name a , -name b'), /^If \(name matches a, then name matches b\), print it/);
     assert.match(said('find . -name a , -name b', ','), /^evaluates both sides, and the value is the right one's/);
     assert.match(summary('find . -name a , -name b', 'ja'), /次に/);
   });

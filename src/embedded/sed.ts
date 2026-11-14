@@ -235,7 +235,7 @@ class SedParser {
       const forWhom = range ? s(`${target}に対して: `, `For ${target}: `) : '';
       // (With no address, the command's word is the whole of it, and says what the command says: no part of its own.)
       const t = this.tok(start, this.i, 'command', forWhom + summary, [...children, ...extra.filter((x) => x.start !== start || x.end !== this.i)]);
-      return whole === undefined ? t : { ...t, reading: forWhom + whole };
+      return whole === undefined ? t : { ...t, reading: this.readingFor(range ? target : undefined, whole) };
     };
 
     if (c === 's') return this.substitute(start, children, range ? target : undefined);
@@ -304,6 +304,14 @@ class SedParser {
       return done(expl, [cmdTok(`\`${c}\`: ${expl}`)]);
     }
     return this.tok(ci, ci + 1, 'error', s(`不明な sed コマンド \`${c}\``, `Unknown sed command \`${c}\``), children);
+  }
+
+  /**
+   * What a command does to the lines of its address (`target`; none for every line), as the sentence of the line says it: one clause, with no
+   * colon, where the row has "For …: " (`EmbeddedToken.reading`).
+   */
+  private readingFor(target: string | undefined, does: string): string {
+    return target === undefined ? does : this.s(`${target}に対して、${does}`, `on ${target}, ${does}`);
   }
 
   private substitute(start: number, children: EmbeddedToken[], target: string | undefined): EmbeddedToken {
@@ -390,7 +398,7 @@ class SedParser {
     const t = this.tok(start, this.i, 'command', forWhom + s('置換: ', 'Substitute: ') + replaces, [...children, ...parts]);
     // (What it does is the whole of a script of it alone where auto-print prints each line, and no flag but `g` or a number is given:
     // `p`, `w` and `e` do more, `i`, `m` and `M` change what matches.)
-    return this.quiet || flags.some((f) => !/[g0-9]/.test(f)) ? t : { ...t, reading: forWhom + replaces };
+    return this.quiet || flags.some((f) => !/[g0-9]/.test(f)) ? t : { ...t, reading: this.readingFor(target, replaces) };
   }
 
   /** `&`, `\1`… and case conversions in the replacement of `s`. */

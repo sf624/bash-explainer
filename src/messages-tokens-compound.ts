@@ -17,7 +17,7 @@ const endBefore = (p: { what: string; gap: string; co?: string; closer: string }
 
 /**
  * A unary test's condition (`what`: what the operator tests, in the line's language): the text of its row after `Condition: `
- * (`test-unary`), and, with the predicate alone (`unaryTestPredicates`), the condition the sentence of the line says (src/linesentence.ts).
+ * (`test-unary`), and, with the predicate alone (`unaryTests`), the condition the sentence of the line says (src/linesentence.ts).
  */
 export const unaryHolds = ({ operand, what }: { operand: string; what: string }): readonly [ja: string, en: string] => [
   `\`${operand}\` が${what}`,

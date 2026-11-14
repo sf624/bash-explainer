@@ -1338,3 +1338,12 @@ Rare corner, dropped (YAGNI). Kind: `bug`. Predates #830.
 Rare corner, dropped (YAGNI). Kind: `bug`. Predates #833.
 
 - **"Some paths make it read-only" for a variable that nothing makes readonly.** `alias a="$x"; f() { if [ "$1" ]; then f; echo $y; return; fi; IFS=:; }; f 1`: bash runs `IFS=:` in the inner call, and nothing makes `IFS` readonly. The token of `IFS=:` still says "But some paths before here make it read-only, and there this assignment fails". The recursive call of `f` is not walked, so `widen` (src/semantics/walk/widen.ts) takes what the body changes as unknown. For a variable not set before the call, it takes every attribute as unknown, `r` too; it keeps `r` only where it was on.
+
+## The readings "In short" says (found reviewing #844, 2026-11-15)
+
+Rare corner, dropped (YAGNI). Kind: `bug`. Each says in the sentence what its row says; both predate #844.
+
+- **`sed -z` says "on each line".** `sed -z 's/\n/,/g' f`: the row and the sentence say "replace every match of `\n` on each line with `,`"; with `-z`, GNU sed reads records ended by NUL, not lines (`printf 'a\nb\0c\n' | sed -z 's/\n/,/g'` gives `a,b`, NUL, `c,`).
+- **`awk` with `RS=` says "lines".** `awk '/a/' RS= f`: the sentence says "print lines matching `a`"; with an empty `RS`, awk reads paragraphs (records ended by blank lines), and prints each paragraph that matches whole.
+- **find's `,` operator.** `find . -name x , -name y`: the sentence says "if (name matches x, then name matches y), print it" (before #844, "print what matches: name matches x, then name matches y"); the value of a list is its last part's, so GNU find prints only the matches of `y`.
+- **`-v` of coreutils' `test`.** `/usr/bin/test -v x`: the sentence says "tests whether `x` is the name of a set variable", bash's builtin's reading; coreutils' `test` has no `-v` and fails with "unary operator expected" (status 2).

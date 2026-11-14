@@ -429,7 +429,7 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     // bash: `z=; find . $z -name x` is `find . -name x`; `find . -name x $fe` with `fe='-exec rm {} ;'` runs `rm` on each match.
     assert.strictEqual(tokenOf('z=; find . $z -name x', '$z').explanation, 'expands to no word, so `find` does not get it');
     const summary = allTokens(new Analyzer('en').explainLine(parser.parse('z=; find . -name x $z -print'), 0).items).find((t) => t.kind === 'test')!;
-    assert.strictEqual(summary.explanation, 'Conditions and actions: if name matches x: print it');
+    assert.strictEqual(summary.explanation, 'Conditions and actions: if name matches x, print it');
     assert.strictEqual(tokenOf('z=; find . -name x $z -print', '$z').explanation, 'expands to no word, so `find` does not get it');
     // (Inside the summary's span, and of a group's, the word is a part of the innermost, so that a hover reaches it.)
     for (const line of ['z=; find . -name x $z -print', 'z=; find . -name $z x', 'z=; find . \\( -name x $z \\)', 'z=; find . \\( -name x $z \\) -print']) {
@@ -444,7 +444,7 @@ describe('the fields of a word the model knows, read as bash gives them (bug 7 o
     assert.strictEqual(over.find((t) => t.kind === 'argument' && t.label === '$z')?.explanation, 'expands to no word, so `find` does not get it');
     // (A field read as itself keeps the summary; one find may read as an option does not: `x=-print`.)
     const summaryOf = (line: string) => allTokens(new Analyzer('en').explainLine(parser.parse(line), 0).items).find((t) => t.kind === 'test')?.explanation;
-    assert.strictEqual(summaryOf('p=a; find . -name "$p"'), 'Print what matches: name matches "$p" (no action is given, so `-print` is implied)');
+    assert.strictEqual(summaryOf('p=a; find . -name "$p"'), 'If name matches "$p", print it (no action is given, so `-print` is implied)');
     assert.strictEqual(summaryOf('x=-print; find . -name a $x'), undefined);
     const fe = allTokens(new Analyzer('en').explainLine(parser.parse('fe="-exec rm {} ;"; find . -name x $fe'), 0).items);
     assert.ok(!fe.some((t) => t.kind === 'test'), 'no summary of the words as written');

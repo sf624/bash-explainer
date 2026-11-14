@@ -244,7 +244,7 @@ describe('branches no other test takes', () => {
     assert.match(f('find . -print -quit'), /print it, then quit/);
     assert.strictEqual(parseFind(['-name', 'x', ')'], () => 1), undefined);
     assert.match(describeFind(parseFind(['-foo', 'bar'], () => 1)!, 'en'), /-foo bar/);
-    assert.strictEqual(describeFind(parseFind(['-xdev', '-type', 'x'], (p) => (p === '-type' ? 1 : 0))!, 'en'), 'Print what matches: -xdev and x (no action is given, so `-print` is implied)');
+    assert.strictEqual(describeFind(parseFind(['-xdev', '-type', 'x'], (p) => (p === '-type' ? 1 : 0))!, 'en'), 'If -xdev and x, print it (no action is given, so `-print` is implied)');
   });
 
   it('regex: BRE alternation and anchors, empty intervals, PCRE groups, classes, escapes', () => {

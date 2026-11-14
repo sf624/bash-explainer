@@ -24,7 +24,7 @@ import { effEndRow, intersects, isBlockLike } from './explain/nodes';
 import { redirectParts } from './explain/redirections';
 import { type Lang, lineRangeLabel } from './i18n';
 import { idiomSaid, type IdiomSpeaker } from './idioms';
-import { codeSpan, shorten } from './label';
+import { codeSpan, nestsParens, shorten } from './label';
 import { clausesOf, isProblemNote, type SentenceClause } from './messages';
 import { placeholderAlone, placeholderSaid } from './messages-argv';
 import { type Condition, EMPTY, ioSaid, listSaid, S, sentenceEnd } from './messages-sentence';
@@ -82,17 +82,6 @@ const ITEMS = 4;
  * and backticks are empty and their command runs (test/linesentence.test.ts).
  */
 const strayIn = (n: SyntaxNode): SyntaxNode | undefined => (readWhenExpanded(n) ? undefined : strayKeyword(n) ? n : n.namedChildren.map(strayIn).find(Boolean));
-
-/** Whether a text has parentheses in parentheses, outside its code spans (`(…)` of `$(…)` is code). */
-function nestsParens(text: string): boolean {
-  let depth = 0;
-  for (const ch of text.replace(/(`+)(.+?)\1/g, '')) {
-    if (ch === '(' || ch === '（') depth++;
-    else if (ch === ')' || ch === '）') depth--;
-    if (depth > 1) return true;
-  }
-  return false;
-}
 
 /** The sentence of `line`, or none when the line has no code (a comment, a blank line, code bash cannot read). */
 export function lineSentence(input: SentenceInput): Sentence | undefined {
@@ -332,7 +321,7 @@ class Composer implements IdiomSpeaker {
       case 'arithmetic_command': return S.arith(lang);
       case 'extended_test': {
         const holds = this.read(n, 'condition');
-        return holds === undefined ? S.testExt(lang) : S.testsWhether(lang, holds, '');
+        return holds === undefined ? S.testExt(lang) : S.testsWhether(lang, holds.text, '');
       }
       default: return this.opens(n);
     }
@@ -491,17 +480,17 @@ class Composer implements IdiomSpeaker {
 
   /** The condition of `if`, `while` or `until`: what a reader read of a test that is all of it, or the subject of "succeeds". */
   private condition(cond: readonly SyntaxNode[]): Condition {
-    const holds = cond.length === 1 ? this.read(cond[0], 'condition') : undefined;
-    return holds === undefined ? this.subject(cond) : { holds };
+    const r = cond.length === 1 ? this.read(cond[0], 'condition') : undefined;
+    return r === undefined ? this.subject(cond) : { holds: r.text, ...(r.copula ? { copula: true } : {}) };
   }
 
   /**
    * What a reader read of a statement's words (`SentenceInput.reads`) of the kind asked, at the levels that say it (`LEVELS`), and where
    * it holds no parentheses in parentheses, which the sentence never has (usability-9.md, U7).
    */
-  private read(n: SyntaxNode, kind: StatementRead['kind']): string | undefined {
+  private read(n: SyntaxNode, kind: StatementRead['kind']): StatementRead | undefined {
     const r = this.reads ? this.input.reads.get(n) : undefined;
-    return r?.kind === kind && !nestsParens(r.text) ? r.text : undefined;
+    return r?.kind === kind && !nestsParens(r.text) ? r : undefined;
   }
 
   /** The condition of `if`, `while` or `until`, as the subject of "succeeds". */
@@ -534,7 +523,7 @@ class Composer implements IdiomSpeaker {
     const io = [...assignments.map((a) => S.prefixSet(lang, codeSpan(field(a, 'name')!.text), this.value(a))), ...(redirectionsOf(c).length ? [this.io(redirectionsOf(c))] : [])].join(lang === 'ja' ? '、' : ', ');
     // (A test whose condition its reader read, `[ -f a ]`, `test -n "$x"`: that condition.)
     const holds = this.read(c, 'condition');
-    if (holds !== undefined) return S.testsWhether(lang, holds, io);
+    if (holds !== undefined) return S.testsWhether(lang, holds.text, io);
     // (A command on another line of a statement over several lines has no record of the command, as a closing line's: the model tells `[` and a function.)
     if (this.isTest(c)) return S.tests(lang, BRACKET, io);
     if (said?.kind === 'function') return S.calls(lang, codeSpan(said.names[0]), io);
@@ -547,7 +536,7 @@ class Composer implements IdiomSpeaker {
     const rule = this.input.status.status(c);
     const status = rule.kind === 'given' && !rule.refused && fields(c, 'argument').some((a) => a.text === String(rule.value)) ? rule.value : undefined;
     // (What a reader read of its words, find's expression or a program of one command, in place of what the command does.)
-    const does = this.read(c, 'does');
+    const does = this.read(c, 'does')?.text;
     const clause = S.runs(lang, does === undefined ? this.noun(c) : this.nameOf(c), options, io, status, does);
     // (A declaration builtin's assignments, `local x=$1`: the values they give; none where its options make it name functions or print, `declare -f x=1`.)
     const how = this.declaring(c, said);
