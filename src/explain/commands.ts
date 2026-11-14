@@ -6,7 +6,7 @@
 // redirections set up first, the command inside); and the keyword `time`.
 import type { Kind, Span, Token } from '../analyzer-types';
 import type { ArgRole, ArgvParse } from '../argv/interpret';
-import { languageWords, onlyInFunction, readsFields } from '../argv/query';
+import { givenOptions, languageWords, onlyInFunction, readsFields } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
 import type { Basis } from '../basis';
 import { argWord } from '../argv/words';
@@ -322,9 +322,12 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, prefix:
 /**
  * What the command does with its words, where they hold one program of a language of code (`PROGRAMS`: a sed or an awk script)
  * or find's expression, and its reader read it whole (`WORD_READ`); none where they hold several (`sed -e a -e b`), or the reader
- * read it in part. (`parse` is the command's own reading: a command it runs, as `sudo find`'s, is not its words.)
+ * read it in part, or an option is given that the spec does not know. (`parse` is the command's own reading: a command it runs, as
+ * `sudo find`'s, is not its words.)
  */
 function wordsRead(cx: Explainer, parse: ArgvParse, args: readonly SyntaxNode[]): StatementRead | undefined {
+  // (An option the spec does not know may take a word or change what the program does, or the tool refuses it: `gawk -i inplace 'NR>1'`.)
+  if (givenOptions(parse).some(({ role }) => role.role === 'unknown-option')) return undefined;
   const words = [...(parse.expression === undefined ? [] : [parse.expression]), ...languageWords(parse, PROGRAMS)];
   const text = words.length === 1 ? cx.memo(WORD_READ).get(args[words[0]]) : undefined;
   return text === undefined ? undefined : { kind: 'does', text };

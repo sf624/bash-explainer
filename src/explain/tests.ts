@@ -5,7 +5,7 @@
 import type { Kind, TestPart, Token } from '../analyzer-types';
 import { arithLiteralIn, evalArith, invalidLiteral } from '../arith';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
-import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, rematchClause, testOperandTexts, unaryTestOperands, unaryTestOps, unaryTestPredicates } from '../dict/syntax';
+import { binaryTestOp, binaryTestOperands, binaryTestOps, collationTexts, extendedEqualOps, plainPatternOps, rematchClause, testOperandTexts, unaryTestOperands, unaryTestOps, unaryTests } from '../dict/syntax';
 import { hasGlob } from '../embedded/glob';
 import { explainRegex } from '../embedded/regex';
 import type { EmbeddedToken } from '../embedded/types';
@@ -165,10 +165,14 @@ export function testTokens(cx: Explainer, n: SyntaxNode, b: BracketTest, e: Test
 const wordsText = (n: SyntaxNode, b: BracketTest, from: number, to: number): string =>
   n.text.slice(b.words[from].nodes[0].startIndex - n.startIndex, b.words[to].nodes[b.words[to].nodes.length - 1].endIndex - n.startIndex);
 
-/** The condition of a unary test (`unaryHolds`) with its predicate alone: what the sentence of the line says the test tests. */
+/**
+ * The condition of a unary test (`unaryHolds`) with its predicate alone, in Japanese without the `である` of a noun (`copula`, which the
+ * sentence adds where its frame needs it): what the sentence of the line says the test tests.
+ */
 function unaryRead(cx: Explainer, operand: string, op: string): StatementRead {
-  const [ja, en] = unaryHolds({ operand, what: cx.t(unaryTestPredicates[op]) });
-  return { kind: 'condition', text: cx.s(ja, en) };
+  const t = unaryTests[op];
+  const [ja, en] = unaryHolds({ operand, what: cx.t(t.said) });
+  return { kind: 'condition', text: cx.s(ja, en), ...(t.copula && cx.lang === 'ja' ? { copula: true as const } : {}) };
 }
 
 /** The condition of a unary expression of `[[ ]]`, for the test whose only expression it is (`test`). */

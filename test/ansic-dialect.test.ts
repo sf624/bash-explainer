@@ -128,8 +128,8 @@ describe('`$\'…\'` in the shell the script is for', () => {
 
     it('reads the words of find, and a command name, as the shell spells them', () => {
       const test = (shell: Shell) => tokens("find . -name $'*.c' -print", shell).find((t) => t.kind === 'test')!.explanation;
-      assert.match(test('dash'), /if name matches \$\*\.c: print it/);
-      assert.match(test('bash'), /if name matches \*\.c: print it/);
+      assert.match(test('dash'), /if name matches \$\*\.c, print it/);
+      assert.match(test('bash'), /if name matches \*\.c, print it/);
       // (`$'echo'` is the program `$echo` in dash: painted and read as one.)
       const facts = (shell: Shell) => { const tree = parser.parse("$'echo' hi"); return semanticFacts(tree, shellState(tree, shell), shell)[0].kind; };
       assert.deepStrictEqual([facts('bash'), facts('dash')], ['builtin', 'command']);

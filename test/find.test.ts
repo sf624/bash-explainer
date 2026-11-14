@@ -30,7 +30,7 @@ describe('find expressions', () => {
   it('describes conditions, groups, negation and the implicit -print', () => {
     const w = '( -name *.log -o -name *.tmp ) -mtime +7'.split(' ');
     assert.strictEqual(describeFind(parseFind(w, arity)!, 'en'),
-      'Print what matches: (name matches *.log; or name matches *.tmp) and modified at least 8 days ago (age is counted in whole days, fraction dropped: `+7` means more than 7 whole days) (no action is given, so `-print` is implied)');
+      'If (name matches *.log, or name matches *.tmp) and modified at least 8 days ago (age is counted in whole days, fraction dropped: `+7` means more than 7 whole days), print it (no action is given, so `-print` is implied)');
     assert.match(describeFind(parseFind('! -newer ref'.split(' '), arity)!, 'en'), /not \(newer than ref\)/);
     assert.match(describeFind(parseFind('-wholename ./a/*'.split(' '), arity)!, 'en'), /path matches \.\/a\/\*/);
     assert.match(describeFind(parseFind('-mmin -5'.split(' '), arity)!, 'en'), /modified less than 5 minutes ago/);
@@ -38,7 +38,7 @@ describe('find expressions', () => {
 
   it('reads actions after conditions and spots the -prune idiom', () => {
     const d = describeFind(parseFind('-path ./node_modules -prune -o -type f -print'.split(' '), arity)!, 'en');
-    assert.match(d, /^Conditions and actions: if path matches \.\/node_modules: skip it without descending; or if a regular file: print it/);
+    assert.match(d, /^Conditions and actions: if path matches \.\/node_modules, skip it without descending, or if a regular file, print it/);
     assert.match(d, /usual way to exclude a directory/);
     assert.match(describeFind(parseFind('-name *.gz -exec rm {} +'.split(' '), arity)!, 'en'), /run "rm \{\}" on all at once/);
   });
@@ -53,7 +53,7 @@ describe('find in a command line', () => {
   it('wraps the expression in one token with grouping, operators and primaries inside', () => {
     const ts = tokens("find . \\( -name '*.log' -o -name '*.tmp' \\) -mtime +7");
     const expr = ts.find((t) => t.kind === 'test')!;
-    assert.match(expr.explanation, /^Print what matches: \(name matches \*\.log; or name matches \*\.tmp\)/);
+    assert.match(expr.explanation, /^If \(name matches \*\.log, or name matches \*\.tmp\)/);
     assert.ok(ts.some((t) => t.kind === 'block' && /^Group/.test(t.explanation)));
     assert.match(ts.find((t) => t.label === '-o')!.explanation, /lower precedence than `-a`/);
     assert.match(ts.find((t) => t.label === "'*.log'" && t.kind === 'argument')!.explanation, /pattern: any string \+ "\.log"/);
@@ -103,7 +103,7 @@ describe('find in a command line', () => {
     const end = (line: string) => all(tokens(line)).find((t) => t.kind === 'operator' && /^End of /.test(t.explanation))!.explanation;
     assert.match(summary('find . -ok rm {} \\;'), /ask, then run "rm \{\}" for each$/);
     assert.match(summary('find . -okdir rm {} \\;'), /ask, then run "rm \{\}" for each$/);
-    assert.match(summary('find . -ok rm {} \\;', 'ja'), /確認してから「rm \{\}」を1件ずつ実行$/);
+    assert.match(summary('find . -ok rm {} \\;', 'ja'), /確認してから「rm \{\}」を1件ずつ実行する$/);
     assert.match(summary('find . -execdir rm {} +'), /run "rm \{\}" on all at once$/);
     assert.match(end('find . -ok rm {} \\;'), /^End of `-ok`: run once per match/);
     assert.match(end('find . -okdir rm {} \\;'), /^End of `-okdir`: run once per match/);
@@ -113,8 +113,8 @@ describe('find in a command line', () => {
     assert.match(summary('find . -ok echo {} +'), /run "echo \{\} \+" \(find refuses this form\)$/);
     assert.match(summary('find . -okdir echo {} +'), /run "echo \{\} \+" \(find refuses this form\)$/);
     assert.match(summary('find . -exec \\;'), /no command \(find refuses this form\)$/);
-    assert.match(summary('find . -exec echo x', 'ja'), /「echo x」を実行（find は受け付けない形）$/);
-    assert.match(summary('find . -exec \\;', 'ja'), /コマンドがない（find は受け付けない形）$/);
+    assert.match(summary('find . -exec echo x', 'ja'), /「echo x」を実行する（find は受け付けない形）$/);
+    assert.match(summary('find . -exec \\;', 'ja'), /コマンドなしで実行する（find は受け付けない形）$/);
   });
 
   it('reads the words as find gets them, after the quote removal of bash', () => {
@@ -129,7 +129,7 @@ describe('find in a command line', () => {
       for (const p of [`'a'"b"`, `'a'b'c'`, `"a"b`, `a\\b`, `'a"b'`, `"'a'b"`, `\\'a\\'b`, `"a'b'c"`]) {
         const line = `find . -type f -name ${p}`;
         // What we say find matches, what bash gives find, and what find finds with it.
-        const said = /name matches (.*) \(no action/.exec(tokens(line).find((t) => t.kind === 'test')!.explanation)![1];
+        const said = /name matches (.*), print it \(no action/.exec(tokens(line).find((t) => t.kind === 'test')!.explanation)![1];
         assert.strictEqual(said, bash(`printf %s ${p}`), line);
         assert.deepStrictEqual(found(execFileSync('find', ['.', '-type', 'f', '-name', said], { cwd: dir, timeout: 10000 }).toString()), found(bash(line)), line);
       }
@@ -185,9 +185,9 @@ describe('find numeric tests behave as the explanations say', () => {
     for (const w of ['-"$K"']) assert.match(text(`-mtime ${w}`), /less than `"\$K"` days ago/);
     assert.match(text(`-mtime "$K"`), /as many days ago as `"\$K"` says, in whole days with the fraction dropped \(`\+N` N \+ 1 days or more, `-N` under N days, `N` from N to N \+ 1 days\)/);
     const ja = (w: string) => describeFind(parseFind(['-mtime', w], () => 1)!, 'ja');
-    assert.match(ja('+"$K"'), /\(`"\$K"` \+ 1\) 日以上前に更新（日数は端数を切り捨てて数える）/);
-    assert.match(ja('-"$K"'), /`"\$K"` 日未満の間に更新/);
-    assert.match(ja('"$K"'), /`"\$K"` が示す日数だけ前に更新（24 時間単位で端数を切り捨てる。`\+N` は N\+1 日以上前、`-N` は N 日未満、`N` は N 日以上 N\+1 日未満）/);
+    assert.match(ja('+"$K"'), /\(`"\$K"` \+ 1\) 日以上前に更新された（日数は端数を切り捨てて数える）/);
+    assert.match(ja('-"$K"'), /`"\$K"` 日未満の間に更新された/);
+    assert.match(ja('"$K"'), /`"\$K"` が示す日数だけ前に更新された（24 時間単位で端数を切り捨てる。`\+N` は N\+1 日以上前、`-N` は N 日未満、`N` は N 日以上 N\+1 日未満）/);
     // One is singular.
     assert.match(text('-mtime -1'), /less than 1 day \(24 hours\) ago/);
     assert.match(text('-mtime +0'), /at least 1 day ago/);
@@ -215,18 +215,48 @@ describe('find numeric tests behave as the explanations say', () => {
     const reading = (expr: string, lang: 'en' | 'ja' = 'en') => findReading(parseFind(expr.split(' '), (w) => (['-mtime', '-size', '-perm', '-type', '-exec'].includes(w) ? 1 : 0))!, lang);
     // (The files find gives are those the row says, above: the reading says the same, less the aside.)
     assert.deepStrictEqual(find('-mtime', '+7'), ['k100']);
-    assert.strictEqual(reading('-mtime +7'), 'Print what matches: modified at least 8 days ago');
-    assert.strictEqual(text('-mtime +7'), 'Print what matches: modified at least 8 days ago (age is counted in whole days, fraction dropped: `+7` means more than 7 whole days) (no action is given, so `-print` is implied)');
-    assert.strictEqual(reading('-mtime +7', 'ja'), '「8日以上前に更新」に当てはまるものを表示する');
+    assert.strictEqual(reading('-mtime +7'), 'if modified at least 8 days ago, print it');
+    assert.strictEqual(text('-mtime +7'), 'If modified at least 8 days ago (age is counted in whole days, fraction dropped: `+7` means more than 7 whole days), print it (no action is given, so `-print` is implied)');
+    assert.strictEqual(reading('-mtime +7', 'ja'), '8日以上前に更新されたなら表示する');
     assert.deepStrictEqual(find('-size', '-1M'), ['empty']);
-    assert.strictEqual(reading('-size -1M'), 'Print what matches: empty files only');
-    assert.strictEqual(reading('-size +100k -print'), 'if size over 100 KiB: print it');
-    assert.strictEqual(reading('-mtime -7'), 'Print what matches: modified less than 7 days (168 hours) ago');
+    assert.strictEqual(reading('-size -1M'), 'if empty files only, print it');
+    assert.strictEqual(reading('-size +100k -print'), 'if size over 100 KiB, print it');
+    assert.strictEqual(reading('-mtime -7'), 'if modified less than 7 days (168 hours) ago, print it');
     // (A primary find refuses, or one the reader has no phrase for, leaves the expression unread: no reading.)
-    for (const expr of ['-perm +4000', '-mtime x', '-size xyz', '-type q', '-mtime +7 -foo', '-exec rm', '! -perm +4000', '( -perm +4000 )', '-perm +4000 -o -print', '-perm +4000 , -print', '-perm +4000 -print']) {
+    for (const expr of ['-perm +4000', '-mtime x', '-size xyz', '-type q', '-mtime +7 -foo', '-exec rm', '! -perm +4000', '( -perm +4000 )', '-perm +4000 -o -print', '-perm +4000 , -print', '-perm +4000 -print', '-mtime +1 -exec rm']) {
       assert.strictEqual(reading(expr), undefined, expr);
     }
-    assert.strictEqual(reading('! -mtime +7'), 'Print what matches: not (modified at least 8 days ago)');
+    // (A `not` of a group: parentheses in parentheses in English, so in neither language.)
+    assert.strictEqual(reading('! -mtime +7'), 'if not (modified at least 8 days ago), print it');
+    assert.strictEqual(reading('! ( -mtime +7 -o -mtime -1 )'), undefined);
+    assert.strictEqual(reading('! ( -mtime +7 -o -mtime -1 )', 'ja'), undefined);
+    // (In Japanese, a test before `かつ` is a noun, the last one a predicate; an `-o` of tests is in parentheses before `なら`.)
+    assert.strictEqual(reading('-mtime +7 -mtime -9', 'ja'), '8日以上前に更新かつ9日（216時間）未満の間に更新されたなら表示する');
+    assert.strictEqual(reading('-mtime +7 -o -mtime 0', 'ja'), '（8日以上前に更新された、または直近24時間以内に更新された）なら表示する');
+    assert.strictEqual(reading('-mtime +7 -o -mtime -1', 'ja'), undefined);
+  });
+  it('says an action and a test in the order find runs them, as GNU find does (#844)', () => {
+    const tree = (expr: string) => parseFind(expr.split(' '), (w) => (w === '-exec' || w === '-ok' ? { terminators: [';', '+'], slot: { run: 'exec' as const }, endsAfter: { '+': '{}' } } : ['-name', '-mtime'].includes(w) ? 1 : 0))!;
+    const said = (expr: string, lang: 'en' | 'ja' = 'en') => describeFind(tree(expr), lang);
+    const run = (...a: string[]) => execFileSync('find', [dir, '-type', 'f', ...a]).toString().split('\n').filter(Boolean).map((x) => path.basename(x)).sort();
+    // (`-print` before `-name`: find prints every file, whatever the name. Before, the row said "if name matches one: print it".)
+    assert.deepStrictEqual(run('-print', '-name', 'one'), ['blk', 'empty', 'k100', 'm', 'one']);
+    assert.strictEqual(said('-print -name one'), 'Conditions and actions: print it, then name matches one');
+    assert.strictEqual(said('-print -name one', 'ja'), '検索条件と処理: 表示する、続けて名前が one に一致する');
+    assert.strictEqual(findReading(tree('-print -name one'), 'en'), undefined);
+    assert.strictEqual(findReading(tree('-delete -name one'), 'en'), undefined);
+    // (`-exec … ;` before more is a test: `-print` runs only for the files where the command succeeds.)
+    assert.deepStrictEqual(run('-exec', 'test', '-s', '{}', ';', '-print'), ['blk', 'k100', 'm', 'one']);
+    assert.strictEqual(said('-exec test -s {} ; -print'), 'Conditions and actions: if "test -s {}" succeeds, print it');
+    assert.strictEqual(findReading(tree('-exec test -s {} ; -print'), 'ja'), '「test -s {}」が成功するなら表示する');
+    assert.strictEqual(findReading(tree('-name one -ok test -s {} ; -print'), 'en'), 'if name matches one and "test -s {}" succeeds after asking, print it');
+    assert.strictEqual(findReading(tree('-ok test -s {} ; -name one -print'), 'ja'), '確認のうえ「test -s {}」が成功かつ名前が one に一致するなら表示する');
+    // (`-exec … +` is always true: a test after it does not stop it, so it is said in order, with no reading.)
+    assert.deepStrictEqual(run('-exec', 'ls', '{}', '+', '-name', 'one'), ['blk', 'empty', 'k100', 'm', 'one']);
+    assert.strictEqual(said('-exec true {} + -name one'), 'Conditions and actions: run "true {}" on all at once, then name matches one');
+    assert.strictEqual(findReading(tree('-exec true {} + -name one'), 'en'), undefined);
+    // (An action inside a part: said as before, with no reading.)
+    assert.strictEqual(findReading(tree('( -name one -print ) -name two'), 'en'), undefined);
   });
   it('-perm has three forms', () => {
     assert.deepStrictEqual(find('-perm', '664'), ['blk']);
@@ -302,7 +332,7 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.match(t('find . -mtime $K'), /as many days ago as `\$K` says/);
     assert.match(t('find . -mtime ${IFS=:}$K'), /as many days ago as/);
     assert.match(t('find . -mmin -60', 'ja'), /60分未満の間に更新/);
-    assert.match(t('find . -mmin "$M"', 'ja'), /`"\$M"` が示す分数だけ前に更新（`\+N` は N 分より前、`-N` は N 分未満、`N` はちょうど N 分前）/);
+    assert.match(t('find . -mmin "$M"', 'ja'), /`"\$M"` が示す分数だけ前に更新された（`\+N` は N 分より前、`-N` は N 分未満、`N` はちょうど N 分前）/);
     assert.match(t('find . -mmin "$M"'), /as many minutes ago as `"\$M"` says \(`\+N` more than N minutes, `-N` less than N, `N` exactly N\)/);
     assert.match(t('find . -name "a\\"b$x"'), /name matches "a\\"b\$x"/);
     assert.match(t('find . -mtime "+$K"', 'ja'), /\(`"\$K"` \+ 1\) 日以上前に更新/);

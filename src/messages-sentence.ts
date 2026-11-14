@@ -120,9 +120,9 @@ const stops = (lang: Lang, unsure: boolean): string => (unsure
 
 /**
  * The condition of `if`, `while` or `until`: the command whose success it is, as a noun (`the test \`[ … ]\``), or the condition its
- * reader read of a test (`holds`).
+ * reader read of a test (`holds`; `copula`: its Japanese ends in a noun, which takes `である` before `間` and `まで`, not before `なら`).
  */
-export type Condition = string | { holds: string };
+export type Condition = string | { holds: string; copula?: boolean };
 
 /** The clauses of a sentence (`S.x(lang, …)`). */
 export const S = {
@@ -234,7 +234,7 @@ export const S = {
   /** `elif` and `else`: what runs when no condition before succeeded. */
   otherwise: (lang: Lang, clause: string): string => pick(lang, `そうでなければ、${clause}`, `otherwise, ${clause}`),
   whileLoop: (lang: Lang, until: boolean, cond: Condition, body: string): string => (lang === 'ja'
-    ? `${typeof cond === 'string' ? `${cond}が成功する` : cond.holds}${until ? 'まで' : '間'}、${body}をくり返す`
+    ? `${typeof cond === 'string' ? `${cond}が成功する` : `${cond.holds}${cond.copula ? 'である' : ''}`}${until ? 'まで' : '間'}、${body}をくり返す`
     : `repeats ${body} ${until ? 'until' : 'while'} ${typeof cond === 'string' ? `${cond} succeeds` : cond.holds}`),
   forLoop: (lang: Lang, variable: string, values: string, body: string): string => pick(lang,
     `${variable}を${values}に順に設定して、${body}を実行する`, `runs ${body} with ${variable} set to ${values}, one at a time`),

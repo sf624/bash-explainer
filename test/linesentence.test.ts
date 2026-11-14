@@ -243,20 +243,20 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     // What a reader read of a command's words, in place of what the command does (#843; docs/design/panel-redesign.md, P5): find's
     // expression, a sed or awk program of one command, a test of one unary operator; and where none is said (a word not known, a part
     // unread, several programs, a test of two words, `sudo find`, a reading that would nest parentheses or pass the length).
-    ["find . \\( -name '*.log' -o -name '*.tmp' \\) -mtime +7 -print", 0, "Runs `find`: if (name matches *.log; or name matches *.tmp) and modified at least 8 days ago: print it.", "`find` を実行し、（名前が *.log に一致、または 名前が *.tmp に一致） かつ 8日以上前に更新なら表示。"],
-    ["find . -name '*.c'", 0, "Runs `find`: print what matches: name matches *.c.", "`find` を実行し、「名前が *.c に一致」に当てはまるものを表示する。"],
-    ["find . -size +10k -delete", 0, "Runs `find`: if size over 10 KiB: delete it.", "`find` を実行し、サイズが 10 KiBを超えるなら削除。"],
+    ["find . \\( -name '*.log' -o -name '*.tmp' \\) -mtime +7 -print", 0, "Runs `find`: if (name matches *.log, or name matches *.tmp) and modified at least 8 days ago, print it.", "`find` を実行し、（名前が *.log に一致する、または名前が *.tmp に一致する）かつ8日以上前に更新されたなら表示する。"],
+    ["find . -name '*.c'", 0, "Runs `find`: if name matches *.c, print it.", "`find` を実行し、名前が *.c に一致するなら表示する。"],
+    ["find . -size +10k -delete", 0, "Runs `find`: if size over 10 KiB, delete it.", "`find` を実行し、サイズが 10 KiBを超えるなら削除する。"],
     ["find . -name \"$p\"", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["find . -name x -exec rm {}", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["find . -exec sh -c 'wc -l {}' \\;", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
-    ["find . ! \\( -name a -o -name b \\)", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find` を実行し、「「（名前が a に一致、または 名前が b に一致）」ではない」に当てはまるものを表示する。"],
+    ["find . ! \\( -name a -o -name b \\)", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["sudo find . -name x", 0, "Runs `sudo` (run a command as another user).", "`sudo`（他のユーザーの権限でコマンドを実行する）を実行する。"],
     ["find . -type q", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["find . -ctime -1 -cmin 5 -size +10k -size -1M -size 3 -group g -perm 644 -maxdepth 2 -mindepth 1 -readable -writable -executable -true -false -quit", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["p=x; find . -name \"$p\"", 0, "Sets `p` to `x`; then runs `find` (search a directory tree for files matching conditions).", "`p` に `x` を代入する。続けて、`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["sed -E 's/^([a-z]+)=(.*)$/\\2=\\1/' config.ini", 0, "Runs `sed` using `-E` (use extended regex): replace the first match of `^([a-z]+)=(.*)$` on each line with `\\2=\\1`.", "`sed` を `-E`（拡張正規表現を使う）を付けて実行し、`^([a-z]+)=(.*)$` に一致した部分（各行の最初の1つ）を `\\2=\\1` に置き換える。"],
-    ["sed -n '/^BEGIN/,/^END/p' config.txt", 0, "Runs `sed` using `-n` (suppress automatic printing; print only with `p`): for lines matching `^BEGIN` through lines matching `^END`: print the line.", "`sed` を `-n`（自動出力を抑止し、`p` コマンドで指定した行だけ出力）を付けて実行し、`^BEGIN` に一致する行から `^END` に一致する行までに対して: 行を出力する。"],
-    ["sed '1d' f", 0, "Runs `sed`: for line 1: delete the line.", "`sed` を実行し、1 行目に対して: 行を削除する。"],
+    ["sed -n '/^BEGIN/,/^END/p' config.txt", 0, "Runs `sed` using `-n` (suppress automatic printing; print only with `p`): on lines matching `^BEGIN` through lines matching `^END`, print the line.", "`sed` を `-n`（自動出力を抑止し、`p` コマンドで指定した行だけ出力）を付けて実行し、`^BEGIN` に一致する行から `^END` に一致する行までに対して、行を出力する。"],
+    ["sed '1d' f", 0, "Runs `sed`: on line 1, delete the line.", "`sed` を実行し、1 行目に対して、行を削除する。"],
     ["sed '/a/p' f", 0, "Runs `sed` (stream editor: edit input line by line).", "`sed`（ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する）を実行する。"],
     ["sed -n 's/a/b/' f", 0, "Runs `sed` (stream editor: edit input line by line) using `-n` (suppress automatic printing; print only with `p`).", "`sed`（ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する）を `-n`（自動出力を抑止し、`p` コマンドで指定した行だけ出力）を付けて実行する。"],
     ["sed 's/a/b/p' f", 0, "Runs `sed` (stream editor: edit input line by line).", "`sed`（ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する）を実行する。"],
@@ -270,7 +270,7 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["awk 'BEGIN { print 1 }'", 0, "Runs `awk` (pattern-scanning language that processes lines and fields).", "`awk`（テキストを行・フィールド単位で処理するプログラミング言語）を実行する。"],
     ["jq '.a' f", 0, "Runs `jq` (filter and transform JSON).", "`jq`（JSON を整形・抽出・変換する）を実行する。"],
     ["perl -ne 'print if /a/' f", 0, "Runs `perl` (run Perl) using `-n` (run the code for each input line) and `-e` (Perl code to run).", "`perl`（Perl を実行する）を `-n`（入力の各行についてコードを実行する）・`-e`（実行する Perl のコード）を付けて実行する。"],
-    ["if [ -z \"${1:-}\" ]; then\n  exit 1\nfi", 0, "If `\"${1:-}\"` is an empty string, runs what follows `then`.", "`\"${1:-}\"` が空文字列であるなら、`then` 以下を実行する。"],
+    ["if [ -z \"${1:-}\" ]; then\n  exit 1\nfi", 0, "If `\"${1:-}\"` is an empty string, runs what follows `then`.", "`\"${1:-}\"` が空文字列なら、`then` 以下を実行する。"],
     ["test -f a", 0, "Tests whether `a` is an existing regular file.", "`a` が通常ファイルとして存在するかを判定する。"],
     ["[ -n $x ]", 0, "Tests the condition in `[ … ]`.", "`[ … ]` の条件を判定する。"],
     ["[ \"$a\" = b ]", 0, "Tests the condition in `[ … ]`.", "`[ … ]` の条件を判定する。"],
@@ -288,16 +288,40 @@ const SHAPES: [string, number, string | null, string | null, Shell?][] = [
     ["sed --expression=s/a/b/ f", 0, "Runs `sed` using `--expression` (add a script to run): replace the first match of `a` on each line with `b`.", "`sed` を `--expression`（実行するスクリプトを指定）を付けて実行し、`a` に一致した部分（各行の最初の1つ）を `b` に置き換える。"],
     ["sed -es/a/b/ f", 0, "Runs `sed` using `-es/a/b/` (add a script to run): replace the first match of `a` on each line with `b`.", "`sed` を `-es/a/b/`（実行するスクリプトを指定）を付けて実行し、`a` に一致した部分（各行の最初の1つ）を `b` に置き換える。"],
     ["z=; find . -name x $z -print", 0, "Sets `z` to the empty string; then runs `find` (search a directory tree for files matching conditions).", "`z` に空文字列を代入する。続けて、`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
-    ["find . foo -name x", 0, "Runs `find`: print what matches: name matches x.", "`find` を実行し、「名前が x に一致」に当てはまるものを表示する。"],
+    ["find . foo -name x", 0, "Runs `find`: if name matches x, print it.", "`find` を実行し、名前が x に一致するなら表示する。"],
     ["find . -name x -exec rm {}", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["find . -name *.c", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["[ a b ]", 0, "Tests the condition in `[ … ]`.", "`[ … ]` の条件を判定する。"],
     ["[ -f x", 0, "Tests the condition in `[ … ]`.", "`[ … ]` の条件を判定する。"],
-    ["find . -name x -exec rm \\;", 0, "Runs `find`: if name matches x: run \"rm\" for each.", "`find` を実行し、名前が x に一致なら「rm」を1件ずつ実行。"],
+    ["find . -name x -exec rm \\;", 0, "Runs `find`: if name matches x, run \"rm\" for each.", "`find` を実行し、名前が x に一致するなら「rm」を1件ずつ実行する。"],
     ["awk '/a/' f", 0, "Runs `awk`: print lines matching `a`.", "`awk` を実行し、`a` に一致する行を出力する。"],
     ["find . -name x foo", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
     ["[[ a && b ]]", 0, "Tests the condition in `[[ … ]]`.", "`[[ … ]]` の条件を判定する。"],
     ["find . -name x -exec rm", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    // (Review of #844: find says an action before a test in its order, with no reading; `-exec … ;` before more is a test; an option the
+    // spec does not know leaves the program unread; one colon in English, verbs and predicates in Japanese.)
+    ["find . -delete -name x", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -print -name x", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -type f -exec grep -q foo {} \\; -print", 0, "Runs `find`: if a regular file and \"grep -q foo {}\" succeeds, print it.", "`find` を実行し、通常ファイルかつ「grep -q foo {}」が成功するなら表示する。"],
+    ["gawk -i inplace 'NR>1' f", 0, "Runs `gawk` (pattern-scanning language that processes lines and fields) using `-i` (Option).", "`gawk`（テキストを行・フィールド単位で処理するプログラミング言語）を `-i`（オプション）を付けて実行する。"],
+    ["sed -X 's/a/b/' f", 0, "Runs `sed` (stream editor: edit input line by line) using `-X` (Option).", "`sed`（ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する）を `-X`（オプション）を付けて実行する。"],
+    ["awk --foo 'NR>1' f", 0, "Runs `awk` (pattern-scanning language that processes lines and fields) using `--foo` (Option).", "`awk`（テキストを行・フィールド単位で処理するプログラミング言語）を `--foo`（オプション）を付けて実行する。"],
+    ["find . -name x -o -name y", 0, "Runs `find`: if (name matches x, or name matches y), print it.", "`find` を実行し、（名前が x に一致する、または名前が y に一致する）なら表示する。"],
+    ["find . -name x || echo none", 0, "Runs `find`: if name matches x, print it; if that fails, runs `echo` (print arguments to stdout, separated by spaces).", "`find` を実行し、名前が x に一致するなら表示する。失敗したら、`echo`（引数を空白区切りで標準出力に表示する）を実行する。"],
+    ["find . -path ./node_modules -prune -o -type f -name '*.js' -print", 0, "Runs `find`: if path matches ./node_modules, skip it without descending, or if a regular file and name matches *.js, print it.", "`find` を実行し、パスが ./node_modules に一致するならその中には入らずスキップする、または通常ファイルかつ名前が *.js に一致するなら表示する。"],
+    ["find . -exec rm {} + -name x", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -ok rm {} \\; -print", 0, "Runs `find`: if \"rm {}\" succeeds after asking, print it.", "`find` を実行し、確認のうえ「rm {}」が成功するなら表示する。"],
+    ["while [ -z \"$x\" ]; do a; done", 0, "Repeats its body (`a`) while `\"$x\"` is an empty string.", "`\"$x\"` が空文字列である間、本体（`a`）をくり返す。"],
+    ["until [ -e f ]; do a; done", 0, "Repeats its body (`a`) until `f` exists.", "`f` が存在するまで、本体（`a`）をくり返す。"],
+    ["sed -nes/a/b/ f", 0, "Runs `sed` (stream editor: edit input line by line) using `-n` (suppress automatic printing; print only with `p`) and `-e` (add a script to run).", "`sed`（ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する）を `-n`（自動出力を抑止し、`p` コマンドで指定した行だけ出力）・`-e`（実行するスクリプトを指定）を付けて実行する。"],
+    ["find . -name x -delete -print", 0, "Runs `find`: if name matches x, delete it, then print it.", "`find` を実行し、名前が x に一致するなら削除して表示する。"],
+    ["find . -mtime -7 -name x", 0, "Runs `find`: if modified less than 7 days (168 hours) ago and name matches x, print it.", "`find` を実行し、7日（168時間）未満の間に更新かつ名前が x に一致するなら表示する。"],
+    ["find . \\( -name x -print \\) -name y", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -path ./x -prune -o -name y", 0, "Runs `find` (search a directory tree for files matching conditions).", "`find`（条件に一致するファイルをディレクトリ階層から探す）を実行する。"],
+    ["find . -iname x -name y -print", 0, "Runs `find`: if name matches x (any case) and name matches y, print it.", "`find` を実行し、名前が x に一致（大小文字区別なし）かつ名前が y に一致するなら表示する。"],
+    ["find . -name y -iname x", 0, "Runs `find`: if name matches y and name matches x (any case), print it.", "`find` を実行し、名前が y に一致かつ名前が x に一致する（大小文字区別なし）なら表示する。"],
+    ["if [ -n \"$x\" ]; then a; fi", 0, "If `\"$x\"` is a non-empty string, runs `a`.", "`\"$x\"` が空文字列でないなら、`a` を実行する。"],
+    ["[ -L l ]", 0, "Tests whether `l` is a symbolic link.", "`l` がシンボリックリンクかを判定する。"],
 ];
 
 /** The files of the corpus: sample.sh and the other fixtures, the host files with their shell parts. */
@@ -652,6 +676,42 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
       assert.ok(read > 20, String(read));
     });
 
+    it('says no aside of a row: how find counts and rounds, what a sed command does besides, what a test operator adds (#844)', () => {
+      // (Each aside, with an input whose row says it: the readers keep their asides apart (find's `Phrase.aside`, sed's `ASIDES`, awk's rule,
+      // `UnaryTest.aside`), and the sentence says the reading without them. The row of each input is checked to say its aside, so that the list
+      // follows the readers.)
+      const ASIDES: [string, 'en' | 'ja', string][] = [
+        ['find . -mtime +7', 'en', ' (age is counted in whole days'], ['find . -mtime +7', 'ja', '（日数は端数を切り捨てて'],
+        ['find . -size +10k', 'en', ' (rounded up to whole units before comparing)'], ['find . -size +10k', 'ja', '（単位に切り上げて比べる）'],
+        ['find . -size -1k', 'en', ' (`-1k`: size rounded up'], ['find . -size -1k', 'ja', '（`-1k` は単位に切り上げて'],
+        ['find . -size -3k', 'en', ' (rounded up to whole units, less than 3)'], ['find . -size -3k', 'ja', '（単位に切り上げて 3 未満）'],
+        ['find . -samefile a', 'en', ' (same inode)'], ['find . -samefile a', 'ja', '（同じ inode）'],
+        ['find . -name x', 'en', ' (no action is given'], ['find . -name x', 'ja', '（処理の指定が無いので'],
+        ["sed '1d' f", 'en', ' (print nothing and start the next cycle)'], ["sed '1d' f", 'ja', '（出力せず、次の行の処理に進む）'],
+        ["sed -n '/a/p' f", 'en', ' (with `-n`, prints only the selected lines)'], ["sed -n '/a/p' f", 'ja', '（`-n` と組み合わせて'],
+        ["awk 'NR>1' f", 'en', ' (no action means `print`)'], ["awk 'NR>1' f", 'ja', '（アクションを省略すると'],
+        ['[ -z "$x" ]', 'ja', '（長さ 0）'], ['[ -n "$x" ]', 'ja', '（長さ 1 以上）'], ['[ -e f ]', 'ja', '（種類は問わない）'], ['[ -s f ]', 'ja', '（サイズ > 0）'],
+        ['[ -a f ]', 'en', ' (same as `-e`, obsolescent)'], ['[ -a f ]', 'ja', '（`-e` と同じ。非推奨）'],
+      ];
+      const found: string[] = [];
+      for (const [src, lang, aside] of ASIDES) {
+        const ex = new Analyzer(lang).explainLine(parser.parse(src), 0, undefined, { sentence: true });
+        assert.ok(rowTexts(ex.items).some((r) => r.includes(aside)), `${src} (${lang}) has no row that says ${aside}`);
+        assert.ok(ex.sentence && !/\(stream editor|（ストリーム|\(search a|（条件に一致|\(pattern-scanning|（テキストを行|condition in|の条件を判定/.test(ex.sentence), `${src} (${lang}) says no reading: ${ex.sentence}`);
+        if (ex.sentence.includes(aside)) found.push(`${src} ${lang}: ${ex.sentence}`);
+      }
+      for (const f of files) {
+        f.text.split('\n').forEach((_, i) => {
+          for (const lang of ['en', 'ja'] as const) {
+            const s = f.explain(i, lang)?.sentence;
+            const aside = s && ASIDES.find(([, l, a]) => l === lang && s.includes(a));
+            if (aside) found.push(`${f.name}:${i + 1} ${lang}: ${s}`);
+          }
+        });
+      }
+      assert.deepStrictEqual(found, []);
+    });
+
     it('writes Japanese after docs/japanese-style.md: a space between code and Japanese and after a line number, none before a particle', () => {
       const found: string[] = [];
       for (const f of files) {
@@ -677,9 +737,9 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
       assert.strictEqual(out('sed', ['s/a/X/']), 'X1\nb2\nX3\n');
       assert.match(said("sed 's/a/X/' f", 0, 'en')!, /^Runs `sed`: replace the first match of `a` on each line with `X`\.$/);
       assert.strictEqual(out('sed', ['1d']), 'b2\na3\n');
-      assert.match(said("sed '1d' f", 0, 'en')!, /^Runs `sed`: for line 1: delete the line\.$/);
+      assert.match(said("sed '1d' f", 0, 'en')!, /^Runs `sed`: on line 1, delete the line\.$/);
       assert.strictEqual(out('sed', ['-n', '/a/p']), 'a1\na3\n');
-      assert.match(said("sed -n '/a/p' f", 0, 'en')!, /: for lines matching `a`: print the line\.$/);
+      assert.match(said("sed -n '/a/p' f", 0, 'en')!, /: on lines matching `a`, print the line\.$/);
       // (Not said: `p` without `-n` prints its lines twice; `s` with `-n` prints nothing; the flag `p` prints a changed line twice.)
       assert.strictEqual(out('sed', ['/a/p']), 'a1\na1\nb2\na3\na3\n');
       assert.strictEqual(out('sed', ['-n', 's/a/X/']), '');
@@ -692,6 +752,23 @@ describe('the sentence of a line, "In short" (src/linesentence.ts)', function ()
       assert.match(said("awk 'NR > 1' f", 0, 'en')!, /^Runs `awk`: print lines where `NR > 1` is true\.$/);
       assert.notStrictEqual(run('gawk', ['BEGIN']).status, 0);
       assert.match(said("awk 'BEGIN' f", 0, 'en')!, /^Runs `awk` \(pattern-scanning/);
+    });
+
+    it('says no program where an option is given that the spec does not know: gawk reads `-i inplace` as a library, sed refuses `-X` (#844)', () => {
+      // (gawk's `-i` takes the next word: `inplace` is the library, `NR>1` the program, and the file is edited in place.)
+      const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentence-gawk-'));
+      try {
+        fs.writeFileSync(path.join(dir, 'f'), 'a\nb\n');
+        run('gawk', ['-i', 'inplace', 'NR>1', 'f'], { cwd: dir });
+        assert.strictEqual(fs.readFileSync(path.join(dir, 'f'), 'utf8'), 'b\n');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+      assert.match(said("gawk -i inplace 'NR>1' f", 0, 'en')!, /^Runs `gawk` \(pattern-scanning/);
+      assert.strictEqual(run('sed', ['-X', 's/a/b/']).status, 1);
+      assert.match(said("sed -X 's/a/b/' f", 0, 'en')!, /^Runs `sed` \(stream editor/);
+      assert.notStrictEqual(run('gawk', ['--foo', 'NR>1']).status, 0);
+      assert.match(said("awk --foo 'NR>1' f", 0, 'en')!, /^Runs `awk` \(pattern-scanning/);
     });
 
     it('says the condition of `[` only where its `]` is there: bash fails on `[ -n "$a"` with status 2 when `$a` is not `]`', () => {
