@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import type { BashParser as Parser } from '../src/syntax/tree';
 import { Analyzer, Token } from '../src/analyzer';
-import { describeFind, parseFind } from '../src/embedded/find';
+import { describeFind, findReading, parseFind } from '../src/embedded/find';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { allTokens } from './support/explain';
 
@@ -210,6 +210,23 @@ describe('find numeric tests behave as the explanations say', () => {
     assert.match(describeFind(parseFind(['-size', '-3M'], () => 1)!, 'ja'), /2 MiB以下/);
     assert.match(describeFind(parseFind(['-size', '+3M'], () => 1)!, 'ja'), /3 MiBを超える/);
     assert.match(describeFind(parseFind(['-size', '3M'], () => 1)!, 'ja'), /3 MiBちょうど/);
+  });
+  it('the reading "In short" says (`findReading`, #843) is the row\'s, from the same phrases, without how find counts and rounds', () => {
+    const reading = (expr: string, lang: 'en' | 'ja' = 'en') => findReading(parseFind(expr.split(' '), (w) => (['-mtime', '-size', '-perm', '-type', '-exec'].includes(w) ? 1 : 0))!, lang);
+    // (The files find gives are those the row says, above: the reading says the same, less the aside.)
+    assert.deepStrictEqual(find('-mtime', '+7'), ['k100']);
+    assert.strictEqual(reading('-mtime +7'), 'Print what matches: modified at least 8 days ago');
+    assert.strictEqual(text('-mtime +7'), 'Print what matches: modified at least 8 days ago (age is counted in whole days, fraction dropped: `+7` means more than 7 whole days) (no action is given, so `-print` is implied)');
+    assert.strictEqual(reading('-mtime +7', 'ja'), '「8日以上前に更新」に当てはまるものを表示する');
+    assert.deepStrictEqual(find('-size', '-1M'), ['empty']);
+    assert.strictEqual(reading('-size -1M'), 'Print what matches: empty files only');
+    assert.strictEqual(reading('-size +100k -print'), 'if size over 100 KiB: print it');
+    assert.strictEqual(reading('-mtime -7'), 'Print what matches: modified less than 7 days (168 hours) ago');
+    // (A primary find refuses, or one the reader has no phrase for, leaves the expression unread: no reading.)
+    for (const expr of ['-perm +4000', '-mtime x', '-size xyz', '-type q', '-mtime +7 -foo', '-exec rm', '! -perm +4000', '( -perm +4000 )', '-perm +4000 -o -print', '-perm +4000 , -print', '-perm +4000 -print']) {
+      assert.strictEqual(reading(expr), undefined, expr);
+    }
+    assert.strictEqual(reading('! -mtime +7'), 'Print what matches: not (modified at least 8 days ago)');
   });
   it('-perm has three forms', () => {
     assert.deepStrictEqual(find('-perm', '664'), ['blk']);

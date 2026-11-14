@@ -6,7 +6,7 @@
 // redirections set up first, the command inside); and the keyword `time`.
 import type { Kind, Span, Token } from '../analyzer-types';
 import type { ArgRole, ArgvParse } from '../argv/interpret';
-import { onlyInFunction, readsFields } from '../argv/query';
+import { languageWords, onlyInFunction, readsFields } from '../argv/query';
 import type { CommandSpec } from '../argv/spec';
 import type { Basis } from '../basis';
 import { argWord } from '../argv/words';
@@ -33,8 +33,9 @@ import { returnInSubstitution, scopeOf } from '../substitution-tokens';
 import { field, fields, redirectionsOf, type SyntaxNode, token, wordsText } from '../syntax/tree';
 import { commandTest } from '../testexpr';
 import { readByCommand } from '../tokenmarks';
-import { bashTest, readArgs, testArgs } from './argv';
-import { type Explainer, memoKey } from './context';
+import { bashTest, readArgs, testArgs, testCondition } from './argv';
+import { type Explainer, memoKey, STATEMENT_READ, type StatementRead, WORD_READ } from './context';
+import { PROGRAMS } from './embedded';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectionNotes, redirectParts } from './redirections';
@@ -270,7 +271,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, prefix:
   if (head.res?.kind === 'alias') argToks = aliasArguments(cx, n, head.res, argToks);
   // `test` and `[` read their words as an expression (src/testexpr.ts), when the name runs one of them.
   const bracket = head.test?.closingOperand !== undefined;
-  if (head.test) argToks = readByCommand(testArgs(cx, n, commandTest(head.test, args, bashTest(cx, head.test)), bracket, !!head.test.builtin));
+  const tested = head.test && commandTest(head.test, args, bashTest(cx, head.test));
+  if (tested) argToks = readByCommand(testArgs(cx, n, tested, bracket, !!head.test!.builtin));
   if (!other) {
     unreadStdin(cx, n, read.parse, args, head.name);
     commandExampleFor(cx, n, head.spec, args, read.parse);
@@ -310,8 +312,22 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, prefix:
   if (summary) said.what = plainOf(cx.t(summary));
   else if (head.spec) said.what = plainOf(head.spec.gloss ? cx.t(head.spec.gloss) : head.explanation);
   cx.memo(COMMAND_SAID).set(n, said);
+  // (What a reader read of its words, which the sentence of the line says in place of what the command does: `STATEMENT_READ`.)
+  const statementRead = tested ? testCondition(cx, n, tested, bracket) : wordsRead(cx, read.parse, args);
+  if (statementRead) cx.memo(STATEMENT_READ).set(n, statementRead);
   if (summary) t.summary = `${said.names.join(' ')}: ${said.what}`;
   return t;
+}
+
+/**
+ * What the command does with its words, where they hold one program of a language of code (`PROGRAMS`: a sed or an awk script)
+ * or find's expression, and its reader read it whole (`WORD_READ`); none where they hold several (`sed -e a -e b`), or the reader
+ * read it in part. (`parse` is the command's own reading: a command it runs, as `sudo find`'s, is not its words.)
+ */
+function wordsRead(cx: Explainer, parse: ArgvParse, args: readonly SyntaxNode[]): StatementRead | undefined {
+  const words = [...(parse.expression === undefined ? [] : [parse.expression]), ...languageWords(parse, PROGRAMS)];
+  const text = words.length === 1 ? cx.memo(WORD_READ).get(args[words[0]]) : undefined;
+  return text === undefined ? undefined : { kind: 'does', text };
 }
 
 /**

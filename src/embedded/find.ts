@@ -169,59 +169,69 @@ function hasAction(n: FindNode): boolean {
   }
 }
 
+/**
+ * What a primary tests or does, as its row says it: the phrase (`text`), and what the row adds after it (`aside`: how find
+ * counts, rounds or refuses), which the sentence of the line leaves out (`findReading`). `unread`: find does not read the
+ * primary so (an unknown one, or an argument it refuses), and the expression has no reading of its own.
+ */
+interface Phrase { text: string; aside?: string; unread?: true }
+
 /** A short phrase for a primary, e.g. `-mtime +7` → "modified more than 7 days ago". */
-function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
+function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): Phrase {
   const s = pick(lang);
+  const said = (text: string, aside?: string, unread?: true): Phrase => ({ text, ...(aside ? { aside } : {}), ...(unread ? { unread } : {}) });
   const a = p.args[0] ?? '';
-  const age = (unitJa: string, unitEn: string, what: [string, string], wholeDays = false) => {
+  const age = (unitJa: string, unitEn: string, what: [string, string], wholeDays = false): Phrase => {
     const n = a.replace(/^[+-]/, '');
     const k = Number(n);
     const day = (d: number | string) => `${d} ${unitEn.replace(/s$/, d === 1 ? '' : 's')}`;
     const num = /^\d+$/.test(n) ? k : n;
     if (wholeDays && /^\d+$/.test(n)) {
       // find counts the age in whole days (24 hours each), dropping the fraction.
-      if (a.startsWith('+')) return s(`${k + 1}日以上前に${what[0]}（日数は端数を切り捨てて数えるので \`+${k}\` は ${k + 1} 日以上前）`, `${what[1]} at least ${day(k + 1)} ago (age is counted in whole days, fraction dropped: \`+${k}\` means more than ${k} whole days)`);
-      if (a.startsWith('-')) return s(`${k}日（${k * 24}時間）未満の間に${what[0]}`, `${what[1]} less than ${day(k)} (${k * 24} hours) ago`);
-      return k === 0
+      if (a.startsWith('+')) return said(s(`${k + 1}日以上前に${what[0]}`, `${what[1]} at least ${day(k + 1)} ago`), s(`（日数は端数を切り捨てて数えるので \`+${k}\` は ${k + 1} 日以上前）`, ` (age is counted in whole days, fraction dropped: \`+${k}\` means more than ${k} whole days)`));
+      if (a.startsWith('-')) return said(s(`${k}日（${k * 24}時間）未満の間に${what[0]}`, `${what[1]} less than ${day(k)} (${k * 24} hours) ago`));
+      return said(k === 0
         ? s(`直近24時間以内に${what[0]}`, `${what[1]} within the last 24 hours`)
-        : s(`${k}日以上${k + 1}日未満前に${what[0]}`, `${what[1]} between ${k} and ${day(k + 1)} ago`);
+        : s(`${k}日以上${k + 1}日未満前に${what[0]}`, `${what[1]} between ${k} and ${day(k + 1)} ago`));
     }
     if (!/^[+-]/.test(a) && !/^\d+$/.test(n)) {
       // No sign is known of a value read at run time (`"$K"`): it may start with one, so only what holds for any value is said (as the option's row).
+      // (No reading: a value not known, or a text that is no number, which find refuses.)
       return wholeDays
-        ? s(`\`${n}\` が示す日数だけ前に${what[0]}（24 時間単位で端数を切り捨てる。\`+N\` は N+1 日以上前、\`-N\` は N 日未満、\`N\` は N 日以上 N+1 日未満）`, `${what[1]} as many days ago as \`${n}\` says, in whole days with the fraction dropped (\`+N\` N + 1 days or more, \`-N\` under N days, \`N\` from N to N + 1 days)`)
-        : s(`\`${n}\` が示す${unitJa}数だけ前に${what[0]}（\`+N\` は N ${unitJa}より前、\`-N\` は N ${unitJa}未満、\`N\` はちょうど N ${unitJa}前）`, `${what[1]} as many ${unitEn} ago as \`${n}\` says (\`+N\` more than N ${unitEn}, \`-N\` less than N, \`N\` exactly N)`);
+        ? said(s(`\`${n}\` が示す日数だけ前に${what[0]}`, `${what[1]} as many days ago as \`${n}\` says, in whole days with the fraction dropped`), s('（24 時間単位で端数を切り捨てる。`+N` は N+1 日以上前、`-N` は N 日未満、`N` は N 日以上 N+1 日未満）', ' (`+N` N + 1 days or more, `-N` under N days, `N` from N to N + 1 days)'), true)
+        : said(s(`\`${n}\` が示す${unitJa}数だけ前に${what[0]}`, `${what[1]} as many ${unitEn} ago as \`${n}\` says`), s(`（\`+N\` は N ${unitJa}より前、\`-N\` は N ${unitJa}未満、\`N\` はちょうど N ${unitJa}前）`, ` (\`+N\` more than N ${unitEn}, \`-N\` less than N, \`N\` exactly N)`), true);
     }
     if (wholeDays) {
       // A value that is not a plain number (`+"$KEEP_DAYS"`): the same whole-day reading, with the word in place of the number.
-      if (a.startsWith('+')) return s(`(\`${n}\` + 1) 日以上前に${what[0]}（日数は端数を切り捨てて数える）`, `${what[1]} at least (\`${n}\` + 1) days ago (find counts the age in whole days and drops the fraction)`);
+      if (a.startsWith('+')) return said(s(`(\`${n}\` + 1) 日以上前に${what[0]}`, `${what[1]} at least (\`${n}\` + 1) days ago`), s('（日数は端数を切り捨てて数える）', ' (find counts the age in whole days and drops the fraction)'), true);
       // (A sign is known here: no sign is the case above.)
-      return s(`\`${n}\` 日未満の間に${what[0]}`, `${what[1]} less than \`${n}\` days ago`);
+      return said(s(`\`${n}\` 日未満の間に${what[0]}`, `${what[1]} less than \`${n}\` days ago`), undefined, true);
     }
-    if (a.startsWith('+')) return s(`${n}${unitJa}より前に${what[0]}`, `${what[1]} more than ${day(num)} ago`);
-    if (a.startsWith('-')) return s(`${n}${unitJa}未満の間に${what[0]}`, `${what[1]} less than ${day(num)} ago`);
-    return s(`ちょうど${n}${unitJa}前に${what[0]}`, `${what[1]} exactly ${day(num)} ago`);
+    if (a.startsWith('+')) return said(s(`${n}${unitJa}より前に${what[0]}`, `${what[1]} more than ${day(num)} ago`));
+    if (a.startsWith('-')) return said(s(`${n}${unitJa}未満の間に${what[0]}`, `${what[1]} less than ${day(num)} ago`));
+    return said(s(`ちょうど${n}${unitJa}前に${what[0]}`, `${what[1]} exactly ${day(num)} ago`));
   };
   const types: Record<string, [string, string]> = { f: ['通常ファイル', 'a regular file'], d: ['ディレクトリ', 'a directory'], l: ['シンボリックリンク', 'a symlink'], p: ['名前付きパイプ', 'a named pipe'], s: ['ソケット', 'a socket'], b: ['ブロックデバイス', 'a block device'], c: ['キャラクタデバイス', 'a character device'] };
   switch (p.name) {
-    case '-name': return s(`名前が ${a} に一致`, `name matches ${a}`);
-    case '-iname': return s(`名前が ${a} に一致（大小文字区別なし）`, `name matches ${a} (any case)`);
-    case '-path': case '-wholename': return s(`パスが ${a} に一致`, `path matches ${a}`);
-    case '-ipath': return s(`パスが ${a} に一致（大小文字区別なし）`, `path matches ${a} (any case)`);
-    case '-regex': return s(`パス全体が正規表現 ${a} に一致`, `the whole path matches the regex ${a}`);
-    case '-type': return a.split(',').map((t) => (types[t] ? s(types[t][0], types[t][1]) : t)).join(s('か', ' or '));
+    case '-name': return said(s(`名前が ${a} に一致`, `name matches ${a}`));
+    case '-iname': return said(s(`名前が ${a} に一致（大小文字区別なし）`, `name matches ${a} (any case)`));
+    case '-path': case '-wholename': return said(s(`パスが ${a} に一致`, `path matches ${a}`));
+    case '-ipath': return said(s(`パスが ${a} に一致（大小文字区別なし）`, `path matches ${a} (any case)`));
+    case '-regex': return said(s(`パス全体が正規表現 ${a} に一致`, `the whole path matches the regex ${a}`));
+    // (A letter find does not know it refuses: `Unknown argument to -type`.)
+    case '-type': return said(a.split(',').map((t) => (types[t] ? s(types[t][0], types[t][1]) : t)).join(s('か', ' or ')), undefined, a.split(',').every((t) => types[t]) ? undefined : true);
     case '-mtime': return age('日', 'days', ['更新', 'modified'], true);
     case '-mmin': return age('分', 'minutes', ['更新', 'modified']);
     case '-atime': return age('日', 'days', ['アクセス', 'accessed'], true);
     case '-amin': return age('分', 'minutes', ['アクセス', 'accessed']);
     case '-ctime': return age('日', 'days', ['状態変更', 'changed'], true);
     case '-cmin': return age('分', 'minutes', ['状態変更', 'changed']);
-    case '-newer': return s(`${a} より新しい`, `newer than ${a}`);
-    case '-anewer': return s(`アクセス時刻が ${a} の更新時刻より新しい`, `accessed more recently than ${a} was modified`);
-    case '-cnewer': return s(`状態変更時刻が ${a} の更新時刻より新しい`, `status changed more recently than ${a} was modified`);
+    case '-newer': return said(s(`${a} より新しい`, `newer than ${a}`));
+    case '-anewer': return said(s(`アクセス時刻が ${a} の更新時刻より新しい`, `accessed more recently than ${a} was modified`));
+    case '-cnewer': return said(s(`状態変更時刻が ${a} の更新時刻より新しい`, `status changed more recently than ${a} was modified`));
     case '-size': {
       const m = /^([+-]?)(\d+)([bcwkMGTP]?)$/.exec(a);
-      if (!m) return s(`サイズが ${a}`, `size ${a}`);
+      if (!m) return said(s(`サイズが ${a}`, `size ${a}`), undefined, true);
       const [, sign, num, u] = m;
       const k = Number(num);
       const unit: Record<string, [string, string]> = {
@@ -230,87 +240,103 @@ function phrase(p: Extract<FindNode, { type: 'primary' }>, lang: Lang): string {
       };
       const [uj, ue] = unit[u];
       // find rounds the size UP to whole units before comparing.
-      if (sign === '+') return s(`サイズが ${k} ${uj}を超える（単位に切り上げて比べる）`, `size over ${k} ${ue} (rounded up to whole units before comparing)`);
+      if (sign === '+') return said(s(`サイズが ${k} ${uj}を超える`, `size over ${k} ${ue}`), s('（単位に切り上げて比べる）', ' (rounded up to whole units before comparing)'));
       if (sign === '-') {
         return k === 1
-          ? s(`サイズが 0（空）のものだけ（\`-1${u}\` は単位に切り上げて 1 未満、つまり空ファイルだけ）`, `empty files only (\`-1${u}\`: size rounded up to ${ue} is less than 1, so only size 0)`)
-          : s(`サイズが ${Math.max(k - 1, 0)} ${uj}以下（単位に切り上げて ${k} 未満）`, `size at most ${Math.max(k - 1, 0)} ${ue} (rounded up to whole units, less than ${k})`);
+          ? said(s('サイズが 0（空）のものだけ', 'empty files only'), s(`（\`-1${u}\` は単位に切り上げて 1 未満、つまり空ファイルだけ）`, ` (\`-1${u}\`: size rounded up to ${ue} is less than 1, so only size 0)`))
+          : said(s(`サイズが ${Math.max(k - 1, 0)} ${uj}以下`, `size at most ${Math.max(k - 1, 0)} ${ue}`), s(`（単位に切り上げて ${k} 未満）`, ` (rounded up to whole units, less than ${k})`));
       }
-      return s(`サイズが切り上げて ${k} ${uj}ちょうど`, `size of exactly ${k} ${ue} after rounding up to whole units`);
+      return said(s(`サイズが切り上げて ${k} ${uj}ちょうど`, `size of exactly ${k} ${ue} after rounding up to whole units`));
     }
-    case '-empty': return s('空', 'empty');
-    case '-user': return s(`所有者が ${a}`, `owned by ${a}`);
-    case '-group': return s(`グループが ${a}`, `group ${a}`);
+    case '-empty': return said(s('空', 'empty'));
+    case '-user': return said(s(`所有者が ${a}`, `owned by ${a}`));
+    case '-group': return said(s(`グループが ${a}`, `group ${a}`));
     case '-perm': {
       // (`+4000` meant "any of the bits" before findutils 4.5.12; GNU find now rejects it.)
-      if (a.startsWith('+')) return s(`権限が ${a}（GNU find はこの書き方を受け付けず、\`invalid mode\` のエラーになる。どれか1つでも立っているものは \`/${a.slice(1)}\`）`, `permissions ${a} (GNU find rejects this form with "invalid mode"; any of the bits is \`/${a.slice(1)}\`)`);
+      if (a.startsWith('+')) return said(s(`権限が ${a}`, `permissions ${a}`), s(`（GNU find はこの書き方を受け付けず、\`invalid mode\` のエラーになる。どれか1つでも立っているものは \`/${a.slice(1)}\`）`, ` (GNU find rejects this form with "invalid mode"; any of the bits is \`/${a.slice(1)}\`)`), true);
       const mode = /^[-/]/.test(a) ? a.slice(1) : a;
       const bits = permBits(mode, lang);
       const named = bits ? s(`（${bits}）`, ` (${bits})`) : '';
-      if (a.startsWith('-')) return s(`権限に ${mode} のビット${named}がすべて立っている（他のビットは問わない）`, `permissions include all the bits of ${mode}${named}, whatever the other bits are`);
-      if (a.startsWith('/')) return s(`権限に ${mode} のビット${named}が1つでも立っている`, `permissions have at least one of the bits of ${mode}${named}`);
-      return s(`権限がちょうど ${a}${named}`, `permissions exactly ${a}${named}`);
+      if (a.startsWith('-')) return said(s(`権限に ${mode} のビット${named}がすべて立っている（他のビットは問わない）`, `permissions include all the bits of ${mode}${named}, whatever the other bits are`));
+      if (a.startsWith('/')) return said(s(`権限に ${mode} のビット${named}が1つでも立っている`, `permissions have at least one of the bits of ${mode}${named}`));
+      return said(s(`権限がちょうど ${a}${named}`, `permissions exactly ${a}${named}`));
     }
     case '-links': {
       const k = a.replace(/^[+-]/, '');
-      return a.startsWith('+') ? s(`ハードリンク数が ${k} より多い`, `more than ${k} hard links`) : a.startsWith('-') ? s(`ハードリンク数が ${k} より少ない`, `fewer than ${k} hard links`) : s(`ハードリンク数がちょうど ${k}`, `exactly ${k} hard links`);
+      return said(a.startsWith('+') ? s(`ハードリンク数が ${k} より多い`, `more than ${k} hard links`) : a.startsWith('-') ? s(`ハードリンク数が ${k} より少ない`, `fewer than ${k} hard links`) : s(`ハードリンク数がちょうど ${k}`, `exactly ${k} hard links`));
     }
-    case '-samefile': return s(`${a} と同じファイル（同じ inode）`, `the same file as ${a} (same inode)`);
-    case '-maxdepth': return s(`深さ ${a} まで`, `at most ${a} level${a === '1' ? '' : 's'} deep`);
-    case '-mindepth': return s(`深さ ${a} 以上`, `at least ${a} level${a === '1' ? '' : 's'} deep`);
-    case '-readable': return s('読み取り可能', 'readable');
-    case '-writable': return s('書き込み可能', 'writable');
-    case '-executable': return s('実行可能', 'executable');
-    case '-true': return s('常に真', 'always true');
-    case '-false': return s('常に偽', 'always false');
-    case '-prune': return s('その中には入らずスキップ', 'skip it without descending');
-    case '-print': return s('表示', 'print it');
-    case '-print0': return s('NUL 区切りで表示', 'print it NUL-terminated');
-    case '-printf': return s(`書式 ${a} で表示`, `print it with the format ${a}`);
-    case '-ls': return s('詳細を表示', 'list it in detail');
-    case '-delete': return s('削除', 'delete it');
-    case '-quit': return s('すぐに終了', 'quit');
+    case '-samefile': return said(s(`${a} と同じファイル`, `the same file as ${a}`), s('（同じ inode）', ' (same inode)'));
+    case '-maxdepth': return said(s(`深さ ${a} まで`, `at most ${a} level${a === '1' ? '' : 's'} deep`));
+    case '-mindepth': return said(s(`深さ ${a} 以上`, `at least ${a} level${a === '1' ? '' : 's'} deep`));
+    case '-readable': return said(s('読み取り可能', 'readable'));
+    case '-writable': return said(s('書き込み可能', 'writable'));
+    case '-executable': return said(s('実行可能', 'executable'));
+    case '-true': return said(s('常に真', 'always true'));
+    case '-false': return said(s('常に偽', 'always false'));
+    case '-prune': return said(s('その中には入らずスキップ', 'skip it without descending'));
+    case '-print': return said(s('表示', 'print it'));
+    case '-print0': return said(s('NUL 区切りで表示', 'print it NUL-terminated'));
+    case '-printf': return said(s(`書式 ${a} で表示`, `print it with the format ${a}`));
+    case '-ls': return said(s('詳細を表示', 'list it in detail'));
+    case '-delete': return said(s('削除', 'delete it'));
+    case '-quit': return said(s('すぐに終了', 'quit'));
     case '-exec': case '-execdir': case '-ok': case '-okdir': {
       const cmd = (p.ended ? p.args.slice(0, -1) : p.args).join(' ');
       const batch = p.ended && p.args[p.args.length - 1] === '+';
       const ask = p.name === '-ok' || p.name === '-okdir';
       // (find refuses a command that nothing ends, or that is empty: the note of the line says so.)
-      if (p.refused) return s(`${cmd ? `「${cmd}」を実行` : 'コマンドがない'}（find は受け付けない形）`, `${cmd ? `run "${cmd}"` : 'no command'} (find refuses this form)`);
+      if (p.refused) return said(s(cmd ? `「${cmd}」を実行` : 'コマンドがない', cmd ? `run "${cmd}"` : 'no command'), s('（find は受け付けない形）', ' (find refuses this form)'), true);
       // (Where a word is not known here, `"$@"`, nothing may end the command, and find may still run it: how often is not known.)
       const [howJ, howE] = !p.ended ? ['', ''] : batch ? ['まとめて', ' on all at once'] : ['1件ずつ', ' for each'];
-      return s(`${ask ? '確認してから' : ''}「${cmd}」を${howJ}実行`, `${ask ? 'ask, then ' : ''}run "${cmd}"${howE}`);
+      // (Its words joined with blanks: where one holds a blank, `sh -c 'wc -l {}'`, the text does not show where each ends, and the expression has no reading.)
+      return said(s(`${ask ? '確認してから' : ''}「${cmd}」を${howJ}実行`, `${ask ? 'ask, then ' : ''}run "${cmd}"${howE}`), undefined, p.ended && !p.args.some((x) => /\s/.test(x)) ? undefined : true);
     }
     default: {
       // -newerXY REF: the X time of the file is newer than the Y time of REF (or than the date, with t).
       const nm = /^-newer([acBm])([acBmt])$/.exec(p.name);
       if (nm) {
         const x: Record<string, [string, string]> = { a: ['アクセス', 'accessed'], c: ['状態変更', 'status changed'], B: ['作成', 'created'], m: ['更新', 'modified'] };
-        return nm[2] === 't'
+        return said(nm[2] === 't'
           ? s(`${x[nm[1]][0]}が ${a} より後`, `${x[nm[1]][1]} after ${a}`)
-          : s(`${x[nm[1]][0]}時刻が ${a} の${x[nm[2]][0]}時刻より新しい`, `${x[nm[1]][1]} more recently than ${a} was ${x[nm[2]][1]}`);
+          : s(`${x[nm[1]][0]}時刻が ${a} の${x[nm[2]][0]}時刻より新しい`, `${x[nm[1]][1]} more recently than ${a} was ${x[nm[2]][1]}`));
       }
-      return p.name + (a ? ` ${a}` : '');
+      // (A primary this reader has no phrase for: its words as written.)
+      return said(p.name + (a ? ` ${a}` : ''), undefined, true);
     }
   }
 }
 
-function describe(n: FindNode, lang: Lang): string {
+/**
+ * The expression as one phrase, with the asides of its primaries (`asides`, the row's) or without them (the sentence's);
+ * undefined, without them, where a primary is unread (`Phrase.unread`).
+ */
+function describe(n: FindNode, lang: Lang, asides = true): string | undefined {
   const s = pick(lang);
+  const all = (nodes: readonly FindNode[]): string[] | undefined => {
+    const out = nodes.map((c) => describe(c, lang, asides));
+    return out.every((x) => x !== undefined) ? out as string[] : undefined;
+  };
   switch (n.type) {
-    case 'primary': return phrase(n, lang);
+    case 'primary': {
+      const p = phrase(n, lang);
+      return asides ? p.text + (p.aside ?? '') : p.unread ? undefined : p.text;
+    }
     // (What is inside once: as an argument of each language it would be read twice for each level.)
-    case 'not': { const inner = describe(n.child, lang); return s(`「${inner}」ではない`, `not (${inner})`); }
-    case 'group': { const inner = describe(n.child, lang); return s(`（${inner}）`, `(${inner})`); }
+    case 'not': { const inner = describe(n.child, lang, asides); return inner === undefined ? undefined : s(`「${inner}」ではない`, `not (${inner})`); }
+    case 'group': { const inner = describe(n.child, lang, asides); return inner === undefined ? undefined : s(`（${inner}）`, `(${inner})`); }
     // Only at the top or in `( )`: `-o` binds the loosest.
-    case 'or': return n.children.map((c) => describe(c, lang)).join(s('、または ', '; or '));
-    case 'list': return n.children.map((c) => describe(c, lang)).join(s('。次に ', ', then '));
+    case 'or': return all(n.children)?.join(s('、または ', '; or '));
+    case 'list': return all(n.children)?.join(s('。次に ', ', then '));
     case 'and': {
       // Conditions followed by actions read as "if <conditions>: <actions>".
       const conds = n.children.filter((c) => !(c.type === 'primary' && (ACTIONS.has(c.name) || c.name === '-prune')));
       const acts = n.children.filter((c) => !conds.includes(c));
-      const condText = conds.map((c) => describe(c, lang)).join(s(' かつ ', ' and '));
+      const condTexts = all(conds);
+      const actTexts = all(acts);
+      if (!condTexts || !actTexts) return undefined;
+      const condText = condTexts.join(s(' かつ ', ' and '));
       if (!acts.length) return condText;
-      const actText = acts.map((c) => describe(c, lang)).join(s('して', ', then '));
+      const actText = actTexts.join(s('して', ', then '));
       return condText ? s(`${condText}なら${actText}`, `if ${condText}: ${actText}`) : actText;
     }
   }
@@ -351,10 +377,15 @@ export function strayWords(n: FindNode): number[] {
   }
 }
 
+/** What find does with the expression `n`, said `body`: its conditions and actions, or where it has no action, `-print` of what matches. */
+function doneWith(n: FindNode, body: string, lang: Lang): string {
+  return hasAction(n) ? body : pick(lang)(`「${body}」に当てはまるものを表示する`, `Print what matches: ${body}`);
+}
+
 /** `refused`: find refuses the line (a word no predicate takes, per `strayWords`); the summary says so before what it would do. */
 export function describeFind(n: FindNode, lang: Lang, refused = false): string {
   const s = pick(lang);
-  const body = describe(n, lang);
+  const body = describe(n, lang)!;
   if (refused) return s('find はこの式を受け付けず、何も実行せずに終了ステータス 1 で終わる（式に条件でも処理でもない語がある）', 'find refuses this expression and exits with status 1, running nothing (a word is neither a predicate nor an action)');
   const pruneIdiom = n.type === 'or' && n.children[0].type === 'and'
     && n.children[0].children.some((c) => c.type === 'primary' && c.name === '-prune');
@@ -362,7 +393,17 @@ export function describeFind(n: FindNode, lang: Lang, refused = false): string {
   const late = lateGlobalOption(n);
   const pitfall = late ? s(`（\`${late}\` は検索全体に効くオプションで、書いた位置より後の条件にだけ効くわけではない。条件より後に書くと find が警告する。先頭に書く）`, ` (\`${late}\` is a global option: it limits the whole search, not only the tests after it; find warns when it follows a test, so put it first)`) : '';
   if (hasAction(n)) return s(`検索条件と処理: ${body}${idiom}${pitfall}`, `Conditions and actions: ${body}${idiom}${pitfall}`);
-  return s(`「${body}」に当てはまるものを表示する（処理の指定が無いので \`-print\` が補われる）${idiom}${pitfall}`, `Print what matches: ${body} (no action is given, so \`-print\` is implied)${idiom}${pitfall}`);
+  return doneWith(n, body, lang) + s('（処理の指定が無いので `-print` が補われる）', ' (no action is given, so `-print` is implied)') + idiom + pitfall;
+}
+
+/**
+ * What find does with the expression `n`, in one clause, as its row says it (`describeFind`) without the row's label and its asides (how find
+ * counts days, rounds sizes; the implied `-print`, an idiom, a pitfall): the reading the sentence of the line says (src/linesentence.ts).
+ * Undefined where a primary is unread (`Phrase.unread`).
+ */
+export function findReading(n: FindNode, lang: Lang): string | undefined {
+  const body = describe(n, lang, false);
+  return body === undefined ? undefined : doneWith(n, body, lang);
 }
 
 /** For `-name`-style patterns: what the glob means. */
