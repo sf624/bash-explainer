@@ -69,7 +69,7 @@ export function wordView(n: SyntaxNode, model: StateModel, env?: WordEnv): WordV
   if (!w) return undefined;
   const known = wordFields(n, model, env);
   const source = modelValues(w, model, env);
-  return viewOf(w, source, (v) => wordView(v, model, env)!, env, known, () => (known.fields || known.error ? undefined : wordShapes(n, model, knownValues(w, source))));
+  return viewOf(w, source, (v) => wordView(v, model, env)!, env, known, () => wordShapes(n, model, knownValues(w, source)));
 }
 
 /** The view of the word that holds `n` in the state `st` of the walk, with its values (`source`); its count is known only where its fields are. */

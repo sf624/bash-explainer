@@ -77,6 +77,8 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(brief(viewAt('export w=', 'w=')), { value: 'w=', plain: true, count: { min: 1, max: 1 }, start: 'w=', end: 'w=', globs: false, unknown: [], words: [['w=', 'w=', ['w=']]] });
     assert.deepStrictEqual(brief(viewAt('export z="$x"', 'z="$x"', 'as written')), { plain: false, count: { min: 0 }, globs: false, unknown: ['value'], words: [['z="$x"', 'z=<>', null]] });
     assert.deepStrictEqual(brief(viewAt('export FOO=bar', 'FOO=bar', 'as written')), { value: 'FOO=bar', plain: true, count: { min: 1, max: 1 }, start: 'FOO=bar', end: 'bar', globs: false, unknown: [], words: [['FOO=bar', 'FOO=bar', ['FOO=bar']]] });
+    // (A value bash fails on: no field, and no characters.)
+    assert.deepStrictEqual(brief(viewAt('x=; export a=${x:?}', 'a=${x:?}')), { plain: false, count: { min: 0, max: 0 }, globs: 'unknown', unknown: [], words: [['a=${x:?}', undefined, null]] });
     // (One the builtin reads itself, an array, or a subscript of the name.)
     assert.deepStrictEqual(brief(viewAt('declare -a b=(1 2)', 'b=(1 2)')), { plain: false, count: { min: 0 }, globs: 'unknown', unknown: ['misread'], words: [] });
   });
