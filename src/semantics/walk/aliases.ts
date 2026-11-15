@@ -40,7 +40,7 @@ export class WalkAliases {
     if (a) return a.state !== 'unknown' ? { ...a, state: 'unknown' } : undefined;
     const defs = this.defs.get(name);
     const def = defs?.[defs.length - 1];
-    const value = def ? fields(def, 'argument').map(aliasOf).find((x) => x?.name === name)?.value : undefined;
+    const value = def ? fields(def, 'argument').map((a) => aliasOf(a)).find((x) => x?.name === name)?.value : undefined;
     return def && value !== undefined ? { state: 'unknown', value, at: def } : undefined;
   }
 
