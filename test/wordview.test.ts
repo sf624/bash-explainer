@@ -2,11 +2,12 @@
 // the field domain, case by case. test/word-probes.test.ts holds it against bash on probes/words.json.
 import * as assert from 'assert';
 import { shellState } from '../src/semantics/state';
-import { wordView, type WordView, wordViewAsWritten, wordViewIn } from '../src/semantics/wordview';
+import { unmatchedOf, wordView, type WordView, wordViewAsWritten, wordViewIn } from '../src/semantics/wordview';
 import { EMPTY } from '../src/semantics/shellstate';
 import type { WordEnv } from '../src/semantics/words';
 import type { Shell } from '../src/shellfeatures';
 import { declaredWord } from '../src/semantics/wordcontexts';
+import { placedText } from '../src/staticword';
 import { wordMeaning } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
@@ -58,6 +59,40 @@ describe('the view of a word (wordview.ts)', () => {
 
   it('a pattern bash leaves as written (`set -f`) has the value `WordMeaning.value` gives: none yet (word-source step 3b)', () => {
     assert.deepStrictEqual(brief(view('set -f; show ./x*')), { plain: false, count: { min: 1, max: 1 }, start: './x*', end: './x*', globs: false, unknown: [], words: [['./x*', './x*', ['./x*']]] });
+  });
+
+  it('what a word gives where pathname expansion leaves it as it is (`unmatched`): its value, or a pattern as written after quote removal', () => {
+    const unmatched = (text: string, i = 0, opts: { shell?: Shell } = {}): string | undefined => view(text, i, opts).unmatched;
+    assert.strictEqual(unmatched('show "b c"'), 'b c');
+    assert.strictEqual(unmatched('show *.txt'), '*.txt');
+    assert.strictEqual(unmatched('show "a"*\\?.zz'), 'a*?.zz');
+    assert.strictEqual(unmatched('show foo$'), 'foo$');
+    assert.strictEqual(unmatched('set -f; show a*b'), 'a*b');
+    assert.strictEqual(unmatched('show $\'\\t\''), '\t');
+    // (A context that matches the word itself gives no field: none, but the value where it is plain.)
+    assert.strictEqual(viewAt('case $y in *"*".txt) ;; esac', '*"*".txt').unmatched, undefined);
+    assert.strictEqual(viewAt('case $y in "*".txt) ;; esac', '"*".txt').unmatched, '*.txt');
+    // (An assignment given to a declaration builtin: its name and `=` before what its value gives.)
+    assert.strictEqual(viewAt('export a=b*', 'a=b*').unmatched, 'a=b*');
+    assert.strictEqual(viewAt('export a=', 'a=').unmatched, 'a=');
+    assert.strictEqual(viewAt('export a=~', 'a=~').unmatched, undefined);
+    // (Another step changes the word, a part is not known, or a pattern that matches nothing may go: none.)
+    for (const text of ['show ~/a.b', 'show a{b,c}', 'show ${x:?}', 'IFS=$1; show $x', 'show $x', 'show "$x"', 'show $(:)', 'shopt -s nullglob; show *.txt', 'shopt -s failglob; show *.txt', 'shopt -s nullglob; set -f; show a', '[ "$1" ] && shopt -s nullglob; show *.txt']) {
+      assert.strictEqual(unmatched(text), text.endsWith('show a') ? 'a' : undefined, text);
+    }
+    // (Nullglob does not matter to a word that is no pattern, or where pathname expansion does not apply.)
+    assert.strictEqual(unmatched('shopt -s nullglob; set -f; show a*'), 'a*');
+    // (Where each character of that text sits in the source: what a reader of a language places its tokens over.)
+    const placed = (text: string): ReturnType<typeof placedText> => { const w = wordsOf(text).words[0]; return placedText(w, view(text).unmatched!); };
+    assert.deepStrictEqual(placed('show foo$'), { text: 'foo$', base: 0 });
+    assert.deepStrictEqual(placed('show "a"*\\?'), { text: 'a*?', offsets: [1, 3, 4], ends: [2, 4, 6], removed: ['\\?'] });
+    for (const text of ["show $'\\t'", 'x=`show \'a\\$b\'`', "show 'a'\\\n'b'"]) assert.deepStrictEqual([typeof view(text).unmatched, placed(text)], ['string', undefined], text);
+    assert.strictEqual(placedText(wordsOf('show ab').words[0], 'ba'), undefined);
+    // (The view is made once per word of the model.)
+    const { tree, words } = wordsOf('show *.txt');
+    const model = shellState(tree, 'bash');
+    assert.strictEqual(wordView(words[0], model), wordView(words[0], model));
+    assert.notStrictEqual(wordView(words[0], model, { files: [] }), wordView(words[0], model, { files: [] }));
   });
 
   it('where the context matches the word as a pattern or a regex, its wildcards are patterns, and it is not plain', () => {
@@ -172,7 +207,10 @@ describe('the view of a word (wordview.ts)', () => {
         const w = n.named && TOPS.has(n.type) ? wordMeaning(n, model) : undefined;
         if (w?.nodes[0] !== n) continue;
         words++;
+        // (What a reader of a language asks, `unmatchedOf`, is the view's `unmatched`, asked first, before the view is made.)
+        const short = unmatchedOf(n, model);
         const v = wordView(n, model)!;
+        if (short !== v.unmatched) wrong.push(`${JSON.stringify(text)} ${n.text}: unmatchedOf ${JSON.stringify(short)}, view ${JSON.stringify(v.unmatched)}`);
         const d = declaredWord(w, w.steps[0].applies);
         // (An assignment given to a declaration builtin: its head before the value of its value's word.)
         const value = d && d !== 'unread' ? (d.value ? ((x) => x === undefined ? undefined : d.head + x)(wordMeaning(d.value, model)!.value) : d.head) : w.value;

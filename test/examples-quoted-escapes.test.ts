@@ -55,7 +55,6 @@ const rows: Row[] = [
   { line: 'awk -F {} \'{print $1}\' f', word: R`"\t"`, other: true },
   { line: 'awk -v {} \'{print $1,$2}\' f', word: R`OFS="\t"`, mixed: true, other: true },
   { line: 'git log --pretty={}', word: R`format:"%h\t%s"`, mixed: true },
-  { line: 'sed {} f', word: R`$"s/\./x/"`, real: 'output' },
   { line: 'awk {} f', word: R`\$1`, real: 'output' },
   { line: 'awk {} f', word: R`\{print\ \$2\}`, real: 'output' },
   { line: 'grep {} f', word: R`a\😀b`, real: 'grep' },
@@ -70,6 +69,12 @@ const rows: Row[] = [
   { line: 'date {}', word: R`+"%F\n"`, mixed: true },
   { line: 'jq {} f', word: R`".a | \"v: \\(.)\""` },
   { line: 'find . -name {}', word: R`\*.py` },
+  // (What the view of the word says it gives (`givenText`): a `$` before no name is text, and so is `$'…'` in a value the readers do not place tokens on.)
+  { line: 'grep {} f', word: 'foo$', real: 'grep' },
+  { line: 'grep -e {} f', word: 'a.b$', real: 'grep' },
+  { line: 'awk -F {} \'{print $1}\' f', word: R`$'\t'`, other: true },
+  { line: 'awk -F {} \'{print $2}\' f', word: R`$':'`, real: 'output', other: true },
+  { line: 'awk -v {} \'{print x $1}\' f', word: R`x=$'-'`, real: 'output', mixed: true, other: true },
 ];
 
 const parser = createUnbashParser();
@@ -168,6 +173,38 @@ describe('a word with escapes is read as bash gives it to the command', () => {
     for (const t of all) for (const n of [t.span.start.line, t.span.start.character, t.span.end.line, t.span.end.character]) assert.ok(Number.isInteger(n), `${t.label}: ${JSON.stringify(t.span)}`);
     assert.ok(!JSON.stringify(e.items).includes('null'));
   });
+});
+
+describe('a pattern is read as the text bash leaves where no file matches it', () => {
+  for (const [line, word, kind] of [['find . -name *.txt', '*.txt', 'glob'], ['grep a*b f', 'a*b', 'regex'], ['grep "a"*\\? f', '"a"*\\?', 'regex']]) {
+    it(line, () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-unmatched-'));
+      try {
+        const text = run('bash', ['-c', `printf %s ${word}`], { cwd: dir, check: true }).stdout.toString();
+        // (The same reading and example of the command's language as the single-quoted text bash gives: the line's own glob example aside.)
+        const quoted = line.replace(word, () => `'${text}'`);
+        const shape = (l: string) => embeddedTokens(l).map(({ token }) => [token.kind, token.explanation.replace(/^`[^`]*`: /, '')]);
+        assert.ok(shape(line).length > 0, 'the text is read');
+        assert.deepStrictEqual(shape(line), shape(quoted));
+        const own = (l: string) => examplesOf(l).filter((x) => x.kind === kind);
+        assert.ok(own(line).length > 0, `a ${kind} example`);
+        assert.deepStrictEqual(own(line)[0], own(quoted)[0]);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe('a word bash may change before the command reads it is not read as its text', () => {
+  // (Its view gives no text, `givenText`: a tilde becomes the home directory; `$"…"` is translated where a message catalog has it.)
+  for (const [line, word] of [['grep ~/a.b f', '~/a.b'], [R`grep ~/a\$b f`, R`~/a\$b`], [R`sed $"s/\./x/" f`, R`$"s/\./x/"`]]) {
+    it(line, () => {
+      assert.deepStrictEqual(embeddedTokens(line), []);
+      assert.deepStrictEqual(examplesOf(line).filter((x) => x.kind === 'regex' || x.kind === 'sed'), []);
+      if (word.startsWith('~')) assert.notStrictEqual(run('bash', ['-c', `printf %s ${word}`], { check: true, env: { ...process.env, HOME: '/home/u' } }).stdout.toString(), word.replace('\\', ''));
+    });
+  }
 });
 
 describe('sourceIndex', () => {

@@ -23,7 +23,7 @@ import type { RerunSpec } from '../examples/rerun';
 import { sedExample, sedPattern } from '../examples/sed';
 import { NO_INPUT } from '../examples/source';
 import { featureWorks } from '../shellfeatures';
-import { holedContent, type Literal, literalContent, literalOfMapped, removedBackslashes, sourceIndex, staticWordText } from '../staticword';
+import { holedContent, type Literal, literalOfMapped, removedBackslashes, sourceIndex, staticWordText } from '../staticword';
 import { ancestor, field, hasError, type SyntaxNode } from '../syntax/tree';
 import { commandReading, lookupKey } from '../semantics/commandread';
 import { docLine, type StateModel } from '../semantics/state';
@@ -41,7 +41,7 @@ import type { BashVersion } from '../bashversion';
 import type { Shell } from '../dialect';
 import type { Lang } from '../i18n';
 import type { ReadKnown, Stop } from '../semantics/scriptstops';
-import { given, givenIn, inArithmetic, lookupOf, optionValues, regexFlavor, regexFlavorOf, trContext } from './reads';
+import { given, givenIn, givenLiteral, givenText, inArithmetic, lookupOf, optionValues, regexFlavor, regexFlavorOf, trContext } from './reads';
 import { hostString } from './hoststrings';
 import { valueNote } from './words';
 
@@ -53,14 +53,15 @@ export interface EmbeddedReading { tokens: Token[]; note?: string; holes?: Span[
 
 /**
  * Explain the contents of a quoted or plain word written in another language (a regex, a sed script…), as the command
- * is given it: the text after quote removal (`literalContent`), whose tokens are placed over the source, escapes
- * included. A word that is a copy of a variable whose value the model knows is read under that value (`valueReading`);
- * any other with an expansion in double quotes is read with the expansion as a hole (`holedWord`).
+ * is given it: the text the view of the word gives (`givenLiteral`: after quote removal, a pattern as it is where no file
+ * matches it), whose tokens are placed over the source, escapes included. A word that is a copy of a variable whose
+ * value the model knows is read under that value (`valueReading`); any other with an expansion in double quotes is read
+ * with the expansion as a hole (`holedWord`).
  */
 export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): EmbeddedReading | undefined {
   const known = knownValueRead(cx, a, lang);
   if (known) return known;
-  const lit = literalContent(a) ?? holedWord(cx, a);
+  const lit = givenLiteral(cx.state, a) ?? holedWord(cx, a);
   return lit && embeddedText(cx, lit, lang, a);
 }
 
@@ -155,7 +156,7 @@ function readValue(cx: Explainer, c: CommandRead, a: SyntaxNode, lang: EmbeddedL
   const known = knownCopy(a, cx.state);
   if (!known) return undefined;
   const { part, value, assumes } = known;
-  const ecx = embeddedContext(c, a, { lang: cx.lang, shell: cx.shell, bashVersion: cx.opts.bashVersion }, { evidence: () => cx.documentEvidenceAt(a), stop: () => cx.documentStopAt(a) }, line);
+  const ecx = embeddedContext(c, a, cx.state, { lang: cx.lang, shell: cx.shell, bashVersion: cx.opts.bashVersion }, { evidence: () => cx.documentEvidenceAt(a), stop: () => cx.documentStopAt(a) }, line);
   const read = EMBEDDED[lang](value.text, ecx);
   // (A reading with no tokens may still say something of the whole: `grep -F`, a fixed string.)
   if (!read) return undefined;
@@ -312,11 +313,11 @@ export interface LinePart { lineEvidence(known: () => ReadKnown | undefined): Re
  * sets, the options given, from the command's reading; the language of the texts, the shell and the bash release; and where
  * the word is (`at`), with what the asking line makes of it (`line`).
  */
-export function embeddedContext(c: CommandRead, a: SyntaxNode, texts: { lang: Lang; shell: Shell | undefined; bashVersion?: BashVersion }, at: DocumentPlace, line: LinePart): EmbeddedContext {
+export function embeddedContext(c: CommandRead, a: SyntaxNode, model: StateModel, texts: { lang: Lang; shell: Shell | undefined; bashVersion?: BashVersion }, at: DocumentPlace, line: LinePart): EmbeddedContext {
   return {
     lang: texts.lang,
     flavor: () => regexFlavorOf(c, c.nodes.findIndex((w) => same(w, a))),
-    trSet: () => trContext(c, a),
+    trSet: () => trContext(c, a, model),
     // The letters given (`-lane`: l, a, n and e; `-pi.bak`: p and i).
     letters: () => new Set(givenOptions(c.parse).map(({ role }) => role.flag.slice(1))),
     given: (...names) => givenIn(c, ...names),
@@ -334,7 +335,7 @@ export function embeddedContext(c: CommandRead, a: SyntaxNode, texts: { lang: La
 function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): EmbeddedReading | undefined {
   // (A line the tool refuses runs no program: `grep -E -F PATTERN` reads the pattern in no flavour.)
   if (cx.command?.parse.refused) return undefined;
-  const ecx = embeddedContext(cx.command!, a, { lang: cx.lang, shell: cx.shell, bashVersion: cx.opts.bashVersion }, { evidence: () => cx.documentEvidenceAt(a), stop: () => cx.documentStopAt(a) }, cx);
+  const ecx = embeddedContext(cx.command!, a, cx.state, { lang: cx.lang, shell: cx.shell, bashVersion: cx.opts.bashVersion }, { evidence: () => cx.documentEvidenceAt(a), stop: () => cx.documentStopAt(a) }, cx);
   const read = EMBEDDED[lang](lit.text, ecx);
   const holes = lit.holes ? readHoles(cx, lit, lang, a, read) : undefined;
   if (holes?.stopped) return holes.reading;
@@ -488,7 +489,7 @@ function embeddedExample(cx: Explainer, lang: EmbeddedLang, text: string, a: Syn
       break;
     case 'gitformat':
     case 'gitdate':
-      pushExample(cx, gitLogExample(lang, text, cx.command!.parse, cx.command!.nodes.map((x) => literalContent(x)?.text), cx.lang));
+      pushExample(cx, gitLogExample(lang, text, cx.command!.parse, cx.command!.nodes.map((x) => givenText(cx.state, x)), cx.lang));
       break;
     case 'glob': {
       // Unlike the shell, find matches a leading dot with * too; -path also matches / with *.

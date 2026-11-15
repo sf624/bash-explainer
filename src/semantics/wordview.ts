@@ -45,6 +45,14 @@ export interface WordView {
   /** Its one field where it is `plain`: `WordMeaning.value`, the one source of a word's literal value. */
   value?: string;
   /**
+   * The field its one word gives where pathname expansion leaves it as it is (no file matches it, with nullglob and
+   * failglob off) or does not apply: `value` where it is plain, else the characters of a pattern after quote removal
+   * (`*.txt`, `"a"*` gives `a*`, `[a-z]`). None where another step (a brace, a tilde, an expansion) changes the word,
+   * where a part is not known, or where the context matches it itself (`case`, `[[ == ]]`: no field; `value` where
+   * plain). What a command reads as a text in its own language (a regex, a glob, a tr set) gets this.
+   */
+  unmatched?: string;
+  /**
    * Its value is known (`WordMeaning.value`), and no step but quote removal changes the text: no brace, tilde,
    * expansion, splitting or pathname expansion, and no character the context matches as a pattern or a regex.
    */
@@ -67,10 +75,31 @@ export interface WordView {
 export function wordView(n: SyntaxNode, model: StateModel, env?: WordEnv): WordView | undefined {
   const w = wordMeaning(n, model);
   if (!w) return undefined;
+  // (Made once per word of the model, `wordMeaning` being: the view with an environment of the probes is made afresh.)
+  const kept = env ? undefined : views.get(w);
+  if (kept) return kept;
   const known = wordFields(n, model, env);
   const source = modelValues(w, model, env);
-  return viewOf(w, source, (v) => wordView(v, model, env)!, env, known, () => wordShapes(n, model, knownValues(w, source)));
+  const view = viewOf(w, source, (v) => wordView(v, model, env)!, env, known, () => wordShapes(n, model, knownValues(w, source)));
+  if (!env) views.set(w, view);
+  return view;
 }
+
+/** The views of the finished model's words, by their meaning (`wordMeaning` keeps one per word and model). */
+const views = new WeakMap<WordMeaning, WordView>();
+
+/**
+ * `unmatched` of the view of the word that holds `n` in the finished model, for a reader that needs only that: a word
+ * another step changes has none (`throughGlobOnly`), so its fields and their domain are not worked out for it.
+ */
+export function unmatchedOf(n: SyntaxNode, model: StateModel): string | undefined {
+  const w = wordMeaning(n, model);
+  if (!w || (!declaredWord(w, w.steps[0].applies) && !throughGlobOnly(w))) return undefined;
+  return wordView(n, model)!.unmatched;
+}
+
+/** No step but quote removal and pathname expansion applies to the word `w`. */
+const throughGlobOnly = (w: WordMeaning): boolean => w.steps.every((s) => s.kind === 'quote-removal' || s.kind === 'glob' || s.applies === false);
 
 /** The view of the word that holds `n` in the state `st` of the walk, with its values (`source`); its count is known only where its fields are. */
 export function wordViewIn(n: SyntaxNode, st: ShellState, source: WalkSource): WordView | undefined {
@@ -113,12 +142,26 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   const globs: Applies = words.some((x) => x.globs === true) ? true : typeof got === 'string' || words.some((x) => x.globs === 'unknown') ? 'unknown' : false;
   const plain = w.value !== undefined && words.length === 1 && globs === false && w.steps.every((s) => s.kind === 'quote-removal' || s.applies === false)
     && !!words[0].chars && !words[0].chars.some((c) => c.hole || c.pattern);
+  const unmatched = plain ? w.value : unmatchedText(w, words);
   // (The walk's view knows no error of the word: a redirection's target is one field there, or not known.)
   const each = words.length && words.every((x) => x.fields) ? words.flatMap((x) => x.fields!) : undefined;
   const exact = known ? (known.error ? [] : known.fields) : each && (w.rule.fields !== 'one-or-error' || each.length === 1) ? each : undefined;
   const domain = exact ? undefined : shapes?.();
   const ends = exact ? exactEnds(exact) : domain ? fromShapes(domain) : { count: { min: 0 } };
-  return { meaning: w, ...(plain ? { value: w.value } : {}), plain, words, ...ends, globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
+  return { meaning: w, ...(plain ? { value: w.value } : {}), ...(unmatched !== undefined ? { unmatched } : {}), plain, words, ...ends, globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
+}
+
+/**
+ * The field of the one word `words` of `w` where no step but quote removal and pathname expansion applies, pathname
+ * expansion leaves a pattern that matches no file as it is, and the context gives fields: its characters, with no hole
+ * (`WordView.unmatched`).
+ */
+function unmatchedText(w: WordMeaning, words: readonly ViewWord[]): string | undefined {
+  const glob = w.steps.find((s) => s.kind === 'glob')!;
+  if (w.rule.match || words.length !== 1 || !words[0].chars || words[0].asWritten || words[0].chars.some((c) => c.hole)) return undefined;
+  if (!throughGlobOnly(w)) return undefined;
+  if (glob.applies !== false && (w.glob.nullglob !== 'off' || w.glob.failglob !== 'off')) return undefined;
+  return words[0].chars.map((c) => c.c).join('');
 }
 
 /** The count, the start and the end of fields known exactly. */
@@ -131,11 +174,11 @@ const exactEnds = (fields: readonly string[]): Pick<WordView, 'count' | 'start' 
  */
 function declarationView(w: WordMeaning, head: string, inner: WordView | undefined, known?: Fields): WordView {
   const headChars = (): Char[] => [...head].map((c) => ({ c, quoted: false, split: false }));
-  if (!inner) return { meaning: w, value: head, plain: true, words: [{ written: head, chars: headChars(), fields: [head], globs: false }], ...exactEnds([head]), globs: false, unknown: [] };
+  if (!inner) return { meaning: w, value: head, unmatched: head, plain: true, words: [{ written: head, chars: headChars(), fields: [head], globs: false }], ...exactEnds([head]), globs: false, unknown: [] };
   const words = inner.words.map((x) => ({ ...x, written: head + x.written, ...(x.chars ? { chars: [...headChars(), ...x.chars] } : {}), ...(x.fields ? { fields: x.fields.map((f) => head + f) } : {}) }));
   const exact = known ? (known.error ? [] : known.fields) : undefined;
   const ends = exact ? exactEnds(exact) : { count: inner.count, ...(inner.start !== undefined ? { start: head + inner.start, end: inner.end } : {}) };
-  return { meaning: w, ...(inner.plain ? { value: head + inner.value } : {}), plain: inner.plain, words, ...ends, globs: inner.globs, ...(inner.shapes ? { shapes: inner.shapes } : {}), unknown: inner.unknown };
+  return { meaning: w, ...(inner.plain ? { value: head + inner.value } : {}), ...(inner.unmatched !== undefined ? { unmatched: head + inner.unmatched } : {}), plain: inner.plain, words, ...ends, globs: inner.globs, ...(inner.shapes ? { shapes: inner.shapes } : {}), unknown: inner.unknown };
 }
 
 /** The count, the start and the end that hold in every case of the field domain. */

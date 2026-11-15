@@ -43,7 +43,7 @@ import { assignmentsOnly, field, nameText, prefixAssignments, redirectionsOf, ty
 import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
-import { echoMayReadEscapes, given, globOff, ifsAt, NO_SPEC, nocasematchAt, optionValues, resolve, shoptAt, type ShoptName, specFor, wordAt } from './reads';
+import { echoMayReadEscapes, given, givenText, globOff, ifsAt, NO_SPEC, nocasematchAt, optionValues, resolve, shoptAt, type ShoptName, specFor, wordAt } from './reads';
 import { has, operands, readsFields, regexWords, values } from '../argv/query';
 import { impliedOptions } from '../dict/aliases';
 import { wordFields } from '../semantics/words';
@@ -293,9 +293,9 @@ function tzOf(cx: Explainer): string | undefined | null {
   return tz;
 }
 
-/** -F, -v and `name=value` operands of the current awk command (literal values only); undefined when the example cannot follow them. */
+/** -F, -v and `name=value` operands of the current awk command (the texts their words give, `givenText`); undefined when the example cannot follow them. */
 export function awkOptions(cx: Explainer): (AwkRunOptions & { vars: Record<string, string> }) | undefined {
-  const words = cx.command!.args.map((a) => literalContent(a)?.text);
+  const words = cx.command!.args.map((a) => givenText(cx.state, a));
   const inv = awkInvocation(words);
   // Options awk has more of (`--posix`, `-W …`) do not change what the example shows.
   if (inv.unsupported && !inv.unsupported.startsWith('awk -')) return undefined;

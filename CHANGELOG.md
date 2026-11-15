@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+
+### Fixed
+
+- A command's text is read as bash gives it in more words: `grep foo$ f` explains its regex, and `awk -F$'\t'` runs its example with a tab. A word whose tilde bash expands, `grep ~/a.b f`, is no longer read as the text `~/a.b`.
+
 ## 0.15.0
 
 "In short", the sentence at the top of an explanation, now says what a command does with its words: find's expression, a sed or awk script of one command, a test such as `[ -z "$1" ]`. find's expression is explained in the order find runs it.

@@ -23,10 +23,12 @@ export const IFS_WHITESPACE = ' \t\n\v\f\r';
 export const IFS_ERRATIC = /[\x01\x7f]/;
 /**
  * A character of a field, quoted or not, and whether word splitting may split there (from an unquoted expansion).
- * `hole`: a part whose value is not known (`c` empty), from a piece with a hole (`ownChars`). `pattern`: a character
- * that is special, unquoted, in a field that is a pattern (`true`) or may be (`'unknown'`): where pathname expansion takes
- * it as one (`specialChars`, with the glob options in effect), or where the context matches it as a pattern or a regex
- * (`wildcardChars`, `regexChars`). `viewWords` (src/semantics/words.ts) marks it, for the view of a word.
+ * `hole`: a part whose value is not known (`c` empty), from a piece with a hole (`ownChars`). `pattern`: an unquoted
+ * character that makes its field a pattern (`true`), or may (`'unknown'`), by the rule of what reads the field: where
+ * pathname expansion takes the field as a pattern, its special characters (`specialChars`, with the glob options in
+ * effect); where the context matches it as a pattern, its wildcards (`wildcardChars`: not every character the pattern
+ * language gives a meaning, docs/backlog-archive.md), or as a regex, its operators (`regexChars`). `viewWords`
+ * (src/semantics/words.ts) marks it, for the view of a word.
  */
 export type Char = { c: string; quoted: boolean; split: boolean; hole?: Hole; pattern?: true | 'unknown' };
 
