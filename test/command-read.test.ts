@@ -25,11 +25,11 @@ const parser = createUnbashParser();
 const NONE: CommandLookup = { yq: {} };
 
 /** The reading of the first simple command of `text`, with `lookup`. */
-function readFirst(text: string, lookup: CommandLookup = NONE): { reading: CommandReading; cmd: SyntaxNode } {
+function readFirst(text: string, lookup: CommandLookup = NONE): { reading: CommandReading; cmd: SyntaxNode; model: ReturnType<typeof shellState> } {
   const tree = parser.parse(text);
   const model = shellState(tree, undefined, lookup.hostCommands ? { host: lookup.hostCommands } : {});
   const cmd = descendants(tree.root, ['command'])[0];
-  return { reading: commandReading(cmd, model, lookup), cmd };
+  return { reading: commandReading(cmd, model, lookup), cmd, model };
 }
 
 /** A parse as roles: each word's index and role, with the flag of an option. */
@@ -87,11 +87,11 @@ describe('command reading on the model (docs/design/known-values.md, 3)', () => 
   });
 
   it('gives a reader of a word the context of the command reading, and where the word is', () => {
-    const { reading } = readFirst("sed -E -n 's/a+/b/p' f");
+    const { reading, model } = readFirst("sed -E -n 's/a+/b/p' f");
     const word = reading.args[2];
     const read = { cmd: reading.parse.command, parse: reading.parse, nodes: [...reading.args], spec: reading.spec };
     const asIs: LinePart = { lineEvidence: (known) => known(), lineReached: (reached) => reached };
-    const ecx = embeddedContext(read, word, { lang: 'en', shell: undefined }, { evidence: () => 'unsure', stop: () => 'sure' }, asIs);
+    const ecx = embeddedContext(read, word, model, { lang: 'en', shell: undefined }, { evidence: () => 'unsure', stop: () => 'sure' }, asIs);
     assert.strictEqual(ecx.flavor(), 'ere');
     assert.ok(ecx.given('-n') && ecx.given('--quiet') && !ecx.given('-z'));
     assert.deepStrictEqual([...ecx.letters()].sort(), ['E', 'n']);
@@ -99,7 +99,7 @@ describe('command reading on the model (docs/design/known-values.md, 3)', () => 
     assert.strictEqual(ecx.reached(), false);
     // (A line that reads the word in a string not surely read, `unread`, says no fault of it.)
     const unread: LinePart = { lineEvidence: () => undefined, lineReached: () => true };
-    assert.notStrictEqual(ecx.invalid(), embeddedContext(read, word, { lang: 'en', shell: undefined }, { evidence: () => 'unsure', stop: () => 'sure' }, unread).invalid());
+    assert.notStrictEqual(ecx.invalid(), embeddedContext(read, word, model, { lang: 'en', shell: undefined }, { evidence: () => 'unsure', stop: () => 'sure' }, unread).invalid());
   });
 
   it('gives the spec and the parse the style checks give (`specRuns`), on every command of the tests, but where `APART` says', function () {

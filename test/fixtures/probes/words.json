@@ -227,6 +227,36 @@
   },
   {
     "manual": "3.5.8",
+    "snippet": "@PROBE:a@ *.zz \"a\"*.zz x\\*.zz [q]y '*'.txt foo$ a\\$b; set -f; @PROBE:b@ a*b \"x\"?; set +f; shopt -s nocaseglob; @PROBE:c@ *.ZZ",
+    "note": "a pattern no file matches is left as it is (the view's `unmatched`); so is a `$` before no name, and a pattern under `set -f`",
+    "facts": {
+      "a": [
+        [
+          "*.zz",
+          "a*.zz",
+          "x*.zz",
+          "[q]y",
+          "*.txt",
+          "foo$",
+          "a$b"
+        ]
+      ],
+      "b": [
+        [
+          "a*b",
+          "x?"
+        ]
+      ],
+      "c": [
+        [
+          "*.ZZ"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8",
     "snippet": "shopt -s dotglob; @PROBE:a@ *",
     "facts": {
       "a": [

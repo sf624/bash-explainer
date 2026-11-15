@@ -349,8 +349,10 @@ export function staticWordText(n: SyntaxNode, shell: Shell | undefined): MappedT
 /**
  * `literal`: only what a command line gives a program as plain text (`literalContent`): words, quoted strings and their
  * concatenations; a brace expansion, an expansion, `$'…'` and a word with a glob and a backslash are not followed.
+ * `'placed'`: as `literal`, for a text the view of the word has given (`placedText`): the view has decided what the word
+ * gives, so a word is followed whatever it holds.
  */
-function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, literal: boolean, holes?: HoleReading): boolean {
+function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, literal: boolean | 'placed', holes?: HoleReading): boolean {
   const src = n.text;
   const put = (text: string, start: number, end: number): void => {
     out.text += text;
@@ -376,7 +378,7 @@ function mappedValue(n: SyntaxNode, out: MappedText, shell: Shell | undefined, l
     case 'word': case 'number':
       // (A literal word is refused by a quote or a `$` that is not escaped: `\\$1` is the text `$1`.)
       // (Beside a hole, a glob makes the word what the files give: `"$x"*`.)
-      if (literal ? /['"$`]/.test(src.replace(/\\[^]/g, '')) || ((holes || src.includes('\\')) && globbed(n, src)) : globbed(n, src)) return false;
+      if (literal === 'placed' ? false : literal ? /['"$`]/.test(src.replace(/\\[^]/g, '')) || ((holes || src.includes('\\')) && globbed(n, src)) : globbed(n, src)) return false;
       unescape(0, src.length, /[\s\S]/);
       return true;
     case 'brace_expression':
@@ -562,11 +564,28 @@ export interface Literal {
  * `$1`).
  */
 export function literalContent(a: SyntaxNode): Literal | undefined {
+  return mappedLiteral(a, true);
+}
+
+/**
+ * Where each character of `text`, the text bash gives the word `a` as its view says (`WordView.unmatched`,
+ * src/semantics/wordview.ts: the one source of the text), sits in the word's source, with the escapes bash removed: what
+ * a reader of a language places its tokens over. Undefined where the characters cannot be placed one by one: in
+ * backquotes, over several rows, in `$'…'` (an escape stands for a character), in braces or an expansion.
+ */
+export function placedText(a: SyntaxNode, text: string): Literal | undefined {
+  const lit = mappedLiteral(a, 'placed');
+  // (Where it reads the word, it reads the view's text: a text of another word places nothing.)
+  return lit && lit.text === text ? lit : undefined;
+}
+
+/** The literal of the word `a` as `mappedValue` reads it in the mode `literal`: from a fixed place where it is one to one, else character by character. */
+function mappedLiteral(a: SyntaxNode, literal: true | 'placed'): Literal | undefined {
   // (In backquotes, `'a\$b'` is `a$b`: bash removes the backslash first, and the characters no longer sit one to one.)
   if (decodedText(a) !== a.text) return undefined;
   if (a.type === 'concatenation' && a.startPosition.row !== a.endPosition.row) return undefined;
   const m: MappedText = { text: '', starts: [], ends: [] };
-  if (!mappedValue(a, m, undefined, true)) return undefined;
+  if (!mappedValue(a, m, undefined, literal)) return undefined;
   // One to one from a fixed place (a node of its own, as a quoted string or a word).
   if (a.type !== 'concatenation' && m.starts.every((s, k) => s === m.starts[0] + k && m.ends[k] === s + 1)) {
     return { text: m.text, base: m.text ? m.starts[0] - a.startIndex : 1 };

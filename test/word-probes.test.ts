@@ -120,6 +120,9 @@ function viewFindings(args: readonly SyntaxNode[], model: StateModel, run: reado
     const own = run.slice(from, from + v.count.min);
     if (!own[0].startsWith(v.start!) || !own[own.length - 1].endsWith(v.end!)) return `${said}: ${JSON.stringify([v.start, v.end])}, bash: ${JSON.stringify(own)}`;
     if (v.plain && own[0] !== v.value) return `${said}: ${JSON.stringify(v.value)}, bash: ${JSON.stringify(own)}`;
+    // (No pattern, or one that matched no file, the words' fields say, which the line above holds to bash's: one field, its text.)
+    const noMatch = v.globs === false || (v.words.length === 1 && v.words[0].fields?.length === 1 && v.words[0].fields[0] === v.unmatched);
+    if (v.unmatched !== undefined && noMatch && JSON.stringify(own) !== JSON.stringify([v.unmatched])) return `${said}: gives ${JSON.stringify(v.unmatched)} where no file matches, bash: ${JSON.stringify(own)}`;
     const each = v.words.every((x) => x.fields) ? v.words.flatMap((x) => x.fields!) : undefined;
     if (each && JSON.stringify(each) !== JSON.stringify(own)) return `${said}: words ${JSON.stringify(each)}, bash: ${JSON.stringify(own)}`;
     // (A word that does not glob gives the text of its words, where no character splits: a pattern bash expanded globs.)

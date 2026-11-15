@@ -13,11 +13,12 @@ import { programSections } from '../refs';
 import { type CommandLookup, customSpecIn, hostSpecIn, NO_SPEC, shellVariantIn, specIn } from '../semantics/commandhead';
 import type { ExecEnv } from '../semantics/env';
 import { type NameResolution, resolveName } from '../semantics/names';
-import { attribute, nocasematchIn, option, type OptionState, refTarget, shoptIn } from '../semantics/state';
+import { attribute, nocasematchIn, option, type OptionState, refTarget, shoptIn, type StateModel } from '../semantics/state';
+import { unmatchedOf } from '../semantics/wordview';
 import { type ReadKnown, readAs, surelyRuns } from '../semantics/scriptstops';
 import { type SyntaxFault, syntaxFault } from '../semantics/syntaxerror';
 import { type ExpansionStep, ifsOf, type WordMeaning, wordMeaning } from '../semantics/words';
-import { literalContent, staticWordValue, surelyHasSlash } from '../staticword';
+import { type Literal, placedText, staticWordValue, surelyHasSlash } from '../staticword';
 import { ancestor, fields, type SyntaxNode } from '../syntax/tree';
 import type { CommandRead, Explainer } from './context';
 import { has, same } from './nodes';
@@ -116,6 +117,21 @@ export function nocasematchAt(cx: Explainer, n: SyntaxNode, when: 'run' | 'parse
 /** The meaning of the word that holds `n` (src/semantics/words.ts). */
 export function wordAt(cx: Explainer, n: SyntaxNode): WordMeaning | undefined {
   return wordMeaning(n, cx.state);
+}
+
+/**
+ * The text a command gets for the word `a`, where it reads it as a text of its own (a program, a regex, a pattern, an
+ * option's value): what the view of the word says it gives where no file matches it (`WordView.unmatched`,
+ * src/semantics/wordview.ts). None where an expansion, a brace or a tilde changes it, or a part is not known.
+ */
+export function givenText(model: StateModel, a: SyntaxNode): string | undefined {
+  return unmatchedOf(a, model);
+}
+
+/** `givenText` of the word `a`, with where each of its characters sits in the source (`placedText`): what a reader of a language places its tokens over. */
+export function givenLiteral(model: StateModel, a: SyntaxNode): Literal | undefined {
+  const text = givenText(model, a);
+  return text === undefined ? undefined : placedText(a, text);
 }
 
 /**
@@ -238,7 +254,7 @@ export function givenIn(c: CommandRead, ...names: string[]): boolean {
  */
 export function optionValues(cx: Explainer, ...names: string[]): { text?: string; of: string; index: number }[] {
   const { nodes, parse } = cx.command!;
-  return values(parse, ...names).map(({ word, at, role }) => ({ text: literalContent(nodes[word])?.text.slice(at ?? 0), of: role.of, index: role.index }));
+  return values(parse, ...names).map(({ word, at, role }) => ({ text: givenText(cx.state, nodes[word])?.slice(at ?? 0), of: role.of, index: role.index }));
 }
 
 /**
@@ -274,13 +290,13 @@ export function notForEarlier(cx: Explainer, parse: ArgvParse, word: number, rol
     ` (not for the value of ${flags} before it: \`${program}\` reads that value as soon as it reads its option, with only the options given before)`);
 }
 
-/** How tr (the command `c`) uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
-export function trContext(c: CommandRead, a: SyntaxNode): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean; truncate: boolean } {
+/** How tr (the command `c`, in the model `model`) uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
+export function trContext(c: CommandRead, a: SyntaxNode, model: StateModel): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean; truncate: boolean } {
   const { nodes, parse } = c;
   const given = (...names: string[]): boolean => givenIn(c, ...names);
   const sets = operands(parse).map(({ word }) => nodes[word]);
   const idx = sets.findIndex((w) => same(w, a));
-  const lits = sets.map((w) => literalContent(w)?.text ?? w.text);
+  const lits = sets.map((w) => givenText(model, w) ?? w.text);
   // (`-c` complements the first string only: with `-ds`, the string to squeeze is read as it is.)
   const complement = given('-c');
   const truncate = given('-t');
