@@ -256,6 +256,21 @@
     }
   },
   {
+    "manual": "3.1.2.5",
+    "snippet": "@PROBE:a@ $\"hi\" $\"a b\" x$\"c\"*.zz",
+    "note": "with no message catalog (LC_ALL=C), `$\"…\"` is its text, as in double quotes: the view reads it so (`wordFields` too)",
+    "facts": {
+      "a": [
+        [
+          "hi",
+          "a b",
+          "xc*.zz"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
     "manual": "3.5.8",
     "snippet": "shopt -s dotglob; @PROBE:a@ *",
     "facts": {

@@ -523,8 +523,8 @@ class ModelValues implements ValueSource {
 class Evaluator {
   private readonly unbound: Tri;
   private readonly unreliable: ReadonlySet<string> | 'all';
-  /** `st`: the state the word is expanded in (the walk's own, for a meaning it keeps from another state with the same options); `hole`: what a part not known gives (`holedWords`). */
-  constructor(readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state, private readonly hole?: HoleOf) {
+  /** `st`: the state the word is expanded in (the walk's own, for a meaning it keeps from another state with the same options); `hole`: what a part not known gives (`holedWords`); `translated`: `$"…"` with `hole` is a hole, a translation that may be any text (`'hole'`, the field domain's), or its text as written, as bash gives it with no message catalog (`'text'`, the view's, as `wordFields` reads it). */
+  constructor(readonly w: WordMeaning, private readonly source: ValueSource, private readonly st = w.state, private readonly hole?: HoleOf, private readonly translated: 'hole' | 'text' = 'hole') {
     this.unbound = on(option(st, 'set', 'nounset'), 'set', 'nounset', false);
     this.unreliable = unreliableAt(w.nodes[0], st);
   }
@@ -568,11 +568,11 @@ class Evaluator {
         const v = ansiCWordValue(decodedText(n), this.w.shell);
         return v === undefined || !sameInEveryLocale(v) ? undefined : [{ text: v, quoted: true, expanded: false }];
       }
-      // (A translation may be any text: `holedWords` reads it as a hole.)
+      // (A translation may be any text: `holedWords` reads it as a hole; the view, as its text: `translated`.)
       case 'translated_string':
         // (A shell with no `$"…"` reads a `$`, and then the string: `$"hi"` is `$hi` in dash and busybox ash.)
         if (!featureWorks('translated', this.w.shell)) return ((inner) => inner && [{ text: '$', quoted: true, expanded: false }, ...inner])(this.pieces(n.namedChildren[0], quoted));
-        return this.hole ? this.hole(n, true) : this.pieces(n.namedChildren[0], quoted);
+        return this.hole && this.translated === 'hole' ? this.hole(n, true) : this.pieces(n.namedChildren[0], quoted);
       case 'string': return this.inner(n, n.startIndex + 1, n.endIndex - 1, /\\([$`"\\\n])/g);
       case 'heredoc_body': {
         // A quoted delimiter: the body is text as it is. (No delimiter yet, `cat <<` while typing: an empty body.)
@@ -785,7 +785,7 @@ export function holedWords(n: SyntaxNode, model: StateModel, source: ValueSource
 export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, holeGlobs: (h: Hole) => boolean, env?: WordEnv): ViewWord[] | 'option' | 'too-many' | 'misread' {
   const alternatives = alternativesOrWhy(w);
   if (typeof alternatives === 'string') return alternatives;
-  const ev = new Evaluator(w, source, w.state, hole);
+  const ev = new Evaluator(w, source, w.state, hole, 'text');
   const splits = w.steps.find((s) => s.kind === 'split')!.applies !== false;
   const glob = w.steps.find((s) => s.kind === 'glob')!;
   /**

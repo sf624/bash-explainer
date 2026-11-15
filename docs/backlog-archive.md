@@ -1357,7 +1357,7 @@ Rare corner, dropped (YAGNI). Kind: `bug`. Each says in the sentence what its ro
 Rare corner, dropped (YAGNI). Kind: `bug`. Both predate #846; no explanation shows either today.
 
 - **`WordMeaning.value` of a word whose quoted glob character IFS unquotes.** `IFS='?a'; echo "?"a`: `WordMeaning.value` says `?a`; bash unquotes the `?` (it is in IFS, and so is the word's own `a`) and globs it: next to a file `xa`, bash 5.2.21 prints `xa`. The view says the word globs, and gives no value.
-- **`$"hi"`: a hole in the view, a value in `wordFields`.** `echo $"hi"`: `wordFields` gives `hi`, as bash does with no message catalog (so the view's count, start and end are `hi`); the view's characters, like `receivedWords`, read a translation as a hole (any text), and say `unknown: value`. `WordMeaning.value` has none, so neither has the view.
+- **`$"hi"`: no `WordMeaning.value`.** `echo $"hi"`: `wordFields` gives `hi`, as bash does with no message catalog, and since #847 so do the view's characters and its `unmatched` (the field domain, `wordShapes`, and `receivedWords` keep it a hole: any text). `WordMeaning.value` has none, so the view is not plain and has no `value`.
 
 ## The pattern marks and the cost of the view (found in the second review of #846, 2026-11-15)
 
@@ -1365,3 +1365,12 @@ Rare corner, dropped (YAGNI). Kind: `bug` (the first) and `performance` (the sec
 
 - **`wildcardChars` marks less than `specialChars`.** The manual (3.5.8.1) gives one pattern language for pathname expansion and for matching, but where the context matches the word itself (`case`, `[[ == ]]`, `${x#p}`), `Char.pattern` marks only `*`, `?`, `[`, `]`, `(`, `)` and `|` (src/semantics/chars.ts). Inside brackets `!` and `^` are not marked (`case $y in [!a])`: the view gives `[`, `!`, `a`, `]` with only the brackets marked; bash reads `[!a]` as "not `a`"), nor `[:alpha:]`'s parts, nor the extglob operators `@`, `+`, `!` before `(` (`shopt -s extglob; case $y in @(ab))`: only the parentheses). A lone `]` is marked though bash reads it as literal (`x='a]'; case $x in a])` matches: the view marks the `]`, so `a]` is not plain there). A `\` from a value is left unmarked with its `*` (`bs='a\*'; case $s in $bs)`: the characters read `a\*`, and bash matches the text `a*`). In the cases tried, `plain` changed only for the lone `]`.
 - **`"$y-$y-…"` with 6,400 holes takes about 0.6 s in the view**, most of it in `wordShapes` (src/semantics/fieldshape.ts), before #846. A word of that many expansions is not written by hand; the view is kept per word, so it is paid once per document.
+
+## The readers of a language on the view (found reviewing #847, 2026-11-15)
+
+Rare corners, dropped (YAGNI). Kind: `bug`, and `performance` for the last. Each predates #847 or only moves with it.
+
+- **`tr $'\t' ,`: the example has no tab.** The example's input has spaces, not tabs, and its output is the input unchanged; bash gives tr a tab: for the line `a<TAB>b<TAB>c`, tr prints `a,b,c`. Same on main.
+- **`grep ~a f` and `grep ~~ f` are not read.** The view gives no text where the tilde step applies, so the regex is not explained; bash leaves `~a` as it is when there is no user `a`, and `~~` always (no user `~`). `grep -e ~a$ f` is read (a tilde is expanded only at the start of a word).
+- **`sed 's/a/b/$' f` says "Address without a command".** The `$` after `s///` is read as an address; GNU sed reads it as a flag of `s` and stops with "unknown option to `s'". Both say the script is wrong. Unquoted, `sed s/a/b/$ f` is read since #847 (a `$` before no name is text), with the same row.
+- **3,000 `-e a*b` options take about 33 s.** A grep line with 3,000 options `-e a*b` takes about 33 s to explain, on main as with #847, and the time grows faster than the number of options.
