@@ -24,9 +24,9 @@ import { scriptTrust, type StringTrees } from '../src/semantics/trust';
 import { Walker } from '../src/semantics/walk/walker';
 import { shellState } from '../src/semantics/state';
 import { wordFields } from '../src/semantics/words';
-import { wordView, wordViewAsWritten } from '../src/semantics/wordview';
+import { valueAsWritten, wordView, wordViewAsWritten } from '../src/semantics/wordview';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants, type SyntaxNode } from '../src/syntax/tree';
+import { descendants, fields, type SyntaxNode } from '../src/syntax/tree';
 import { main } from '../cli/main';
 import { startLanguageServer } from '../cli/lsp';
 import { corpus } from './support/corpus';
@@ -701,6 +701,16 @@ describe('one line must not stop the whole tool', () => {
       const w = descendants(tree.root, ['command'])[0].namedChildren[1];
       assert.strictEqual(wordView(w, shellState(tree, 'bash'))!.words[0].chars!.length, 200001);
       assert.strictEqual(wordViewAsWritten(w, 'bash')!.globs, true);
+    });
+
+    it("a word's value is read in time of its own: 40,000 words `$(:)a` of one command (docs/design/word-source.md, 3.2)", function () {
+      // (Each looked at every word of its command for the assignments in it: 12 s here, and 1.5 s since.)
+      this.timeout(30000);
+      const tree = parser.parse(`echo ${'$(:)a '.repeat(40000)}`);
+      const words = fields(descendants(tree.root, ['command'])[0], 'argument');
+      const started = Date.now();
+      assert.strictEqual(words.filter((w) => valueAsWritten(w) === undefined).length, 40000);
+      assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
     });
 
     it('the lists that grow with a script fit: a long file is read, and a line of it is explained', function () {

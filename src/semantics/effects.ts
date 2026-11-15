@@ -118,10 +118,12 @@ export function aliasTexts(c: SyntaxNode, value: string, values: (name: string) 
   return out;
 }
 
-/** `alias name=value` (or `'name=value'`): the name (`ALIAS_NAME`) and what it stands for (static, or the text without its outer quotes). */
+/**
+ * `alias name=value` (or `'name=value'`): the name (`ALIAS_NAME`) and what it stands for (static, or the text without
+ * its outer quotes); `v`, the word's value (as written, or the walk's: `alias ll$(:)=ls`).
+ */
 const DEFINITION = new RegExp(`^(${ALIAS_NAME})=(['"]?)([\\s\\S]*)\\2$`);
-export function aliasOf(a: SyntaxNode): { name: string; value: string } | undefined {
-  const v = valueAsWritten(a);
+export function aliasOf(a: SyntaxNode, v = valueAsWritten(a)): { name: string; value: string } | undefined {
   const text = v ?? a.text;
   const m = DEFINITION.exec(text);
   if (!m) return undefined;

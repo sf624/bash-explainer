@@ -169,6 +169,7 @@ function arithText(a: SyntaxNode): string {
   return root.text.slice(parts[0].startIndex - root.startIndex, parts[parts.length - 1].endIndex - root.startIndex);
 }
 
+const redirections = new WeakMap<SyntaxNode, SyntaxNode[]>();
 function assignedIn(n: SyntaxNode): Assigned {
   let top = n;
   let open = true;
@@ -179,7 +180,9 @@ function assignedIn(n: SyntaxNode): Assigned {
       open = false;
     }
   }
-  const redirs = top.type === 'command' ? redirectionsOf(top) : [];
+  // (Kept per statement: asked for each word of a command, they would be read again for each.)
+  let redirs = redirections.get(top);
+  if (!redirs) redirections.set(top, (redirs = top.type === 'command' ? redirectionsOf(top) : []));
   const inside = (a: SyntaxNode, r: SyntaxNode) => a.startIndex >= r.startIndex && a.endIndex <= r.endIndex;
   const skip = redirs.some((r) => inside(n, r)) ? [] : redirs;
   const cache = skip.length ? unreliableInWordsCache : unreliableCache;

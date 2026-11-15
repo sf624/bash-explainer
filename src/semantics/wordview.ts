@@ -143,12 +143,13 @@ export function valueIn(n: SyntaxNode, st: ShellState, source: WalkSource): stri
   if (!w || !mayHaveValue(w)) return undefined;
   // (A substitution that prints nothing, `$(:)`, does so where its name runs the builtin, which the state says: read each
   // time; and so may the value word of a declaration.)
-  if (w.value === undefined || w.steps.some((s) => s.kind === 'command' && s.applies !== false)) return viewOf(w, source, (v) => wordViewIn(v, st, source)!).value;
+  const again = (v: SyntaxNode): WordView => wordViewIn(v, st, source)!;
+  if (w.value === undefined || w.steps.some((s) => s.kind === 'command' && s.applies !== false)) return plainValue(w, source, again);
   let byOptions = values.get(w.nodes[0]);
   if (!byOptions) values.set(w.nodes[0], (byOptions = new WeakMap()));
   const key = optionsOf(st, source.shell());
   let kept = byOptions.get(key);
-  if (!kept) byOptions.set(key, (kept = { value: viewOf(w, source, (v) => wordViewIn(v, st, source)!).value }));
+  if (!kept) byOptions.set(key, (kept = { value: plainValue(w, source, again) }));
   return kept.value;
 }
 
@@ -178,8 +179,7 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   if (declared) return declarationView(w, declared.head, declared.value && again(declared.value), known);
   const unknown = new Set<Unknown>();
   if (misread(w) || !readsAsBash(w)) unknown.add('misread');
-  const hole: HoleOf = (part, quoted) => [{ text: '', quoted, expanded: !quoted, hole: holeOf(part, quoted, w) }];
-  const got = viewWords(w, source, hole, globby, env);
+  const got = viewWords(w, source, holeIn(w), globby, env);
   if (typeof got === 'string') unknown.add(got);
   const words = typeof got === 'string' ? [] : got;
   for (const x of words) {
@@ -189,10 +189,8 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   const split = w.steps.find((s) => s.kind === 'split')!;
   if (w.ifs.kind === 'unknown' && split.applies !== false) unknown.add('ifs');
   if (w.steps.some((s) => s.applies === 'unknown' && s.why)) unknown.add('option');
-  const globs: Applies = words.some((x) => x.globs === true) ? true : typeof got === 'string' || words.some((x) => x.globs === 'unknown') ? 'unknown' : false;
-  // (A word with a value has no step but quote removal, or the substitutions that print nothing, `$(:)`, which leave a
-  // hole where the name may not run the builtin, and give no field alone, unquoted.)
-  const plain = w.value !== undefined && words.length === 1 && globs === false && !!words[0].chars && !words[0].chars.some((c) => c.hole || c.pattern) && words[0].fields?.length !== 0;
+  const globs: Applies = typeof got === 'string' ? 'unknown' : globsOf(got);
+  const plain = isPlain(w, words, globs);
   const unmatched = plain ? w.value : unmatchedText(w, words);
   // (The walk's view knows no error of the word: a redirection's target is one field there, or not known.)
   const each = words.length && words.every((x) => x.fields) ? words.flatMap((x) => x.fields!) : undefined;
@@ -200,6 +198,27 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   const domain = exact ? undefined : shapes?.();
   const ends = exact ? exactEnds(exact) : domain ? fromShapes(domain) : { count: { min: 0 } };
   return { meaning: w, ...(plain ? { value: w.value } : {}), ...(unmatched !== undefined ? { unmatched } : {}), plain, words, ...ends, globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
+}
+
+/** What a part not known gives in the view of the word `w`: a hole of its kind (fieldshape.ts, `holeOf`). */
+const holeIn = (w: WordMeaning): HoleOf => (part, quoted) => [{ text: '', quoted, expanded: !quoted, hole: holeOf(part, quoted, w) }];
+
+/** Whether some word of a brace expansion globs (`ViewWord.globs`). */
+const globsOf = (words: readonly ViewWord[]): Applies => (words.some((x) => x.globs === true) ? true : words.some((x) => x.globs === 'unknown') ? 'unknown' : false);
+
+/**
+ * Whether the view of the word `w`, of the words `words`, is plain (`WordView.plain`). A word with a value has no step
+ * but quote removal, or the substitutions that print nothing, `$(:)`, which leave a hole where the name may not run the
+ * builtin, and give no field alone, unquoted.
+ */
+const isPlain = (w: WordMeaning, words: readonly ViewWord[], globs: Applies): boolean =>
+  w.value !== undefined && words.length === 1 && globs === false && !!words[0].chars && !words[0].chars.some((c) => c.hole || c.pattern) && words[0].fields?.length !== 0;
+
+/** `value` of the view of the word `w` (`viewOf`), worked out alone: its words and whether they are plain, for a reader that asks only that. */
+function plainValue(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => WordView): string | undefined {
+  if (declaredWord(w, w.steps[0].applies)) return viewOf(w, source, again).value;
+  const got = viewWords(w, source, holeIn(w), globby);
+  return typeof got !== 'string' && isPlain(w, got, globsOf(got)) ? w.value : undefined;
 }
 
 /**

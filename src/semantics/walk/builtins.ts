@@ -164,7 +164,7 @@ export class WalkBuiltins {
       case 'alias':
         st = this.markedArrays('alias', args, n, st);
         for (const a of args) {
-          const def = a.type === 'variable_assignment' ? undefined : aliasOf(a);
+          const def = a.type === 'variable_assignment' ? undefined : aliasOf(a, this.w.conditions.valueOf(a, st));
           // (Braces bash may expand make other definitions, `alias z={a,b}` is `alias z=a z=b`: not followed.)
           if (def) st = this.w.put(st, 'aliases', def.name, { state: wordBraces(a).length ? 'unknown' : 'on', value: def.value, at: n });
         }

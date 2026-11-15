@@ -250,6 +250,9 @@ describe('the view of a word (wordview.ts)', () => {
     const regex = parser.parse('[[ x =~ a.b ]]');
     const right = descendants(regex.root, ['regex', 'word']).find((w) => w.text === 'a.b')!;
     assert.deepStrictEqual([valueAsWritten(right), wordViewAsWritten(right)!.value], [undefined, undefined]);
+    // (Kept by the shell too: dash reads `$'x'` as `$` and `x`, bash as `x`; asked in dash first.)
+    const ansi = wordsOf("show $'x'").words[0];
+    assert.deepStrictEqual([valueAsWritten(ansi, 'dash'), valueAsWritten(ansi)], ['$x', 'x']);
     // (A part of a word is read as the word that holds it; a function's name is no word.)
     const plainWords = descendants(tree.root, ['word']);
     assert.deepStrictEqual([plainWords[0].parent!.type, valueAsWritten(plainWords[0])], ['function_definition', undefined]);

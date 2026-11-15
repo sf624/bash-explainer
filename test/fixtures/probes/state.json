@@ -4319,6 +4319,176 @@
   },
   {
     "manual": "3.2.5.1",
+    "snippet": "for f in $'a'; do :; done; for g in \"a\"b; do :; done",
+    "note": "a `for` list of words whose values are known as written: quoted, `$'…'`, a mix",
+    "facts": {
+      "end": {
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"a\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"ab\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "set +B; for f in {a,b}; do :; done; for g in a{b,c}d; do :; done",
+    "note": "with braceexpand off, braces are text in a `for` list",
+    "facts": {
+      "end": {
+        "set": {
+          "braceexpand": false
+        },
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"{a,b}\""
+          },
+          "g": {
+            "attrs": "-",
+            "value": "\"a{b,c}d\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "set +o braceexpand; for f in {a..c}; do :; done",
+    "note": "`set +o braceexpand` is `set +B`: a sequence is text",
+    "facts": {
+      "end": {
+        "set": {
+          "braceexpand": false
+        },
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"{a..c}\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "g() { set +B; for f in {a,b}; do :; done; }; g",
+    "note": "`set +B` in a function, for the list after it there",
+    "facts": {
+      "end": {
+        "set": {
+          "braceexpand": false
+        },
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"{a,b}\""
+          }
+        },
+        "functions": {
+          "g": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "if true; then set +B; fi; for f in {x,y}; do :; done",
+    "note": "`set +B` in a branch that always runs",
+    "facts": {
+      "end": {
+        "set": {
+          "braceexpand": false
+        },
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"{x,y}\""
+          }
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "( set +B; for f in {a,b}; do :; done; @PROBE:s@ )",
+    "note": "`set +B` in a subshell, for the list after it there",
+    "facts": {
+      "s": {
+        "set": {
+          "braceexpand": false
+        },
+        "variables": {
+          "f": {
+            "attrs": "-",
+            "value": "\"{a,b}\""
+          }
+        }
+      },
+      "end": {},
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
+    "snippet": "f() { for v in $(:)a; do :; done; }; f; @PROBE:one@; :() { printf q; }; f",
+    "note": "`$(:)` prints nothing while `:` is the builtin, and `q` once a function: the same word, called twice, gives `a`, then `qa`",
+    "facts": {
+      "one": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"a\""
+          }
+        },
+        "functions": {
+          "f": "f"
+        }
+      },
+      "end": {
+        "variables": {
+          "v": {
+            "attrs": "-",
+            "value": "\"qa\""
+          }
+        },
+        "functions": {
+          ":": "f",
+          "f": "f"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "6.6",
+    "snippet": "shopt -s expand_aliases; alias ll$(:)=ls",
+    "note": "`$(:)` prints nothing where `:` is the builtin: the word defines the alias `ll`",
+    "facts": {
+      "end": {
+        "shopt": {
+          "expand_aliases": true
+        },
+        "aliases": {
+          "ll": "ls"
+        }
+      },
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.2.5.1",
     "snippet": "for i in a; do x=1; break; x=2; done; if [ \"$x\" = 2 ]; then y=1; else z=1; fi",
     "note": "`break` leaves the loop with the state there: the condition after it reads x=1 (4.13, jumps)",
     "facts": {
