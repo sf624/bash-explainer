@@ -32,7 +32,7 @@
     {"file":"src/semantics/syntaxerror.ts","fn":"syntaxFault","kind":"compare","count":2,"to":"isBash","reason":"a syntax error is placed only for bash and sh"},
     {"file":"src/semantics/walk/walker.ts","fn":"POSIX_SHELLS","kind":"list","count":1,"to":"SHELL_BEHAVIOURS","reason":"the shells that start in POSIX mode"},
     {"file":"src/semantics/walk/walker.ts","fn":"initial","kind":"member","count":1,"to":"SHELL_BEHAVIOURS","reason":"the shells that start in POSIX mode"},
-    {"file":"src/semantics/words.ts","fn":"splitPieces","kind":"compare","count":1,"to":"SHELL_BEHAVIOURS","reason":"an unquoted expansion that gives nothing keeps a word in a redirection outside bash"},
+    {"file":"src/semantics/words.ts","fn":"splitChars","kind":"compare","count":1,"to":"SHELL_BEHAVIOURS","reason":"an unquoted expansion that gives nothing keeps a word in a redirection outside bash"},
     {"file":"src/staticword.ts","fn":"ansiCWordValue","kind":"compare","count":1,"to":"SHELL_BEHAVIOURS","reason":"dash reads `$'…'` as a `$` and a quoted string"},
     {"file":"src/substitution-tokens.ts","fn":"meaning","kind":"compare","count":3,"to":"FEATURES","reason":"`${ …; }` in ksh93 and mksh, `${| …; }` in mksh"},
     {"file":"src/ui/texts.ts","fn":"inBash","kind":"compare","count":1,"to":"isBash","reason":"the panel says \"bash\" or \"the shell\""},

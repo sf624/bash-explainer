@@ -10,14 +10,14 @@
 import type { BashVersion } from '../bashversion';
 import { evalArith } from '../arith';
 import { guardedApart, modelLimit, modelValueLimit } from '../examples/regexguard';
-import { globToRegex, hasExtglob, hasGlobstar, isGlob } from '../examples/shellwords';
+import { globToRegex, isGlob } from '../examples/shellwords';
 import { patsubMiscounts } from '../bracket';
 import { type Shell, zshOtherwise } from '../dialect';
 import { asBash, featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
-import { caseConverted, type Char, GLOB_CHARS, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, releasesDiffer, sameInEveryLocale, splitOn, substring } from './chars';
+import { caseConverted, type Char, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, type Piece, sameInEveryLocale, specialAt, splitOn, substring } from './chars';
 import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
@@ -28,8 +28,10 @@ import { ARITH, changesDirectory, integerParameter, underscoreValue, unreliableA
 import { operandPattern, operandReplacement, operandWord, replacedMatches, withoutAffix } from './operands';
 import { CONTEXTS, type ContextRule, declarationOf, declaredWord, ownParts, type WordContext } from './wordcontexts';
 import type { Hole } from './fieldshape';
+import { attempt, Failure, globField, globsField } from './wordglob';
+import type { ViewWord } from './wordview';
 import { pushAll } from '../lists';
-export { type Char, ifsEscaped, patternOfChars, quotedIfs } from './chars';
+export { type Char, ifsEscaped, patternOfChars, type Piece, quotedIfs } from './chars';
 
 export { ifsOf, underscoreValue, unreliableNames };
 export { CONTEXTS, type ContextRule, type WordContext } from './wordcontexts';
@@ -425,12 +427,8 @@ export interface Fields {
   failure?: WordFailure;
 }
 
-/** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split); `hole`: a part not known (fieldshape.ts), with no text. */
-export interface Piece { text: string; quoted: boolean; expanded: boolean; hole?: Hole }
 /** What stands for a part of a word whose value is not known (fieldshape.ts): an expansion, a substitution, a `$"…"`, or a tilde prefix (its text). */
 export type HoleOf = (part: SyntaxNode | string, quoted: boolean) => Piece[];
-class Failure { constructor(readonly error: NonNullable<Fields['error']>) {} }
-
 /**
  * Where the evaluator of a word reads values: the finished model (`ModelValues`, for `wordFields`), or the walk of
  * the state as it runs (src/semantics/walk/conditions.ts, for its conditions).
@@ -754,15 +752,7 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
   const alternatives = wordAlternatives(w, braces);
   if (!alternatives) return undefined;
   const ev = new Evaluator(w, new ModelValues(w, model, undefined, new Set()));
-  const failing = (nodes: BraceAlternative, holed: boolean): Piece[] | undefined => {
-    try {
-      return piecesOf(w, nodes, ev, holed ? (quoted, part) => ((h) => [typeof h === 'string' ? { text: h, quoted, expanded: !quoted } : h])(hole(part)) : undefined);
-    } catch (e) {
-      /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
-      if (!(e instanceof Failure)) throw e;
-      return undefined;
-    }
-  };
+  const failing = (nodes: BraceAlternative, holed: boolean): Piece[] | undefined => attempt(() => piecesOf(w, nodes, ev, holed ? (quoted, part) => ((h) => [typeof h === 'string' ? { text: h, quoted, expanded: !quoted } : h])(hole(part)) : undefined));
   return { w, words: alternatives.map((nodes) => {
     const known = failing(nodes, false);
     const holed = failing(nodes, true);
@@ -782,15 +772,52 @@ export function holedWords(n: SyntaxNode, model: StateModel, source: ValueSource
   const w = wordMeaning(n, model)!;
   const alternatives = wordAlternatives(w, braces);
   const ev = new Evaluator(w, source, w.state, hole);
-  return alternatives && { w, words: alternatives.map((nodes) => {
-    try {
-      return piecesOf(w, nodes, ev, (quoted, part, tilde) => hole(part ?? tilde!, quoted));
-    } catch (e) {
-      /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
-      if (!(e instanceof Failure)) throw e;
-      return undefined;
-    }
-  }) };
+  return alternatives && { w, words: alternatives.map((nodes) => attempt(() => piecesOf(w, nodes, ev, (quoted, part, tilde) => hole(part ?? tilde!, quoted)))) };
+}
+
+/**
+ * The words of the brace expansion of `w`, read with the values of `source` and `hole` for each part whose value is not
+ * known there (`HoleOf`), each with its characters, its fields and whether it globs (`ViewWord`); `holeGlobs`: whether
+ * a hole may hold a glob character. Undefined where the words are not known here (`{,$x}a`, too many, braces on
+ * some paths only). For the view of a word (src/semantics/wordview.ts).
+ */
+export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, holeGlobs: (h: Hole) => boolean, env?: WordEnv): ViewWord[] | undefined {
+  const alternatives = wordAlternatives(w);
+  if (!alternatives) return undefined;
+  const ev = new Evaluator(w, source, w.state, hole);
+  const splits = w.steps.find((s) => s.kind === 'split')!.applies !== false;
+  const glob = w.steps.find((s) => s.kind === 'glob')!;
+  /**
+   * Whether the field `f` globs, its special characters marked: one whose own characters are no pattern still may be
+   * where an unquoted hole holds a glob character; and one not `sure` to be a field (the split not known) may only be.
+   */
+  const fieldGlobs = (f: Char[], sure: boolean): Applies => {
+    const g = globsField(w, f);
+    const may = g === false && glob.applies !== false && f.some((c) => c.hole && holeGlobs(c.hole)) ? 'unknown' : g;
+    const marked = sure || may === false ? may : 'unknown';
+    if (marked !== false) f.forEach((c, i) => { if (!c.quoted && !c.hole && specialAt(f, i)) c.pattern = marked; });
+    return marked;
+  };
+  return alternatives.map((nodes): ViewWord => {
+    const written = nodes.map((p) => (typeof p === 'string' ? p : p.text)).join('');
+    const pieces = attempt(() => piecesOf(w, nodes, ev, (quoted, part, tilde) => hole(part ?? tilde!, quoted)));
+    if (!pieces) return { written, globs: 'unknown' };
+    const exact = charsOf(w, pieces, splits);
+    if (!exact) return { written, chars: ownChars(pieces, splits, { context: false }), asWritten: true, globs: 'unknown' };
+    const split = splitChars(w, exact, pieces);
+    const each = split ? split.map((f) => fieldGlobs(f, true)) : [fieldGlobs(exact, false)];
+    const globs: Applies = each.includes(true) ? true : each.every((g) => g === false) ? false : 'unknown';
+    const fields = split && !exact.some((c) => c.hole) ? attempt(() => {
+      const out: string[] = [];
+      for (const f of split) {
+        const g = globField(w, f, env);
+        if (!g) return undefined;
+        pushAll(out, g);
+      }
+      return out;
+    }) : undefined;
+    return { written, chars: exact, ...(fields ? { fields } : {}), globs };
+  });
 }
 
 /**
@@ -815,8 +842,8 @@ export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel,
 
 /** The variable `name` where the word `w` is expanded, as `trustedPart` reads it: a string, null when unset, undefined when not known. */
 export const trustedVariable = (name: string, w: WordMeaning, model: StateModel): string | null | undefined => new Evaluator(w, new ModelValues(w, model, undefined, new Set(), true)).variable(name, w.nodes[0]);
-/** The values `wordFields` reads where `w` runs, with no environment: those of the holes of `receivedWords` (fieldshape.ts). */
-export const modelValues = (w: WordMeaning, model: StateModel): ValueSource => new ModelValues(w, model, undefined, new Set());
+/** The values `wordFields` reads where `w` runs, with the environment `env` (none: those of the holes of `receivedWords`, fieldshape.ts). */
+export const modelValues = (w: WordMeaning, model: StateModel, env?: WordEnv): ValueSource => new ModelValues(w, model, env, new Set());
 
 function fieldsAt(n: SyntaxNode, model: StateModel, env: WordEnv | undefined, expanding: ReadonlySet<SyntaxNode>, trusted = false): Fields {
   const w = wordMeaning(n, model);
@@ -877,16 +904,10 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
   // (Most words of conditions are plain text, which is their field, value, pattern and regex as it is: read at once.
   // `n` is the whole word: the right side of `[[ == ]]` comes in parts only when it starts with an expansion.)
   if ((n.type === 'word' || n.type === 'number') && PLAIN_TEXT.test(n.text)) return as === 'fields' ? [n.text] : n.text;
-  const found = wordOf(n);
+  const seen = walkedMeaning(n, st, source.shell());
   /* c8 ignore next -- a guard: the walk reads only words of a command, of `[[ ]]` and of `case` */
-  if (!found) return undefined;
-  // (The same word is read in many states, most of them with the same options: its meaning is kept, and only the
-  // evaluator is given the state.)
-  const walked = shapeOf(found.nodes).walked;
-  const key = optionsOf(st, source.shell());
-  let seen = walked.get(key);
-  if (!seen) walked.set(key, (seen = { meaning: build(found.nodes, found.context, st, source.shell(), false) }));
-  const w = ifs ? seen.meaning : (seen.noIfs ??= { ...seen.meaning, ifs: { kind: 'unknown', at: found.nodes[0] } });
+  if (!seen) return undefined;
+  const w = ifs ? seen.meaning : (seen.noIfs ??= { ...seen.meaning, ifs: { kind: 'unknown', at: seen.meaning.nodes[0] } });
   try {
     const split = splitFields(w, new Evaluator(w, source, st));
     if (!split) return undefined;
@@ -907,6 +928,27 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
     if (!(e instanceof Failure)) throw e;
     return undefined;
   }
+}
+
+/**
+ * The meaning of the word that holds `n` in the state `st` of the walk, without its `value` and `failure`: the same
+ * word is read in many states, most of them with the same options, so its meaning is kept by them (`Shape.walked`),
+ * with the state of the first; the caller gives the evaluator its own state.
+ */
+function walkedMeaning(n: SyntaxNode, st: ShellState, shell: Shell | undefined): { meaning: WordMeaning; noIfs?: WordMeaning } | undefined {
+  const found = wordOf(n);
+  if (!found) return undefined;
+  const walked = shapeOf(found.nodes).walked;
+  const key = optionsOf(st, shell);
+  let seen = walked.get(key);
+  if (!seen) walked.set(key, (seen = { meaning: build(found.nodes, found.context, st, shell, false) }));
+  return seen;
+}
+
+/** The meaning of the word that holds `n` in the state `st` (a state of the walk, or one a script starts with), with that state; undefined outside a word. As `wordMeaning`, without `value` and `failure`. */
+export function meaningIn(n: SyntaxNode, st: ShellState, shell: Shell | undefined): WordMeaning | undefined {
+  const seen = walkedMeaning(n, st, shell);
+  return seen && { ...seen.meaning, state: st };
 }
 
 /** A word that bash takes as it is written: no expansion, quote, escape, tilde, brace, glob or extended glob. */
@@ -965,11 +1007,13 @@ const charsOf = (w: WordMeaning, pieces: Piece[], splits: boolean): Char[] | und
 
 /** Word splitting (manual 3.5.7): the unquoted results of expansions are split on IFS; empty unquoted results go. */
 function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
-  const step = w.steps.find((s) => s.kind === 'split')!;
-  const splits = step.applies !== false;
-  const chars = charsOf(w, pieces, splits);
-  if (!chars) return undefined;
-  if (!splits) {
+  const chars = charsOf(w, pieces, w.steps.find((s) => s.kind === 'split')!.applies !== false);
+  return chars && splitChars(w, chars, pieces);
+}
+
+/** Word splitting of the characters `chars` of the pieces `pieces` (`splitPieces`); a hole is never a separator. */
+function splitChars(w: WordMeaning, chars: Char[], pieces: readonly Piece[]): Char[][] | undefined {
+  if (w.steps.find((s) => s.kind === 'split')!.applies === false) {
     // Not split: one field, unless only unquoted expansions gave nothing (`$e` is no word, so bash's redirection fails; dash keeps it).
     const kept = chars.length > 0 || w.rule.fields === 'one' || (w.rule.fields === 'one-or-error' && !!w.shell && w.shell !== 'bash');
     return kept ? [chars] : [];
@@ -978,50 +1022,5 @@ function splitPieces(w: WordMeaning, pieces: Piece[]): Char[][] | undefined {
   // (An IFS of other than ASCII is split on by characters or by bytes, by the locale; one with a mark of bash's, erratically, the quoted text too of a word with an unquoted expansion, `$x"b"`: src/semantics/chars.ts.)
   if (((ifs === undefined || !sameInEveryLocale(ifs)) && chars.some((c) => c.split)) || (IFS_ERRATIC.test(ifs ?? '') && pieces.some((p) => p.expanded && !p.quoted))) return undefined;
   const sep = ifs ?? '';
-  return splitOn(chars, (c) => (c.split && sep.includes(c.c) ? (IFS_WHITESPACE.includes(c.c) ? 'white' : 'hard') : undefined), () => true).map((f) => f.field);
-}
-
-
-/** Pathname expansion of one field (manual 3.5.8): the names it matches, the field itself, none, or unknown. */
-function globField(w: WordMeaning, f: Char[], env: WordEnv | undefined): string[] | undefined {
-  const text = f.map((c) => c.c).join('');
-  const step = w.steps.find((s) => s.kind === 'glob')!;
-  const g = w.glob;
-  // (Glob characters all quoted, which bash unquotes, `ownChars`: `IFS='?a'; ls "?"a`.)
-  const unquoted = step.applies === false && (step.why === undefined || step.why === 'quoted') && f.some((c) => !c.quoted && GLOB_CHARS.test(c.c));
-  if (unquoted ? g.noglob !== 'off' : step.applies === false && step.why !== 'noglob') return unquoted && g.noglob === 'unknown' ? undefined : [text];
-  const pattern = patternOfChars(f);
-  // (Not followed: `@(a)` with extglob off, a syntax error written so; what differs between releases, `releasesDiffer`.)
-  if (globbedByBash(pattern, g.extglob) === false && !hasExtglob(pattern)) return [text];
-  if (step.applies === false && !unquoted) return [text];
-  if (releasesDiffer(f)) return undefined;
-  if (step.applies === 'unknown' || !env?.files || changesDirectory(w.nodes[0])) return undefined;
-  if (hasExtglob(pattern) && g.extglob !== 'on') return undefined;
-  if ([g.nullglob, g.failglob, g.dotglob, g.nocaseglob, g.globstar, g.extglob].includes('unknown') || g.globignore === 'unknown') return undefined;
-  // `./*.log`: the names under the current directory, with `./` before them; neither `sub/../*` nor `/var/log/*` is followed.
-  const prefix = /^(?:\.\/)*/.exec(pattern)![0];
-  const rest = pattern.slice(prefix.length);
-  // (Where globskipdots is not known, `.` and `..` count only where a name of the pattern starts with `.`, `d/.*`; or at the top, where `matchFiles` asks.)
-  if (rest.startsWith('/') || rest.split('/').some((seg) => seg === '.' || seg === '..') || (rest.includes('/') && (g.globskipdots === 'off' || (g.globskipdots === 'unknown' && /\/\./.test(rest))))) return undefined;
-  const matched = guardedApart(modelLimit(rootOf(w.nodes[0])), () => matchFiles(w, rest, env.files!), () => undefined);
-  if (!matched) return undefined;
-  if (prefix && g.globstar === 'on' && rest === '**') matched.unshift('');
-  if (matched.length) return matched.map((m) => prefix + m).sort();
-  if (g.failglob === 'on') throw new Failure('no-match');
-  return g.nullglob === 'on' ? [] : [text];
-}
-
-/** The names of `files` (with `.` and `..` when globskipdots is off; none when it is not known and they match) that `pattern` matches, without those GLOBIGNORE leaves out. */
-function matchFiles(w: WordMeaning, pattern: string, files: readonly string[]): string[] | undefined {
-  const g = w.glob;
-  const ignore = g.globignore === 'unset' ? [] : (g.globignore as { value: string }).value.split(':').filter(Boolean).map((p) => globToRegex(p, 'file', { dotglob: true }));
-  const opts = { dotglob: g.dotglob === 'on', nocase: g.nocaseglob === 'on', globstar: g.globstar === 'on' && hasGlobstar(pattern) };
-  const re = globToRegex(pattern, 'file', opts);
-  if (!re) return undefined;
-  // A directory with its slash: for a pattern that ends with `/`, and for `dir/**` (`**` matches nothing after `dir/`).
-  const slashed = pattern.endsWith('/') || (opts.globstar && /.\/\*\*$/.test(pattern));
-  const names = files.flatMap((p) => (p.endsWith('/') ? [...(pattern.endsWith('/') ? [] : [p.slice(0, -1)]), ...(slashed ? [p] : [])] : [p]));
-  if (g.globskipdots !== 'on') names.push('.', '..');
-  const out = names.filter((p) => re.test(p) && !ignore.some((r) => r?.test(p))).sort();
-  return g.globskipdots === 'unknown' && out.some((p) => p === '.' || p === '..') ? undefined : out;
+  return splitOn(chars, (c) => (c.split && !c.hole && sep.includes(c.c) ? (IFS_WHITESPACE.includes(c.c) ? 'white' : 'hard') : undefined), () => true).map((f) => f.field);
 }

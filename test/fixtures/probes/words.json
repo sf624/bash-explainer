@@ -3626,5 +3626,91 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.5.8",
+    "snippet": "set -f; x='*.txt b'; @PROBE:a@ ./*.txt $x \"$x\"* {a,b}*",
+    "note": "the view of each word too: `set -f` leaves a pattern as written, `./*.txt` plain",
+    "facts": {
+      "a": [
+        [
+          "./*.txt",
+          "*.txt",
+          "b",
+          "*.txt b*",
+          "a*",
+          "b*"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.8.1",
+    "snippet": "shopt -s extglob; p='@(a|b).txt'; @PROBE:a@ $p x$p \"$p\" -$p",
+    "note": "the view of each word too: an extended pattern from a value",
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "x@(a|b).txt",
+          "@(a|b).txt",
+          "-@(a|b).txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "IFS=:; x='a:*.log'; @PROBE:a@ $x x:$x; IFS='*'; @PROBE:b@ \"*\".txt x\"*\" $x\"*\" \"*\"*",
+    "note": "the view of each word too: a custom IFS, which bash quotes in a word with an unquoted expansion and unquotes in one without",
+    "facts": {
+      "a": [
+        [
+          "a",
+          "c.log",
+          "x:a",
+          "c.log"
+        ]
+      ],
+      "b": [
+        [
+          "*.txt",
+          "x*",
+          "a:",
+          ".log*",
+          "a.txt",
+          "b.txt",
+          "c.log",
+          "empty",
+          "sub",
+          "x y.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "set +B; x=1; @PROBE:a@ {a,b} a{1..2} {$x,b}*; set -B; @PROBE:b@ {a,b}.txt",
+    "note": "the view of each word too: `set +B` leaves braces as written",
+    "facts": {
+      "a": [
+        [
+          "{a,b}",
+          "a{1..2}",
+          "{1,b}*"
+        ]
+      ],
+      "b": [
+        [
+          "a.txt",
+          "b.txt"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

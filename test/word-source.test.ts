@@ -63,7 +63,7 @@ describe('word source guard (docs/design/word-source.md, section 4)', () => {
   it('keeps the allow-list to files that exist', () => {
     for (const a of ALLOWED) {
       if (a.endsWith('/')) assert.ok(fs.statSync(path.join(base, a)).isDirectory(), a);
-      else assert.ok(fs.existsSync(path.join(base, a)) || a === 'src/semantics/wordview.ts', `${a} is gone: remove it from ALLOWED`);
+      else assert.ok(fs.existsSync(path.join(base, a)), `${a} is gone: remove it from ALLOWED`);
     }
   });
 

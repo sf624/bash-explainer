@@ -7,6 +7,8 @@
 // `stdin`, each marker also printed what it read on its stdin: its here-string's one field (none: an empty text).
 // The markers whose words the note on `set -u` fires on (`unboundRead`: an unset variable bash surely fails on) are
 // the row's `unbound`: bash must not have run them, and its first error must name the first one's variable.
+// The view of each word (src/semantics/wordview.ts) must hold too, on every run (`${id}.view`): its count, the start of
+// its first field and the end of its last, its value where it is plain, and its words' fields where it does not glob.
 // The test reads the table only: it needs no bash.
 import * as assert from 'assert';
 import type { BashVersion } from '../src/bashversion';
@@ -15,6 +17,9 @@ import { descendants, field, fields } from '../src/syntax/tree';
 import { shellState } from '../src/semantics/state';
 import { unboundRead } from '../src/semantics/unbound';
 import { wordFields, type WordEnv } from '../src/semantics/words';
+import { wordView } from '../src/semantics/wordview';
+import type { StateModel } from '../src/semantics/state';
+import type { SyntaxNode } from '../src/syntax/tree';
 import { alignRuns, BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
 
 interface WordRow { manual: string; snippet: string; posix?: boolean; stdin?: boolean; bash?: BashVersion; note?: string; gaps?: Record<string, string>; unbound?: string[]; facts: Record<string, unknown> }
@@ -48,6 +53,10 @@ describe('the word model against bash (probes/words.json)', () => {
           unbound.push(id.text);
         }
         const results = words.map((w) => wordFields(w, state, ENV));
+        for (const run of runs) {
+          const wrong = viewFindings(args, state, row.stdin ? run.slice(0, -1) : run);
+          if (wrong) found.set(`${id.text}.view`, wrong);
+        }
         const error = results.find((r) => r.error)?.error;
         if (error) {
           if (runs.length) found.set(id.text, `model: ${error}, bash: ran`);
@@ -81,3 +90,30 @@ describe('the word model against bash (probes/words.json)', () => {
     });
   }
 });
+
+/**
+ * What the views of the words `args` say that the fields bash gave them (`run`, one after another) contradict: their
+ * counts against the number of fields; and each word whose place in the run is known (every word before it has an
+ * exact count) against its fields: its start and end, its value where it is plain, and its words' fields where it
+ * does not glob. Undefined when everything holds.
+ */
+function viewFindings(args: readonly SyntaxNode[], model: StateModel, run: readonly string[]): string | undefined {
+  const views = args.map((a) => wordView(a, model, ENV)!);
+  const min = views.reduce((n, v) => n + v.count.min, 0);
+  const max = views.some((v) => v.count.max === undefined) ? undefined : views.reduce((n, v) => n + v.count.max!, 0);
+  if (run.length < min || (max !== undefined && run.length > max)) return `view: ${min} to ${max ?? 'any'} fields, bash: ${run.length}`;
+  let at = 0;
+  for (const [i, v] of views.entries()) {
+    const said = `view of ${JSON.stringify(args[i].text)}`;
+    if (v.plain && (v.count.min !== 1 || v.count.max !== 1 || v.globs !== false)) return `${said}: plain, but ${JSON.stringify(v.count)} fields, globs ${String(v.globs)}`;
+    if (v.count.min > 0 && !(run[at].startsWith(v.start!))) return `${said}: starts with ${JSON.stringify(v.start)}, bash: ${JSON.stringify(run[at])}`;
+    if (v.count.min !== v.count.max) return undefined;
+    const own = run.slice(at, at + v.count.min);
+    if (own.length && !own[own.length - 1].endsWith(v.end!)) return `${said}: ends with ${JSON.stringify(v.end)}, bash: ${JSON.stringify(own)}`;
+    if (v.plain && own[0] !== v.value) return `${said}: ${JSON.stringify(v.value)}, bash: ${JSON.stringify(own)}`;
+    const each = v.words.every((x) => x.fields) ? v.words.flatMap((x) => x.fields!) : undefined;
+    if (v.globs === false && each && JSON.stringify(each) !== JSON.stringify(own)) return `${said}: words ${JSON.stringify(each)}, bash: ${JSON.stringify(own)}`;
+    at += v.count.min;
+  }
+  return undefined;
+}

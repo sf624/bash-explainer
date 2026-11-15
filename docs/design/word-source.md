@@ -1,6 +1,6 @@
 # One source for what bash makes of a word
 
-Status: tracked in #674. Agreed by the maintainer on 2026-10-31 (section 7); step 1 (the guard) done. This page is the detailed plan of the words row of [sources.md](sources.md) (row 1, steps SA1 and SC1).
+Status: Tracked in #674. Agreed by the maintainer on 2026-10-31 (section 7); step 1 (the guard) and step 2 (the view, section 3.2 "As built") done. This page is the detailed plan of the words row of [sources.md](sources.md) (row 1, steps SA1 and SC1).
 
 What bash makes of a word is one set of facts: its fields and how many, which characters are quoted, whether it globs, its literal start and end, its tildes and braces. The model has a source for them: `wordMeaning`, `wordFields`, `braceWords` and `holedWords` in src/semantics/words.ts, with `ownChars`, `patternOfChars`, `ifsEscaped` and `globbedByBash` in src/semantics/chars.ts. test/word-probes.test.ts checks them against bash.
 
@@ -159,6 +159,15 @@ It has three entry points:
 - `wordViewIn(n, st, source)` for the walk, which has a state and a `WalkSource`. It is today's `wordIn`, with the view's shape.
 - `wordViewAsWritten(n, shell)` for code that runs before or without a model: the parse stage, aliases, dialect. It is the view in the state of a script that sets nothing: the default IFS, options as the shell starts, braces as the shell has them. A command substitution there is not known. It is never read as empty. This replaces `staticWordValue` in those callers and closes the `$(:)` hole (W-L1).
 
+As built (step 2), the view decides nothing of its own; it reads the sources that exist:
+
+- Words.ts evaluates each word of the brace expansion once (`viewWords`), with a hole for each part whose value is not known: the hole kinds of fieldshape.ts (`holeOf`) until step 6 moves them (3.3). `ownChars` makes a `Char` with `hole` from a piece with one. The glob step marks `Char.pattern` (`true`, or `'unknown'`) on the special characters of each field it may take as a pattern: the field's own characters (`globsField`, which `globField` now reads too), or an unquoted hole that may hold a glob character. Pathname expansion (`globsField`, `globField`, `matchFiles`) and the failure bash stops a word with (`Failure`, `attempt`) moved to src/semantics/wordglob.ts, which keeps words.ts under its length ceiling.
+- `ViewWord` also has `globs`, and `asWritten` where bash's quoting of IFS characters is not known (`ownChars` gives none: the IFS, POSIX mode or the shell); its `chars` are undefined where bash fails on the word.
+- `wordView` takes the environment `env` as `wordFields` does, for the probes. Its count, start and end come from `wordFields` where the fields are known; else from `wordShapes` with the values the model knows of the word's parameters (`knownValues`), in every case (`shapes`); else the count is `{ min: 0 }`.
+- `wordViewIn` and `wordViewAsWritten` have no field domain: their count is known only where every word's fields are, and a redirection's target that gives other than one field is not known there.
+- `value` is the one field of a `plain` word: so `./x*` under `set -f` has one, and `"?"a` with `IFS='?a'` has none, since bash then takes it as a pattern (`WordMeaning.value` says `?a`).
+- test/word-probes.test.ts checks each view against bash's run of words.json (`viewFindings`): the count, the start of the first field and the end of the last where the place in the run is known, the value of a plain word, and the words' fields where the word does not glob. Four rows were added: `set -f`, extglob from a value, a custom IFS (quoted and unquoted by bash), `set +B`. test/wordview.test.ts covers the cases one by one.
+
 ### 3.3 Fieldshape folds in
 
 Fieldshape stops being a second model. Words.ts makes the characters, and fieldshape keeps only the abstract domain:
@@ -233,7 +242,7 @@ Under "Design", next to the semantic model:
 
 > - What bash makes of a word (its fields and their count, which characters are quoted, whether it globs, its literal start and end, tildes, braces) comes from the word model: `wordView` (src/semantics/wordview.ts) over `wordMeaning` and `wordFields` (src/semantics/words.ts) and `ownChars` (chars.ts). Code elsewhere does not decide it from word-part node types, quotes, glob characters or IFS. test/word-source.test.ts fails on a new such reading outside its allow-list; a use that is only syntax needs a reason in test/fixtures/word-source-known.json (docs/design/word-source.md).
 
-Until the view exists (step 2), the line names `wordMeaning` and `wordFields` only.
+Until the view existed (step 2), the line named `wordMeaning` and `wordFields` only; it names `wordView` since.
 
 ## 5. Steps
 
@@ -242,7 +251,7 @@ Each step is one PR (or a few, where it says so). Every test keeps passing. The 
 | Step | What | Files | Size | Fixes |
 | --- | --- | --- | --- | --- |
 | 1 | **The guard.** test/word-source.test.ts and the known list as it stands; the CLAUDE.md line (in the same PR, or the next, as the maintainer prefers). | test/, test/fixtures/, CLAUDE.md | small | none; it stops new deciders. Done in #528 |
-| 2 | **The view.** `WordView`, the three entry points, and `Char.pattern` and `Char.hole` (chars.ts). Nothing reads it yet. test/word-probes.test.ts also compares `count`, `start`, `end`, `plain` and `globs` with bash on words.json, with new rows for `set -f`, extglob, a custom IFS and `set +B`. | src/semantics/wordview.ts, chars.ts, test/word-probes.test.ts, test/fixtures/probes/words.json | medium | none |
+| 2 | **The view.** `WordView`, the three entry points, and `Char.pattern` and `Char.hole` (chars.ts). Nothing reads it yet. test/word-probes.test.ts also compares `count`, `start`, `end`, `plain` and `globs` with bash on words.json, with new rows for `set -f`, extglob, a custom IFS and `set +B`. | src/semantics/wordview.ts, chars.ts, test/word-probes.test.ts, test/fixtures/probes/words.json | medium | none. Done (3.2, "As built") |
 | 3a | **Literal values in the model.** W-L4 and W-T1 read `wordViewIn` and `WordMeaning.tildes`. The remaining callers of `staticWordValue` in semantics/ read the view. | src/semantics/** | medium | W-L1's `$(:)` in names and trust; W-T1; W-G5 (`declare a[1]`) |
 | 3b | **Literal values in the explanation.** `valueNote`, command heads, redirections, `declare` and `unset` names, and example inputs (W-L2) read `view.value`. | src/explain/{words, commands, redirections, argv, assignments, scripts, examples}.ts, src/reading.ts | medium | values under `set -f` and in here-strings (listed in the PR) |
 | 4 | **Plain words and globs in the explanation.** `isPlainWord`, `hasGlob`, `isGlob`, `unquotedWord`, `casePattern` and `quotedPatternNote` read `plain`, `globs` and `chars`. | src/explain/{words, tests, argv, redirections, commands, scripts, operand-texts, examples}.ts, expansion-tokens.ts, examples/{runtime, patterns}.ts, idioms.ts | medium–large (two PRs: explain/, then examples/ and idioms) | W-P1 (`sudo -u u*`, `command ~/bin/x`; the tilde token of `[ -f ~/x ]` is fixed by #527), W-P2, W-P3, W-G1, W-G2, W-G3, W-G4 |
