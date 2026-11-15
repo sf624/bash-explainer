@@ -10,7 +10,7 @@ import { EMPTY, type ShellState } from './shellstate';
 import type { StateModel } from './state';
 import { declaredWord } from './wordcontexts';
 import { optionsOf, type WordOptions } from './wordoptions';
-import { type Applies, type Char, type Fields, type HoleOf, meaningIn, modelValues, type ValueSource, viewWords, type WalkSource, type WordEnv, wordFields, wordMeaning, type WordMeaning } from './words';
+import { type Applies, type Char, type Fields, type HoleOf, meaningIn, CONTEXTS, modelValues, PLAIN_TEXT, type ValueSource, viewWords, type WalkSource, type WordEnv, wordFields, wordMeaning, type WordMeaning, wordOf } from './words';
 
 /** A word of the brace expansion of a word, as its view reads it (src/semantics/wordview.ts, `viewWords`). */
 export interface ViewWord {
@@ -122,8 +122,12 @@ const asWritten = (shell: Shell | undefined): WalkSource => ({ variable: () => u
 
 /** `value` of the view of the word that holds `n` in the finished model (`wordView`), for a reader that needs only that: a word with no value in its meaning has none, and costs nothing more. */
 export function valueOf(n: SyntaxNode, model: StateModel): string | undefined {
-  return wordMeaning(n, model)?.value === undefined ? undefined : wordView(n, model)!.value;
+  const w = wordMeaning(n, model);
+  return w && mayHaveValue(w) ? wordView(n, model)!.value : undefined;
 }
+
+/** Whether the view of the word `w` may have a value: `WordMeaning.value` has one, or it is an assignment given to a declaration builtin, whose value is its value word's. */
+const mayHaveValue = (w: WordMeaning): boolean => w.value !== undefined || !!declaredWord(w, w.steps[0].applies);
 
 /**
  * `value` of the view of the word that holds `n` in the state `st` of the walk (`wordViewIn`), for a reader that needs
@@ -132,10 +136,14 @@ export function valueOf(n: SyntaxNode, model: StateModel): string | undefined {
  * builtin), so it is worked out once per word and options (`optionsOf`).
  */
 export function valueIn(n: SyntaxNode, st: ShellState, source: WalkSource): string | undefined {
+  // (Most words are text as written, whatever the state: read at once.)
+  const text = textAsWritten(n);
+  if (text !== undefined) return text;
   const w = meaningIn(n, st, source.shell());
-  if (w?.value === undefined) return undefined;
-  // (A substitution that prints nothing, `$(:)`, does so where its name runs the builtin, which the state says: read each time.)
-  if (w.steps.some((s) => s.kind === 'command' && s.applies !== false)) return viewOf(w, source, (v) => wordViewIn(v, st, source)!).value;
+  if (!w || !mayHaveValue(w)) return undefined;
+  // (A substitution that prints nothing, `$(:)`, does so where its name runs the builtin, which the state says: read each
+  // time; and so may the value word of a declaration.)
+  if (w.value === undefined || w.steps.some((s) => s.kind === 'command' && s.applies !== false)) return viewOf(w, source, (v) => wordViewIn(v, st, source)!).value;
   let byOptions = values.get(w.nodes[0]);
   if (!byOptions) values.set(w.nodes[0], (byOptions = new WeakMap()));
   const key = optionsOf(st, source.shell());
@@ -145,6 +153,13 @@ export function valueIn(n: SyntaxNode, st: ShellState, source: WalkSource): stri
 }
 
 const values = new WeakMap<SyntaxNode, WeakMap<WordOptions, { value: string | undefined }>>();
+
+/** The value of the word `n` where bash takes it as it is written (`PLAIN_TEXT`, words.ts), read at once: its text, but where its context reads it as a regex (`[[ =~ a.b ]]`). */
+function textAsWritten(n: SyntaxNode): string | undefined {
+  if ((n.type !== 'word' && n.type !== 'number') || !PLAIN_TEXT.test(n.text)) return undefined;
+  const found = wordOf(n);
+  return found?.nodes[0] === n && CONTEXTS[found.context].match !== 'regex' ? n.text : undefined;
+}
 
 /** `value` of the view of the word that holds `n` before or without a model (`wordViewAsWritten`): what bash gives a word whose value is known as written, never a command substitution's (`$(:)echo` has none). */
 export const valueAsWritten = (n: SyntaxNode, shell?: Shell): string | undefined => valueIn(n, EMPTY, asWritten(shell));
