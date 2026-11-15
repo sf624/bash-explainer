@@ -8,7 +8,7 @@ import type { WordEnv } from '../src/semantics/words';
 import type { Shell } from '../src/shellfeatures';
 import { declaredWord } from '../src/semantics/wordcontexts';
 import { placedText } from '../src/staticword';
-import { wordMeaning } from '../src/semantics/words';
+import { wordFields, wordMeaning } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
 import { corpus } from './support/corpus';
@@ -55,6 +55,10 @@ describe('the view of a word (wordview.ts)', () => {
   it('a plain word: its value, one field', () => {
     assert.deepStrictEqual(brief(view('show "b c"')), { value: 'b c', plain: true, count: { min: 1, max: 1 }, start: 'b c', end: 'b c', globs: false, unknown: [], words: [['"b c"', 'b c', ['b c']]] });
     assert.deepStrictEqual(brief(view('show ""')), { value: '', plain: true, count: { min: 1, max: 1 }, start: '', end: '', globs: false, unknown: [], words: [['""', '', ['']]] });
+    // (A value of the script outside ASCII is its text in every locale; `$'é'` is `é` in UTF-8 only, `é` in C,
+    // and its word has no value in the view, so `$x` has none.)
+    const fieldsOf = (text: string): string[] | undefined => { const { tree, words } = wordsOf(text); return wordFields(words[0], shellState(tree, 'bash'))?.fields; };
+    assert.deepStrictEqual([fieldsOf("x='é'; show \"$x\""), fieldsOf("x=$'\\u00e9'; show \"$x\""), fieldsOf("x='é\\u'; show \"$x\"")], [['é'], undefined, ['é\\u']]);
   });
 
   it('glob characters pathname expansion does not read are text (`set -f`, an assignment), not where the context matches the word (`case`)', () => {
@@ -281,6 +285,8 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(valuesAsWritten(field(descendants(parser.parse('a={x,y}').root, ['variable_assignment'])[0], 'value')!), ['{x,y}']);
     assert.deepStrictEqual(values("declare a='('{x,y}')'", 'dash'), ['a=({x,y})']);
     assert.deepStrictEqual(values('declare a=~/{x,y}'), ['a=~/x', 'a=~/y', undefined]);
+    // (Braces whose words are not known, too many: none, then the text with braces off.)
+    assert.deepStrictEqual(values('declare a={1..100000}'), [undefined, 'a={1..100000}']);
     // (A substitution prints nothing where the reader says that its name runs the builtin, as for `valueAsWritten`.)
     const o = descendants(parser.parse("declare -a a=$(:)'(x)'{,}").root, ['variable_assignment'])[0];
     assert.deepStrictEqual([valuesAsWritten(o, 'bash', () => true), valuesAsWritten(o)], [['a=(x)', 'a=(x)', 'a=(x){,}'], [undefined, undefined, undefined]]);
