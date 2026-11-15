@@ -650,8 +650,10 @@ export class WalkBuiltins {
       return !changedByBash(target) && target !== 'IFS' && (!v || !!v.kept);
     };
     // (Where a tilde expands is the word model's, by its context: each element of `a=(~ x)` is a word of its own, one
-    // with a subscript has its tilde after the `=` (`a=([1]=~)`), and one without none after a `:` (`a=(x:~)`).)
-    const tildes = (w.type === 'array' ? w.namedChildren : [w]).flatMap((e) => meaningIn(e, st, this.w.shell)!.tildes);
+    // with a subscript has its tilde after the `=` (`a=([1]=~)`), and one without none after a `:` (`a=(x:~)`). A word
+    // whose value the view knows has none, and costs nothing more: its value is kept.)
+    const open = (w.type === 'array' ? w.namedChildren : [w]).filter((e) => this.w.conditions.valueOf(e, st) === undefined);
+    const tildes = open.flatMap((e) => meaningIn(e, st, this.w.shell)!.tildes);
     if (tildes.some((t) => t.user !== '' || unwritten('HOME'))) return true;
     return [w, ...descendants(w, ['simple_expansion', 'expansion'])].some((e) => {
       const name = (e.type === 'simple_expansion' || e.type === 'expansion') ? e.namedChildren[0] : undefined;

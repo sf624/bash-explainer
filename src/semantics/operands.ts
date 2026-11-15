@@ -1,6 +1,5 @@
 // The operands of `${x:-word}`, `${x#pattern}` and `${x/p/r}` read from their text, for the word model
 // (src/semantics/words.ts): what bash makes of their quotes, backslashes, tildes and the variables in them (manual 3.5.3).
-import { sameInEveryLocale } from './chars';
 import type { Shell } from '../shellfeatures';
 import { ansiCWordValue } from '../staticword';
 import { charge, longestExec } from '../examples/regexguard';
@@ -32,8 +31,8 @@ export function operandSegs(text: string, quoted: boolean, param: (name: string)
       }
       if (!quoted && text[i + 1] === "'") {
         const end = text.indexOf("'", i + 2);
-        const v = end < 0 ? undefined : ansiCWordValue(text.slice(i, end + 1), shell);
-        if (v === undefined || !sameInEveryLocale(v)) return undefined;
+        const v = end < 0 ? undefined : ansiCWordValue(text.slice(i, end + 1), shell, true);
+        if (v === undefined) return undefined;
         out.push({ text: v, quoted: true });
         i = end;
         continue;

@@ -563,8 +563,9 @@ class Evaluator {
       }
       case 'raw_string': return [{ text: decodedText(n).slice(1, -1), quoted: true, expanded: false }];
       case 'ansi_c_string': {
-        const v = ansiCWordValue(decodedText(n), this.w.shell);
-        return v === undefined || !sameInEveryLocale(v) ? undefined : [{ text: v, quoted: true, expanded: false }];
+        // (One text in every locale: not a `\u00e9`, which bash writes in the locale's encoding; `$'エラー\tです'` is.)
+        const v = ansiCWordValue(decodedText(n), this.w.shell, true);
+        return v === undefined ? undefined : [{ text: v, quoted: true, expanded: false }];
       }
       // (A translation may be any text: `holedWords` reads it as a hole; the view, as its text: `translated`.)
       case 'translated_string':
