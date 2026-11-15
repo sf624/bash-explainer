@@ -198,11 +198,12 @@ describe('a pattern is read as the text bash leaves where no file matches it', (
 
 describe('a word bash may change before the command reads it is not read as its text', () => {
   // (Its view gives no text, `givenText`: a tilde becomes the home directory; `$"…"` is translated where a message catalog has it.)
-  for (const [line, word] of [['grep ~/a.b f', '~/a.b'], [R`grep ~/a\$b f`, R`~/a\$b`], [R`sed $"s/\./x/" f`, R`$"s/\./x/"`]]) {
+  // (Each with the text it would be read as before: bash gives the command another, `/home/u/…` for the tilde.)
+  for (const [line, word, text] of [['grep ~/a.b f', '~/a.b', '~/a.b'], [R`grep ~/a\$b f`, R`~/a\$b`, '~/a$b'], [R`sed $"s/\./x/" f`, '', '']]) {
     it(line, () => {
       assert.deepStrictEqual(embeddedTokens(line), []);
       assert.deepStrictEqual(examplesOf(line).filter((x) => x.kind === 'regex' || x.kind === 'sed'), []);
-      if (word.startsWith('~')) assert.notStrictEqual(run('bash', ['-c', `printf %s ${word}`], { check: true, env: { ...process.env, HOME: '/home/u' } }).stdout.toString(), word.replace('\\', ''));
+      if (word) assert.strictEqual(run('bash', ['-c', `printf %s ${word}`], { check: true, env: { ...process.env, HOME: '/home/u' } }).stdout.toString(), '/home/u' + text.slice(1));
     });
   }
 });
