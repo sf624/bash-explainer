@@ -3712,5 +3712,93 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "4.2",
+    "snippet": "x='a  b'; export y=$x z=\"$x\"* w= v=~/p; declare -r r=abc; @PROBE:a@ \"$y\" \"$z\" \"$w\" \"$v\" \"$r\"",
+    "note": "the view of an assignment given to a declaration builtin: its name and `=`, then the view of its value",
+    "facts": {
+      "a": [
+        [
+          "a  b",
+          "a  b*",
+          "",
+          "/home/probe/p",
+          "abc"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.4.2",
+    "snippet": "set -- a 'b c'; @PROBE:a@ \"x$@y\" z",
+    "note": "the view's end: the last field of `\"x$@y\"` ends with `y`",
+    "gaps": {
+      "a": "positional parameters are not followed (4.7)"
+    },
+    "facts": {
+      "a": [
+        [
+          "xa",
+          "b cy",
+          "z"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.3",
+    "snippet": "[ \"$1\" ] || u=1; [ \"$1\" ] && set +B; @PROBE:a@ ${u:+c}d {a,b}x",
+    "note": "the view's start and end hold in every case the model reads (`u` set or not, braces on or off)",
+    "gaps": {
+      "a": "`u` is set, and braces are off, on some paths only"
+    },
+    "facts": {
+      "a": [
+        [
+          "cd",
+          "ax",
+          "bx"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.7",
+    "snippet": "read -r IFS <<< '*t'; @PROBE:a@ \"*\".txt",
+    "note": "with an IFS not known, a quoted `*` may be unquoted (here `*` and `t` are in IFS: bash unquotes the `*`, and globs): the view is not plain",
+    "gaps": {
+      "a": "the IFS `read` assigns is not known"
+    },
+    "facts": {
+      "a": [
+        [
+          "a.txt",
+          "b.txt",
+          "x y.txt"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.5.1",
+    "snippet": "[ \"$1\" ] || u=1; @PROBE:a@ {b,$u}",
+    "note": "the view's end comes from the last word of the brace expansion, which may give no field",
+    "gaps": {
+      "a": "`u` is set on some paths only"
+    },
+    "facts": {
+      "a": [
+        [
+          "b",
+          "1"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

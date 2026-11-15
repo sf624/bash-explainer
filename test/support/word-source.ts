@@ -24,7 +24,7 @@ const IFS_NAMES: ReadonlySet<string> = new Set(['IFS_WHITESPACE', 'IFS_ERRATIC']
 /** Files (or directories, ending in `/`) where word facts are made or only syntax is read; their matches are not counted. */
 export const ALLOWED: readonly string[] = [
   // The word layer.
-  ...['words', 'chars', 'wordview', 'brace', 'wordcontexts', 'wordsites', 'operands', 'fieldshape'].map((n) => `src/semantics/${n}.ts`),
+  ...['words', 'chars', 'wordview', 'wordglob', 'brace', 'wordcontexts', 'wordsites', 'operands', 'fieldshape'].map((n) => `src/semantics/${n}.ts`),
   // Where a helper is defined (src/staticword.ts is matched, so that a new word predicate there is found).
   'src/examples/shellwords.ts',
   // Syntax: the adapter that reads the parser's tree (src/syntax/tree.ts is matched: it holds word predicates too).
