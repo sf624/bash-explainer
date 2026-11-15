@@ -6,7 +6,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 
 ### Fixed
 
-- A command's text is read as bash gives it in more words: `grep foo$ f` explains its regex, and `awk -F$'\t'` runs its example with a tab. A word whose tilde bash expands, `grep ~/a.b f`, is no longer read as the text `~/a.b`.
+- A command's text is read as bash gives it in more words: `grep foo$ f` explains its regex, and `awk -F$'\t'` runs its example with a tab. A word whose tilde bash expands, `grep ~/a.b f` or `tr ~ x`, is no longer read as the text `~/a.b` or `~`.
 
 ## 0.15.0
 

@@ -886,8 +886,8 @@ export function exampleWords(cx: Explainer, args: SyntaxNode[], printed = false)
     if (braced) return braced.map((w) => ({ value: unknown(w) ? undefined : w, text: w }));
     // (A word whose braces expand to words not listed here has no value: `'%s,'{a..c}`.)
     // (Braces the shell does not expand are text, `{a,b}` in dash: the word model's value.)
-    // (A backslash, in double quotes or before a character, is no literal: `"%s\n"`, `a\ b`; the word model gives its value.)
-    const text = wordBraces(a).length ? staticWordValue(a, false, cx.shell) : literalContent(a)?.text ?? staticWordValue(a, false, cx.shell);
+    // (Else the text bash gives the command, `givenText`: none where it is not known, as for a tilde or a pattern under nullglob.)
+    const text = wordBraces(a).length ? staticWordValue(a, false, cx.shell) : givenText(cx.state, a);
     return [{ value: unknown(a.text) || bracesApply(cx, a) ? undefined : text, text: a.text }];
   });
 }

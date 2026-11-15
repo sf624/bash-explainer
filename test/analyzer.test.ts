@@ -291,15 +291,12 @@ describe('statements as bash reads them', () => {
     assert.ok(find(explain('echo "PV " x'), '"PV "'));
     assert.deepStrictEqual(explain('echo a  \\\nb').items.map((t) => t.label), ['echo']);
   });
-  it('reads the format of printf in double quotes, with its example; not in $"…" with no expansion, which a message catalog may translate', () => {
-    const e = explain('printf "Copyright %s Inc." 2024');
-    assert.ok(find(e, '%s', 'variable'));
-    assert.deepStrictEqual(e.examples.map((x) => x.kind), ['printf']);
-    // (The view of the word reads a translation as a part whose value is not known: `givenText` gives no text. The example
-    // comes from the example inputs, which read the value as it is where no translation is: word-source.md, step 3b.)
-    const t = explain('printf $"Copyright %s Inc." 2024');
-    assert.ok(!allTokens(t.items).some((x) => x.label === '%s'));
-    assert.deepStrictEqual(t.examples.map((x) => x.kind), ['printf']);
+  it('reads the format of printf in $"…" like one in double quotes, with its example', () => {
+    for (const q of ['"', '$"']) {
+      const e = explain(`printf ${q}Copyright %s Inc.${'"'} 2024`);
+      assert.ok(find(e, '%s', 'variable'), q);
+      assert.deepStrictEqual(e.examples.map((x) => x.kind), ['printf'], q);
+    }
     // A translated string with an expansion in it is not literal: no example.
     assert.deepStrictEqual(explain('printf $"Copyright %s $y" 2024').examples, []);
   });

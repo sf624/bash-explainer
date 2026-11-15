@@ -55,6 +55,7 @@ const rows: Row[] = [
   { line: 'awk -F {} \'{print $1}\' f', word: R`"\t"`, other: true },
   { line: 'awk -v {} \'{print $1,$2}\' f', word: R`OFS="\t"`, mixed: true, other: true },
   { line: 'git log --pretty={}', word: R`format:"%h\t%s"`, mixed: true },
+  { line: 'sed {} f', word: R`$"s/\./x/"`, real: 'output' },
   { line: 'awk {} f', word: R`\$1`, real: 'output' },
   { line: 'awk {} f', word: R`\{print\ \$2\}`, real: 'output' },
   { line: 'grep {} f', word: R`a\😀b`, real: 'grep' },
@@ -196,16 +197,45 @@ describe('a pattern is read as the text bash leaves where no file matches it', (
   }
 });
 
-describe('a word bash may change before the command reads it is not read as its text', () => {
-  // (Its view gives no text, `givenText`: a tilde becomes the home directory; `$"…"` is translated where a message catalog has it.)
-  // (Each with the text it would be read as before: bash gives the command another, `/home/u/…` for the tilde.)
-  for (const [line, word, text] of [['grep ~/a.b f', '~/a.b', '~/a.b'], [R`grep ~/a\$b f`, R`~/a\$b`, '~/a$b'], [R`sed $"s/\./x/" f`, '', '']]) {
+describe('a word whose tilde bash expands is not read as its text', () => {
+  // (Its view gives no text, `givenText`: a tilde becomes the home directory. Each with the text it would be read as before:
+  // bash gives the command another, `/home/u/…`.)
+  for (const [line, word, text] of [['grep ~/a.b f', '~/a.b', '~/a.b'], [R`grep ~/a\$b f`, R`~/a\$b`, '~/a$b']]) {
     it(line, () => {
       assert.deepStrictEqual(embeddedTokens(line), []);
-      assert.deepStrictEqual(examplesOf(line).filter((x) => x.kind === 'regex' || x.kind === 'sed'), []);
-      if (word) assert.strictEqual(run('bash', ['-c', `printf %s ${word}`], { check: true, env: { ...process.env, HOME: '/home/u' } }).stdout.toString(), '/home/u' + text.slice(1));
+      assert.deepStrictEqual(examplesOf(line).filter((x) => x.kind === 'regex'), []);
+      assert.strictEqual(run('bash', ['-c', `printf %s ${word}`], { check: true, env: { ...process.env, HOME: '/home/u' } }).stdout.toString(), '/home/u' + text.slice(1));
     });
   }
+});
+
+describe('tr runs its example only on the sets bash gives it', () => {
+  const trExample = (line: string) => analyzer.explainLine(parser.parse(line), line.split('\n').length - 1).examples.find((x) => x.kind === 'textFilters');
+  for (const line of ['tr a-z A-Z', "tr '[:lower:]' '[:upper:]'", 'tr [:lower:] [:upper:]']) {
+    it(`${line}: as the real tr`, () => {
+      const ex = trExample(line);
+      assert.ok(ex, 'has an example');
+      const input = ex.sections.find((s) => /^Input/.test(s.label))!.lines;
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-tr-'));
+      try {
+        const printed = run('bash', ['-c', line], { cwd: dir, input: input.join('\n') + '\n' }).stdout.toString();
+        assert.strictEqual(printed, ex.sections.find((s) => /^Output/.test(s.label))!.lines.map((l) => l + '\n').join(''));
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+  // (bash gives tr the home directory for `~` (`printf '/home/u\n' | tr ~ x` prints `xxxxxxx`), and nothing for a pattern no file matches under nullglob.)
+  for (const line of ['tr ~ x', 'shopt -s nullglob\ntr [:lower:] [:upper:]']) {
+    it(`${line.replace('\n', '; ')}: no example, no summary of the sets`, () => {
+      assert.strictEqual(trExample(line), undefined);
+      const e = analyzer.explainLine(parser.parse(line), line.split('\n').length - 1);
+      assert.ok(!JSON.stringify(e.items).includes('that is, it'), 'no summary');
+    });
+  }
+  it('tr ~ x: bash gives tr the home directory', () => {
+    assert.strictEqual(run('bash', ['-c', 'printf "%s\\n" "$HOME" | tr ~ x'], { check: true, env: { ...process.env, HOME: '/home/u' } }).stdout.toString(), 'xxxxxxx\n');
+  });
 });
 
 describe('sourceIndex', () => {

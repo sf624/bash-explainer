@@ -291,12 +291,13 @@ export function notForEarlier(cx: Explainer, parse: ArgvParse, word: number, rol
 }
 
 /** How tr (the command `c`, in the model `model`) uses the set in `a`: its position among the sets (the operands) and the -d/-s options. */
-export function trContext(c: CommandRead, a: SyntaxNode, model: StateModel): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: string[]; complement: boolean; truncate: boolean } {
+export function trContext(c: CommandRead, a: SyntaxNode, model: StateModel): { role: 'from' | 'to' | 'delete' | 'squeeze'; sets: (string | undefined)[]; complement: boolean; truncate: boolean } {
   const { nodes, parse } = c;
   const given = (...names: string[]): boolean => givenIn(c, ...names);
   const sets = operands(parse).map(({ word }) => nodes[word]);
   const idx = sets.findIndex((w) => same(w, a));
-  const lits = sets.map((w) => givenText(model, w) ?? w.text);
+  // (A set whose text bash does not surely give, `~` or a pattern under nullglob, is none: nothing is said of it.)
+  const lits = sets.map((w) => givenText(model, w));
   // (`-c` complements the first string only: with `-ds`, the string to squeeze is read as it is.)
   const complement = given('-c');
   const truncate = given('-t');
