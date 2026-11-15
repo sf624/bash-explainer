@@ -39,11 +39,11 @@
 import type { Shell } from '../dialect';
 import { prefixOf } from '../argv/words';
 import { builtins } from '../dict/builtins';
-import { splitElement, staticWordValue } from '../staticword';
+import { splitElement } from '../staticword';
 import type { BashVersion } from '../bashversion';
-import { coprocName, field, fields, hasError, nameText, substitutionForm, type SyntaxNode, wordBraces } from '../syntax/tree';
+import { coprocName, field, fields, hasError, nameText, substitutionForm, type SyntaxNode } from '../syntax/tree';
 import type { CommandSpec } from '../argv/spec';
-import { bracedWords, braceValues } from './brace';
+import { valueAsWritten, valuesAsWritten } from './wordview';
 import { BUILTINS, builtinRow, writesFollowed, expansionRow, indirect, optionRow, quietPrompt, redirectionRow, SET_OPTIONS, SHOPT_OPTIONS, nodeRow, type Row } from './allow';
 import { plainName, aliasOf, aliasTexts, builtinParse, builtinRead, callbacks, commandName, commandWords, DECLARATIONS, setOptionWrites, variableWrites, wordName } from './effects';
 import { type Deferred, type DeferredPlan, deferredReadings, unknownWords } from './deferred';
@@ -61,6 +61,8 @@ import { NESTED_DEPTH } from './nested';
 export { BLIND, type HostCommands, NO_HOST, type StringTrees, type Trust, withinTrust } from './trustmodel';
 
 const NAME = /^[A-Za-z_]\w*$/;
+/** A value known in full, else one not known (a word of a `for` list: a glob or an expansion gives text not known; `select`, what the user types). */
+const fixed = (v: Value): Value => (typeof v === 'object' && v.fixed ? v : 'unknown');
 
 /**
  * Where a node is: the function whose body holds it, whether it is in the text of an `eval`, a trap or an alias
@@ -251,9 +253,9 @@ class Scan {
   }
 
   /** What the word `v` assigns (`writtenValue`). */
-  private value(v: SyntaxNode | undefined): Value {
-    return writtenValue(v, (x) => this.renames || this.functions.has(x), this.shell);
-  }
+  private value(v: SyntaxNode | undefined): Value { return writtenValue(v, this.builtinRuns, this.shell); }
+
+  /** Whether `$(name)` runs the builtin `name` wherever it is: the script defines no function of the name, and runs no `alias` or `enable` (`$(true)` prints nothing). */ private readonly builtinRuns = (name: string): boolean => !this.renames && !this.functions.has(name);
 
   /** Records the text assigned to `name` (read as arithmetic if it is an integer). */
   private assigned(name: string, text: string | undefined, n: SyntaxNode, w: Where): void {
@@ -368,8 +370,7 @@ class Scan {
       case 'for_statement': case 'select_statement': {
         const variable = field(n, 'variable');
         if (variable) {
-          // (Each word, once expanded: a glob or an expansion gives text not known; `select`, what the user types.)
-          const values = fields(n, 'value').map((v): Value => (wordName(v) !== undefined ? this.value(v) : 'unknown'));
+          const values = fields(n, 'value').map((v): Value => fixed(this.value(v)));
           this.write(variable.text, w, false, n.type === 'select_statement' || !values.length ? 'unknown' : joined(values), { scalar: true, followed: nodeRow(n).effect.kind === 'followed' });
           this.assigned(variable.text, undefined, n, w);
         }
@@ -527,7 +528,7 @@ class Scan {
       // (`declare -f f` prints it; `export -f`, `declare -fx` export it, and a name not known may be any.)
       if ((builtin !== 'export' || on.includes('n')) && !on.includes('x')) return;
       for (const { node: o, field: f } of operands) {
-        const name = f ?? staticWordValue(o);
+        const name = f ?? wordName(o);
         if (name === undefined) this.exportAll = true;
         else this.exported.add(name);
       }
@@ -548,7 +549,7 @@ class Scan {
         const nameNode = field(o, 'name')!;
         name = nameNode.type === 'subscript' ? field(nameNode, 'name')!.text : nameNode.text;
         if (nameref) {
-          const target = field(o, 'value') && staticWordValue(field(o, 'value')!, true);
+          const target = field(o, 'value') && valueAsWritten(field(o, 'value')!, this.shell, this.builtinRuns);
           const m = target === undefined ? null : /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(target);
           if (m) {
             this.refTargets.add(m[1]);
@@ -559,17 +560,16 @@ class Scan {
           continue;
         }
         const value = field(o, 'value');
-        // (Of an element, `declare 'a[1]=(x)'`, only with -a or -A. Each value the word gives: as written, and the words
-        // of its brace expansion where `set -B` is on, as for any word of a command: `a={'(…)',}` gives `a=(…)`, `a=`.)
+        // (Of an element, `declare 'a[1]=(x)'`, only with -a or -A. Each value the word may give, `set +B` or not, as for
+        // any word of a command: `a={'(…)',}` gives `a=(…)`, `a=`, and `a={(…),}` with braces off; the value is after the `=`.)
         if (compound && value && value.type !== 'array' && (explicit || nameNode.type !== 'subscript')) {
-          const braced = wordBraces(value).length ? braceValues([value], true) ?? [undefined] : [];
-          for (const text of [staticWordValue(value, true, this.shell), ...braced]) this.compoundValue(o, name, text, prefixOf(value, this.shell), explicit, on.includes('A'), w);
+          for (const text of valuesAsWritten(o, this.shell, this.builtinRuns)) this.compoundValue(o, name, text?.slice(text.indexOf('=') + 1), prefixOf(value, this.shell), explicit, on.includes('A'), w);
         }
         this.assignment(o, w, plain, on.includes('A'), false, explicit);
       } else {
-        // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `'x=1'`, `"$v"=1` (a name with a value
-        // not known), `$v` (a name not known), `{a,b}` (names the braces give where they expand).
-        const text = f ?? staticWordValue(o, false, this.shell) ?? (o.type === 'word' && !bracedWords([o]).length ? o.text : undefined);
+        // A word: `x`, `'x=1'`, `"$v"=1` (a name with a value not known), `$v` (a name not known), `{a,b}` (names the
+        // braces give where they expand), `a[1]` (a pattern: bash declares `a1` where that file is there).
+        const text = f ?? valueAsWritten(o, this.shell);
         const m = /^([A-Za-z_]\w*)(\[.*?\])?(?:(\+?=)(.*))?$/s.exec(text ?? prefixOf(o, this.shell).replace(/=.*/s, '='));
         if (!m || (text === undefined && !m[3])) {
           // (`local -`: the options, not a variable.)

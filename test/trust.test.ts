@@ -4,7 +4,8 @@ import * as assert from 'assert';
 import { execFileSync, spawnSync } from 'child_process';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { descendants } from '../src/syntax/tree';
+import { descendants, field } from '../src/syntax/tree';
+import { writtenValue } from '../src/semantics/written';
 import { wordFields } from '../src/semantics/words';
 import { assertGrowth } from './support/growth';
 
@@ -189,6 +190,51 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     assert.strictEqual(decided('y=1; HOME=0; m=~; (( m )); [ "$y" = 1 ] && :'), 'true');
   });
 
+  it('reads what an assignment gives from the word model as written: `$(:)` prints nothing where the script makes no function or alias of it (word-source.md, 3a)', () => {
+    // Arithmetic runs the text of `x`: `1` there, which reads no variable; where `:` is a function, text not known
+    // (`0*1` is 0).
+    const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
+    for (const src of ['x=$(:)1', 'x=$(true)1', 'for x in $(:)1; do :; done', 'declare x=$(:)1', 'export x=$(:)1']) {
+      assert.strictEqual(bash(`${src}; (( x )) && echo yes`), 'yes\n', src);
+      assert.strictEqual(blind(`${src}; (( x ))`), undefined, src);
+    }
+    for (const src of [":() { printf '0*'; }; x=$(:)1", "true() { printf '0*'; }; for x in $(true)1; do :; done"]) {
+      assert.strictEqual(bash(`${src}; (( x )) || echo no`), 'no\n', src);
+      assert.strictEqual(blind(`${src}; (( x ))`), 'arithmetic reads `x`, which may be set to text not known', src);
+    }
+    // A nameref's target, read so: assigning `r` assigns `a`, which the scan then does not trust.
+    assert.strictEqual(bash('declare -n r=$(:)a; r=2; echo $a'), '2\n');
+    assert.strictEqual(blind('declare -n r=$(:)a; r=2'), undefined);
+    assert.strictEqual(shellState(parser.parse('declare -n r=$(:)a; r=2; a=1')).trusts('a'), false);
+    assert.strictEqual(blind('true() { :; }; declare -n r=$(true)a; r=2'), 'a nameref whose target is not known is assigned');
+    // And a value a declaration reads again as a compound assignment: `([n]=1)` reads `n` where it runs.
+    assert.strictEqual(blind("f() { local -a a=$(:)'([n]=1)'; }; n=1"), 'arithmetic reads `n`, which the script may not have set');
+    assert.strictEqual(blind(":() { :; }; f() { local -a a=$(:)'([n]=1)'; }; n=1"), 'a declaration with -a or -A is given a value not known, which it may read again as a compound assignment');
+  });
+
+  it('takes the tildes of a value where its context has them (`WordMeaning.tildes`): after `=` and `:` in an assignment, at the start of an element', () => {
+    // (What the scan reads, `writtenValue`: a tilde reads HOME, a value bash may not have written.)
+    const value = (src: string, i = 0): ReturnType<typeof writtenValue> => {
+      const tree = parser.parse(src);
+      const words = [...descendants(tree.root, ['variable_assignment']).map((a) => field(a, 'value')!), ...descendants(tree.root, ['array']).flatMap((a) => a.namedChildren)];
+      return writtenValue(words.filter((w) => w.type !== 'array')[i], () => true);
+    };
+    assert.deepStrictEqual(value('m=a:~/b'), { names: ['HOME', 'a', 'b'], text: 'a:~/b' });
+    assert.deepStrictEqual(value('m=*.txt'), { names: [], text: '*.txt', fixed: true });
+    assert.deepStrictEqual(value('m=(x:~ ~)', 0), { names: ['x'], text: 'x:~', fixed: true });
+    assert.deepStrictEqual(value('m=(x:~ ~)', 1), { names: ['HOME'], text: '~' });
+    assert.strictEqual(value('m=~nobody'), 'unknown');
+    assert.strictEqual(bash('HOME=/h; m=(x:~ ~); echo "${m[@]}"'), 'x:~ /h\n');
+    // (What the walk keeps, `readsUnwritten`: a value that reads a HOME the script has not set may be the environment's.)
+    const kept = (src: string): boolean => {
+      const tree = parser.parse(`${src}; :`);
+      const at = descendants(tree.root, ['command']).pop()!;
+      return !!shellState(tree).at(at).run.variables.get('m')?.kept;
+    };
+    assert.deepStrictEqual(['m=~', 'm=a:~/b', 'm=~nobody', 'm="~"', 'HOME=/h; m=~', 'm=x~'].map(kept), [true, true, true, false, false, false]);
+    assert.deepStrictEqual(['m=(~)', 'm=([1]=~)', 'm=(x:~)', 'm=(y=~)'].map(kept), [true, true, false, false]);
+  });
+
   it('reads a word of `set` or a declaration as the fields of each value the script gives its variables (src/semantics/deferred.ts)', () => {
     const blind = (src: string): string | undefined => shellState(parser.parse(src)).blind;
     const unknown = '`set` is given a word not known before its operands, which may be any option';
@@ -243,10 +289,12 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     for (const src of ["f() { local m=hi; trap 'printf $m u 2' ERR; }; f; false", "m=-v; f() { declare m=hi; trap 'printf $m u 2' ERR; }; f; false"]) {
       assert.strictEqual(blind(src), 'a builtin is given a word not known where the walk does not run it', src);
     }
-    // Unset is a value it knows, also in another shell; code that never runs reads nothing; a word that expands
-    // nothing is a glob that matches no file.
+    // Unset is a value it knows, also in another shell; code that never runs reads nothing.
     for (const src of ['o=-v; unset o; printf $o u 2', 'f() { local o; printf $o u 2; }; f', "bash -c 'o=-v; unset o; printf $o u 2'", 'if false; then read -r o; printf $o u 2; fi', 'if false; then o=-v; printf $o u 2; fi',
-      'declare a[1]', 'o=%s; [ -t 0 ] && o=x; a=1; printf $o "$a" "$a"']) assert.strictEqual(blind(src), undefined, src);
+      "declare 'a[1]'", 'declare a\\[1]', 'o=%s; [ -t 0 ] && o=x; a=1; printf $o "$a" "$a"']) assert.strictEqual(blind(src), undefined, src);
+    // A declaration's word that is a pattern names what it matches: `touch a1; declare a[1]` declares `a1` (W-G5 of
+    // docs/design/word-source.md), and the scan, which reads the script as written, cannot know the files.
+    for (const src of ['declare a[1]', 'local -a b[2]', 'set -f; declare a[1]']) assert.strictEqual(blind(src), 'a declaration names a variable not known', src);
   });
 
   // (What bash gives at the uses is checked by the rows `values#local-bare`, `values#unset-after-use`,

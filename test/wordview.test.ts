@@ -2,7 +2,7 @@
 // the field domain, case by case. test/word-probes.test.ts holds it against bash on probes/words.json.
 import * as assert from 'assert';
 import { shellState } from '../src/semantics/state';
-import { unmatchedOf, valueAsWritten, valueIn, valueOf, wordView, type WordView, wordViewAsWritten, wordViewIn } from '../src/semantics/wordview';
+import { unmatchedOf, valueAsWritten, valuesAsWritten, valueIn, valueOf, wordView, type WordView, wordViewAsWritten, wordViewIn } from '../src/semantics/wordview';
 import { EMPTY } from '../src/semantics/shellstate';
 import type { WordEnv } from '../src/semantics/words';
 import type { Shell } from '../src/shellfeatures';
@@ -57,8 +57,17 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(brief(view('show ""')), { value: '', plain: true, count: { min: 1, max: 1 }, start: '', end: '', globs: false, unknown: [], words: [['""', '', ['']]] });
   });
 
-  it('a pattern bash leaves as written (`set -f`) has the value `WordMeaning.value` gives: none yet (word-source step 3b)', () => {
-    assert.deepStrictEqual(brief(view('set -f; show ./x*')), { plain: false, count: { min: 1, max: 1 }, start: './x*', end: './x*', globs: false, unknown: [], words: [['./x*', './x*', ['./x*']]] });
+  it('glob characters pathname expansion does not read are text (`set -f`, an assignment), not where the context matches the word (`case`)', () => {
+    assert.deepStrictEqual(brief(view('set -f; show ./x*')), { value: './x*', plain: true, count: { min: 1, max: 1 }, start: './x*', end: './x*', globs: false, unknown: [], words: [['./x*', './x*', ['./x*']]] });
+    assert.strictEqual(view('set -f; show ./x* ~').value, './x*');
+    assert.strictEqual(view('set -o noglob; show "a"[b]').value, 'a[b]');
+    assert.strictEqual(view('show ./x*').value, undefined);
+    assert.strictEqual(viewAt('x=*.txt', '*.txt').value, '*.txt');
+    assert.strictEqual(viewAt('x=*.txt', '*.txt', 'as written').value, '*.txt');
+    assert.strictEqual(viewAt('local f=a[1]', 'a[1]').value, 'a[1]');
+    assert.strictEqual(viewAt('case $x in *.txt) ;; esac', '*.txt').value, undefined);
+    assert.strictEqual(viewAt('case $x in *.txt) ;; esac', '*.txt').meaning.value, undefined);
+    assert.strictEqual(viewAt('[[ $x == a* ]]', 'a*').meaning.value, undefined);
   });
 
   it('what a word gives where pathname expansion leaves it as it is (`unmatched`): its value, or a pattern as written after quote removal', () => {
@@ -257,6 +266,24 @@ describe('the view of a word (wordview.ts)', () => {
     const plainWords = descendants(tree.root, ['word']);
     assert.deepStrictEqual([plainWords[0].parent!.type, valueAsWritten(plainWords[0])], ['function_definition', undefined]);
     assert.strictEqual(valueAsWritten(plainWords.find((w) => w.text === 'y')!), 'xy');
+    // (As written, a substitution prints nothing where the reader says its name runs the builtin: the trust scan.)
+    assert.deepStrictEqual([valueAsWritten(words[0], 'bash', () => true), valueAsWritten(words[0], 'bash', (n) => n !== ':')], ['echo', undefined]);
+  });
+
+  it('the values a word may give as written, braces on or off (`valuesAsWritten`, for the trust scan)', () => {
+    const values = (text: string, shell: Shell = 'bash'): (string | undefined)[] => valuesAsWritten(descendants(parser.parse(text).root, ['variable_assignment'])[0], shell);
+    // (A declaration's word is brace-expanded as a whole, `declare a={x,}` is `a=x a=`; with `set +B`, `a={x,}` is its text.)
+    assert.deepStrictEqual(values("declare a='('{x,y}')'"), ['a=(x)', 'a=(y)', 'a=({x,y})']);
+    assert.deepStrictEqual(values("declare a={'(x)',}"), ['a=(x)', 'a=', 'a={(x),}']);
+    assert.deepStrictEqual(values('declare a={"$1",b}'), [undefined, 'a=b', undefined]);
+    // (An assignment's own value is never brace-expanded, nor a declaration's in dash. Each word braces give is an
+    // argument, with a tilde only at its start: `declare a=~/{x,y}` is `a=~/y` at the end; with braces off, `a=$HOME/{x,y}`, not known.)
+    assert.deepStrictEqual(valuesAsWritten(field(descendants(parser.parse('a={x,y}').root, ['variable_assignment'])[0], 'value')!), ['{x,y}']);
+    assert.deepStrictEqual(values("declare a='('{x,y}')'", 'dash'), ['a=({x,y})']);
+    assert.deepStrictEqual(values('declare a=~/{x,y}'), ['a=~/x', 'a=~/y', undefined]);
+    // (A substitution prints nothing where the reader says that its name runs the builtin, as for `valueAsWritten`.)
+    const o = descendants(parser.parse("declare -a a=$(:)'(x)'{,}").root, ['variable_assignment'])[0];
+    assert.deepStrictEqual([valuesAsWritten(o, 'bash', () => true), valuesAsWritten(o)], [['a=(x)', 'a=(x)', 'a=(x){,}'], [undefined, undefined, undefined]]);
   });
 
   it('outside a word: none', () => {

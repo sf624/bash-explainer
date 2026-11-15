@@ -280,6 +280,13 @@ export function staticWordValue(n: SyntaxNode, assignment = false, shell?: Shell
   return literalValue(n, assignment, shell, bracesOff);
 }
 
+/**
+ * The text of the part `n` of a word after quote removal, where the word model has decided that no step but quote
+ * removal applies to it (`WordMeaning.value`, src/semantics/words.ts): no tilde, braces as text, and its glob
+ * characters as text where `globsAsText` (pathname expansion does not apply: an assignment's value, `set -f`).
+ */
+export const quoteRemoved = (n: SyntaxNode, globsAsText: boolean, shell: Shell | undefined): string | undefined => literalValue(n, globsAsText, shell, true);
+
 function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefined, bracesOff = false): string | undefined {
   const text = decodedText(n);
   switch (n.type) {
