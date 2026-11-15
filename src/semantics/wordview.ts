@@ -10,7 +10,7 @@ import { EMPTY, type ShellState } from './shellstate';
 import type { StateModel } from './state';
 import { declaredWord } from './wordcontexts';
 import { optionsOf, type WordOptions } from './wordoptions';
-import { type Applies, type Char, type Fields, type HoleOf, meaningIn, CONTEXTS, modelValues, PLAIN_TEXT, type ValueSource, viewWords, type WalkSource, type WordEnv, wordFields, wordMeaning, type WordMeaning, wordOf } from './words';
+import { type Applies, type Char, type Fields, type HoleOf, meaningIn, modelValues, PLAIN_TEXT, type ValueSource, viewWords, type WalkSource, type WordEnv, wordFields, wordMeaning, type WordMeaning, wordOf } from './words';
 
 /** A word of the brace expansion of a word, as its view reads it (src/semantics/wordview.ts, `viewWords`). */
 export interface ViewWord {
@@ -154,11 +154,13 @@ export function valueIn(n: SyntaxNode, st: ShellState, source: WalkSource): stri
 
 const values = new WeakMap<SyntaxNode, WeakMap<WordOptions, { value: string | undefined }>>();
 
-/** The value of the word `n` where bash takes it as it is written (`PLAIN_TEXT`, words.ts), read at once: its text, but where its context reads it as a regex (`[[ =~ a.b ]]`). */
+/**
+ * The value of the word `n` where bash takes it as it is written (`PLAIN_TEXT`, words.ts), read at once: its text. (No
+ * such word is read as a regex, where `.` is special: the right side of `[[ =~ ]]` is a `regex` node.)
+ */
 function textAsWritten(n: SyntaxNode): string | undefined {
   if ((n.type !== 'word' && n.type !== 'number') || !PLAIN_TEXT.test(n.text)) return undefined;
-  const found = wordOf(n);
-  return found?.nodes[0] === n && CONTEXTS[found.context].match !== 'regex' ? n.text : undefined;
+  return wordOf(n)?.nodes[0] === n ? n.text : undefined;
 }
 
 /** `value` of the view of the word that holds `n` before or without a model (`wordViewAsWritten`): what bash gives a word whose value is known as written, never a command substitution's (`$(:)echo` has none). */
