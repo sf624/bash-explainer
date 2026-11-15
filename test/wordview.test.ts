@@ -246,6 +246,10 @@ describe('the view of a word (wordview.ts)', () => {
     assert.strictEqual(valueIn(words[1], EMPTY, source), undefined);
     assert.strictEqual(valueIn(words[1], model.at(words[1]).run, source), '{a,b}');
     assert.strictEqual(valueIn(words[1], EMPTY, source), undefined);
+    // (A word of text as written is read at once; the right side of `=~` is a regex, where `.` is special: no value.)
+    const regex = parser.parse('[[ x =~ a.b ]]');
+    const right = descendants(regex.root, ['regex', 'word']).find((w) => w.text === 'a.b')!;
+    assert.deepStrictEqual([valueAsWritten(right), wordViewAsWritten(right)!.value], [undefined, undefined]);
   });
 
   it('outside a word: none', () => {
