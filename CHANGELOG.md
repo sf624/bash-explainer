@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.15.0
 
-Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash-explainer/blob/main/docs/changes/unreleased.md).
+"In short", the sentence at the top of an explanation, now says what a command does with its words: find's expression, a sed or awk script of one command, a test such as `[ -z "$1" ]`. find's expression is explained in the order find runs it.
+
+Details and examples: [docs/changes/0.15.0.md](https://github.com/sf624/bash-explainer/blob/v0.15.0/docs/changes/0.15.0.md).
 
 ### Changed
 
@@ -12,6 +14,8 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - find's expression is explained in the order find runs it: in `find . -print -name x` the print happens for every file, and `-exec … \;` followed by more is a test that the rest needs (`-exec grep -q foo {} \; -print` prints only the files where grep succeeds). Before, an action written before a test was said as if it came after it.
+
+[All changes](https://github.com/sf624/bash-explainer/compare/v0.14.0...v0.15.0)
 
 ## 0.14.0
 
