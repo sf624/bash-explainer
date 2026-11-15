@@ -1,8 +1,8 @@
 // Which redirections may fail, so that their command does not run (docs/design/trust-allow-list.md, section 2), and
 // which may close fd 0, 1 or 2, so that a copy of one of them may fail too: read by the trust's scan
 // (src/semantics/trust.ts) and the walk (src/semantics/walk/conditions.ts).
-import { staticWordValue } from '../staticword';
 import { field, redirectionsOf, type SyntaxNode } from '../syntax/tree';
+import { valueAsWritten } from './wordview';
 
 /**
  * Whether the redirection `r` cannot fail: to or from `/dev/null`, or a copy of fd 1 or 2 (`2>&1`, `>&2`) when the
@@ -12,7 +12,7 @@ export function safeRedirect(r: SyntaxNode, closes: boolean): boolean {
   if (r.type !== 'file_redirect' || (field(r, 'descriptor') && field(r, 'descriptor')!.type !== 'file_descriptor')) return false;
   const op = r.children.find((c) => !c.named)?.type;
   const to = field(r, 'destination');
-  const target = to && staticWordValue(to);
+  const target = to && valueAsWritten(to);
   if (target === '/dev/null') return ['>', '>>', '&>', '&>>', '>|', '<'].includes(op!);
   return !closes && op === '>&' && (target === '1' || target === '2');
 }
@@ -30,7 +30,7 @@ export function redirectionMayFail(r: SyntaxNode, closes: boolean): boolean {
   // (One with no word yet, `> >g` while typing, is an error. A copy from a word not known, or with none, `>&`, may close
   // fd 1 itself: `closes` is then set, `closesStandard`.)
   const to = field(r, 'destination');
-  const target = to && staticWordValue(to);
+  const target = to && valueAsWritten(to);
   return !((op === '<&' || op === '>&') && (target === '-' || (!closes && ['0', '1', '2'].includes(target!))));
 }
 
@@ -45,7 +45,7 @@ export function closesStandard(r: SyntaxNode): boolean {
   // (`{v}` is a `file_descriptor` too.)
   const fd = d ? (/^\d+$/.test(d.text) ? Number(d.text) : undefined) : op === '>&' ? 1 : 0;
   const to = field(r, 'destination');
-  const target = to && staticWordValue(to);
+  const target = to && valueAsWritten(to);
   if (target === undefined) return true;
   if (target === '-') return fd === undefined || fd <= 2;
   const m = /^(\d+)-$/.exec(target);

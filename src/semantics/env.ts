@@ -22,10 +22,10 @@ import { restrictedByName, shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
 import { asBash, isBash } from '../shellfeatures';
 import { field, isShebang, nameText, prefixAssignments, substitutionForm, type SyntaxNode } from '../syntax/tree';
-import { staticWordValue } from '../staticword';
 import type { HostId } from '../hosts';
 import type { ShellState, StateModel, Tri } from './state';
 import type { HostCall } from './walk/host';
+import { valueAsWritten } from './wordview';
 import { pushAll } from '../lists';
 
 /** Why a node runs in a subshell. */
@@ -715,7 +715,7 @@ export function shellEffectOf(spec: CommandSpec | undefined, roles: readonly (re
         call.flags.push(r.flag);
         if (r.role === 'option' && r.missing) call.bare.push(r.flag);
       } else if (r.role === 'end-of-options') call.flags.push('--');
-      else if (r.role === 'operand') call.operands.push(staticWordValue(w));
+      else if (r.role === 'operand') call.operands.push(valueAsWritten(w));
     }
   }
   return effect.when(call) ? 'changes' : undefined;

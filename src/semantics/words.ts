@@ -331,9 +331,9 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
   steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
   steps.push(mk({ kind: 'quote-removal', applies: shape.quotes.length > 0, parts: shape.quotes }));
-  // (The value also where the walk reads the word, for its view: `meaningIn`.)
-  const literal = !brace && !tildes.length && !expansions.length && !globWords.length;
-  const values = literal ? nodes.map((x) => staticWordValue(x, false, shell)) : [];
+  // (The value also where the walk reads the word, for its view: `meaningIn`. Braces are text where the brace step does not apply: `set +B`, dash. `$(:)e` is `e` where `:` runs the builtin, as the view's characters say: a hole where it may not.)
+  const literal = steps[0].applies === false && !tildes.length && expansions.every((e) => e.type === 'command_substitution') && !globWords.length;
+  const values = literal ? nodes.map((x) => staticWordValue(x, false, shell, true)) : [];
   if (literal && values.every((v) => v !== undefined)) meaning.value = values.join('');
   if (!whole) return meaning;
   const failure = failureOf(meaning, expansions.some((e) => e.type === 'simple_expansion' || e.type === 'expansion'));

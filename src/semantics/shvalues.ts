@@ -5,10 +5,10 @@
 // rows of test/fixtures/probes/values.json that have a `shell`.
 import { collectFeatures, featureWorks, type Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
-import { staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { documentRoot, type StateModel } from './state';
 import { type WordMeaning, wordFields } from './words';
+import { valueAsWritten } from './wordview';
 
 /** The shells whose scripts get values: bash, dash, and sh (where dash and bash --posix agree). */
 export const valueShell = (shell: Shell | undefined): boolean => !shell || shell === 'bash' || shell === 'sh' || shell === 'dash';
@@ -37,10 +37,10 @@ function readOtherwise(root: SyntaxNode, shell: Shell): boolean {
     // (`**`, `++` and `--` are rows of the dialect table: `power`, `postIncrement`, `preIncrement`.)
     if (n.type === 'arithmetic_expansion') return n.text.startsWith('$[') || n.text.includes('#');
     const word = field(n, 'name')?.namedChildren[0];
-    const name = word && staticWordValue(word);
+    const name = word && valueAsWritten(word);
     if (!name) return false;
     const args = fields(n, 'argument');
-    if (name === 'command' || name === 'builtin') return args.some((a) => DECLARATIONS.has(staticWordValue(a) ?? ''));
+    if (name === 'command' || name === 'builtin') return args.some((a) => DECLARATIONS.has(valueAsWritten(a) ?? ''));
     // (Outside a function, dash's `return` ends the script, and its `local` fails, which ends it too.)
     if ((name === 'return' || name === 'local') && !ancestor(n, (a) => a.type === 'function_definition')) return true;
     if (!DECLARATIONS.has(name)) return false;

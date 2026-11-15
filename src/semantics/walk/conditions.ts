@@ -17,6 +17,7 @@ import type { Trust } from '../trustmodel';
 import { writeEffect } from '../vars';
 import { testSpec } from '../names';
 import { type WalkSource, wordIn } from '../words';
+import { valueIn } from '../wordview';
 import { redirectionMayFail, safeRedirect } from '../redirects';
 import { ArithError, changesWords, NAME, SUBSTITUTIONS } from './shared';
 import type { Walker } from './walker';
@@ -131,7 +132,7 @@ export class WalkConditions {
     if (space === 'function') return undefined;
     let status = 0;
     for (const { word } of actedNames(parse)) {
-      const name = staticWordValue(args[word]);
+      const name = this.valueOf(args[word], st);
       const target = name !== undefined && NAME.test(name) ? (space === 'nameref' ? name : this.w.builtins.resolve(st, name)) : undefined;
       const readonly = target === undefined ? 'unknown' : attribute(st, target, 'r');
       if (readonly === 'unknown') return undefined;
@@ -371,6 +372,11 @@ export class WalkConditions {
   staticText(w: SyntaxNode, st: ShellState, assignment = false): string | undefined {
     const v = staticWordValue(w, assignment, this.w.shell);
     return v !== undefined && substitutionNames(w).every((x) => this.builtinRuns(x, st)) ? v : undefined;
+  }
+
+  /** The value of the word `w` from `st`, where the view of the word is plain (`valueIn`): `unset {a,b}` has none where the shell expands braces. */
+  valueOf(w: SyntaxNode, st: ShellState): string | undefined {
+    return valueIn(w, st, this.values(st));
   }
 
   /** The fields of the word `w` of a command, from `st`, when they are known: `\declare a=$v` declares each. */

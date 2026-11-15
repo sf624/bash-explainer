@@ -3,11 +3,11 @@
 // (`{ cmd; } > f`), so this walks the tree from the command up, and through a function's calls and the command that
 // runs a string. Read by src/explain/redirections.ts: the descriptors a command's own redirections set are `redirectOrder`'s.
 import { field, descendants, fields, substitutionForm, type SyntaxNode } from '../syntax/tree';
-import { staticWordValue } from '../staticword';
 import { commandName } from './effects';
 import { type CallLink, subshellReasons } from './env';
 import { writesElsewhere } from './redirects';
 import { documentRoot, scriptWord, type StateModel } from './state';
+import { valueAsWritten } from './wordview';
 
 /**
  * `pipe`: a pipe (a stage but the last, `<( )`, a coprocess). `capture`: a command substitution (`$( )`, `${ …; }`).
@@ -29,7 +29,7 @@ function movesStdout(c: SyntaxNode): boolean {
   if (!writesElsewhere(c)) return false;
   const name = commandName(c);
   const first = fields(c, 'argument')[0];
-  return name === 'exec' || ((name === 'command' || name === 'builtin') && !!first && staticWordValue(first) === 'exec');
+  return name === 'exec' || ((name === 'command' || name === 'builtin') && !!first && valueAsWritten(first) === 'exec');
 }
 
 /**

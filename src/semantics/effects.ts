@@ -9,7 +9,7 @@ import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
 import { ALIAS_NAME, builtins } from '../dict/builtins';
 import { featureIn } from '../shellfeatures';
-import { staticWordValue } from '../staticword';
+import { valueAsWritten } from './wordview';
 import { field, fields, type SyntaxNode } from '../syntax/tree';
 
 /**
@@ -49,7 +49,7 @@ export function commandName(c: SyntaxNode): string | undefined {
   if (name === undefined) {
     // (A command with no name, `a=1`, has none.)
     const word = field(c, 'name')?.namedChildren[0];
-    names.set(c, (name = (word && staticWordValue(word)) ?? null));
+    names.set(c, (name = (word && valueAsWritten(word)) ?? null));
   }
   return name ?? undefined;
 }
@@ -91,7 +91,7 @@ export function wordsAfterAlias(c: SyntaxNode): { word: SyntaxNode; quoted: bool
   const out: { word: SyntaxNode; quoted: boolean }[] = [];
   for (const w of parts.slice(parts.indexOf(field(c, 'name')!) + 1)) {
     const quoted = quoting(w);
-    if (!quoted && (w.type !== 'word' || staticWordValue(w) !== w.text)) break;
+    if (!quoted && (w.type !== 'word' || valueAsWritten(w) !== w.text)) break;
     out.push({ word: w, quoted });
   }
   return out;
@@ -121,7 +121,7 @@ export function aliasTexts(c: SyntaxNode, value: string, values: (name: string) 
 /** `alias name=value` (or `'name=value'`): the name (`ALIAS_NAME`) and what it stands for (static, or the text without its outer quotes). */
 const DEFINITION = new RegExp(`^(${ALIAS_NAME})=(['"]?)([\\s\\S]*)\\2$`);
 export function aliasOf(a: SyntaxNode): { name: string; value: string } | undefined {
-  const v = staticWordValue(a);
+  const v = valueAsWritten(a);
   const text = v ?? a.text;
   const m = DEFINITION.exec(text);
   if (!m) return undefined;
@@ -162,7 +162,7 @@ export function builtinRead(name: string, args: readonly SyntaxNode[], shell: Sh
   // (The fields are read as words of known text: not as a word read again by its fields.)
   const parse = interpret(spec, [...line.map(({ fields: _, ...w }) => w), ...Array.from({ length: more }, () => ({ value: 'x' }))], { name });
   const field = (j: number): boolean => own.has(back(j)) || groups.some((g) => j >= g.from && j < g.from + g.n);
-  return { parse, node: (j) => args[back(j)], text: (j) => (field(j) ? line[j].value : staticWordValue(args[back(j)])), field, size: line.length };
+  return { parse, node: (j) => args[back(j)], text: (j) => (field(j) ? line[j].value : valueAsWritten(args[back(j)])), field, size: line.length };
 }
 
 /**
@@ -174,7 +174,7 @@ export function wrapped(name: 'command' | 'builtin', args: readonly SyntaxNode[]
   // (Only the words up to the command it runs matter, and they are few: asked again at each level of `command command …`.)
   const isCommand = (r: ArgvParse['roles'][number]) => r.role.role === 'command';
   const at = builtinParse(name, args.slice(0, WRAPPER_WORDS), shell).roles.find(isCommand) ?? (args.length > WRAPPER_WORDS ? builtinParse(name, args, shell).roles.find(isCommand) : undefined);
-  return at ? { name: staticWordValue(args[at.word]), args: args.slice(at.word + 1) } : { lookup: true };
+  return at ? { name: valueAsWritten(args[at.word]), args: args.slice(at.word + 1) } : { lookup: true };
 }
 
 const MAX_WRAPPERS = 8;
@@ -217,7 +217,7 @@ function readCommandWords(c: SyntaxNode, shell: Shell | undefined): CommandWords
 export interface VariableWrite { node: SyntaxNode | undefined; name: string | undefined; sets: VariableSet; maybe?: boolean; feature?: string }
 
 /** The name a word gives a builtin (from `at` in its value: `-vx`), or undefined when it is not known here. */
-export const wordName = (n: SyntaxNode, at = 0): string | undefined => staticWordValue(n)?.slice(at);
+export const wordName = (n: SyntaxNode, at = 0): string | undefined => valueAsWritten(n)?.slice(at);
 
 /** The values given in the parse (in their own word, or in the option's: `-vx`), with their specs. */
 function givenValues(parse: ArgvParse): { word: number; at: number; spec: ValueSpec | undefined }[] {

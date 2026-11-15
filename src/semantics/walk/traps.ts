@@ -3,11 +3,11 @@
 // them (`ShellState.traps`); the walk (./walker.ts, ./builtins.ts, ./expansions.ts) calls these where they change.
 import type { ArgvParse } from '../../argv/interpret';
 import { has, operands } from '../../argv/query';
-import { staticWordValue } from '../../staticword';
 import type { SyntaxNode } from '../../syntax/tree';
 import { subshellReasons } from '../env';
 import { NESTED_DEPTH, type NestedScript } from '../nested';
 import { option, type ShellState, type TrapState, type Tri } from '../shellstate';
+import { valueAsWritten } from '../wordview';
 import { exitSignal, processIn } from './shared';
 import type { Walker } from './walker';
 import { widen } from './widen';
@@ -66,7 +66,7 @@ export function trapCommand(w: Walker, st: ShellState, parse: ArgvParse, args: r
 
 /** The signal words of `trap` (`parse` of `args`: its `SIGNAL` operands, not the `-` of `trap - EXIT`), as their values (undefined: not known here). */
 export function trapSignals(parse: ArgvParse, args: readonly SyntaxNode[]): (string | undefined)[] {
-  return operands(parse, 'SIGNAL').map((o) => staticWordValue(args[o.word]));
+  return operands(parse, 'SIGNAL').map((o) => valueAsWritten(args[o.word]));
 }
 
 /**

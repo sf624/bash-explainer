@@ -116,6 +116,9 @@ function viewFindings(args: readonly SyntaxNode[], model: StateModel, run: reado
     if (at !== undefined && v.count.min > 0 && !run[at].startsWith(v.start!)) return `${said}: starts with ${JSON.stringify(v.start)}, bash: ${JSON.stringify(run[at])}`;
     if (last !== undefined && v.count.min > 0 && !run[last].endsWith(v.end!)) return `${said}: ends with ${JSON.stringify(v.end)}, bash: ${JSON.stringify(run[last])}`;
     if (!exact(v) || !v.count.min) return undefined;
+    // (Fields known exactly from the word model, not from the field domain: every part's value is known, so the
+    // characters have no hole, and the text check below holds them to bash's fields: `$"hi"`, read as its text.)
+    if (!v.shapes && v.words.some((x) => x.chars?.some((c) => c.hole))) return `${said}: a hole in its characters, though its fields are known`;
     const from = at ?? last! + 1 - v.count.min;
     const own = run.slice(from, from + v.count.min);
     if (!own[0].startsWith(v.start!) || !own[own.length - 1].endsWith(v.end!)) return `${said}: ${JSON.stringify([v.start, v.end])}, bash: ${JSON.stringify(own)}`;

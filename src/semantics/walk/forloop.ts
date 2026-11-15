@@ -1,6 +1,5 @@
 // The loops over words, `for x in a b c` and `select x in …`, for the walk of the shell state
 // (src/semantics/walk/walker.ts): what the loop variable is in the body and after the loop.
-import { staticWordValue } from '../../staticword';
 import { field, fields, type SyntaxNode } from '../../syntax/tree';
 import { attribute, type ShellState, type VariableState } from '../shellstate';
 import type { Walker } from './walker';
@@ -24,7 +23,7 @@ export function forStatement(w: Walker, n: SyntaxNode, st: ShellState): ShellSta
     given.add(variable && to.variables.get(variable.text));
     return to;
   };
-  const words = values.map((v) => (v.type === 'word' || v.type === 'number' || v.type === 'raw_string' || v.type === 'string' ? staticWordValue(v) : undefined));
+  const words = values.map((v) => w.conditions.valueOf(v, st));
   const known = n.type === 'for_statement' && values.length > 0 && words.every((x) => x !== undefined) && readonly === 'off';
   const each = known && new Set(words).size === 1 ? words[0] : undefined;
   // (A list of known words runs the body at least once.)

@@ -15,7 +15,6 @@ import type { Shell } from '../dialect';
 import type { CommandSpec } from '../argv/spec';
 import { builtins } from '../dict/builtins';
 import { builtinIn, builtinShells, isBash, type RealShell } from '../shellfeatures';
-import { staticWordValue } from '../staticword';
 import type { ArgvParse } from '../argv/interpret';
 import { actedNames, actsOnNames } from '../argv/query';
 import { descendants, field, fields, nameText, prefixAssignments, type SyntaxNode } from '../syntax/tree';
@@ -25,6 +24,7 @@ import { type ExecEnv, linksAfter, reachOf, type SlotLink, subshellReasons } fro
 import { commandSlots } from './nested';
 import { type AliasState, type CommandEntry, type FunctionState, hashOutcomes, option, type ShellState, type StateModel, type Tri } from './state';
 import { unlessUnread } from './shellstate';
+import { valueAsWritten } from './wordview';
 import { docIndex } from './state';
 
 /** bash's reserved words: keywords where a command name may start (3.2, and `[[ ]]`). */
@@ -446,8 +446,8 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
   // (`x=1 unset x` removes that `x`: it does not stay.)
   const unset = res !== 'dynamic' && res?.kind === 'builtin' ? temporariesUnset(res.name, fields(command, 'argument'), command, model.shell) : undefined;
   // (A word of known text gives one word: `x=1 $cmd env`.)
-  const named = res === 'dynamic' && fields(command, 'argument').some((w) => staticWordValue(w) !== undefined);
-  const exported = res !== 'dynamic' && res?.kind === 'builtin' ? keptPrefixes(command, staticWordValue, model.shell) : undefined;
+  const named = res === 'dynamic' && fields(command, 'argument').some((w) => valueAsWritten(w) !== undefined);
+  const exported = res !== 'dynamic' && res?.kind === 'builtin' ? keptPrefixes(command, (w) => valueAsWritten(w), model.shell) : undefined;
   return assignments.map((a) => {
     const name = (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text;
     if (exported?.names.get(name)) return { node: a, name, scope: 'persists', sure: true, named: exported.builtin };
@@ -510,7 +510,7 @@ export function temporariesUnset(name: string, words: readonly SyntaxNode[], n: 
   if (!prefix.size || !(builtins[name] && actsOnNames(builtins[name], 'unsets'))) return new Set();
   const ws = words.filter((w) => !w.type.endsWith('redirect'));
   const names = actedNames(parse ?? builtinParse(name, ws, shell)).filter((o) => o.acts === 'unsets' && o.space !== 'function' && o.space !== 'none');
-  return new Set(names.map(({ word }) => staticWordValue(ws[word])).filter((v): v is string => v !== undefined && prefix.has(v)));
+  return new Set(names.map(({ word }) => valueAsWritten(ws[word])).filter((v): v is string => v !== undefined && prefix.has(v)));
 }
 
 /**
@@ -562,7 +562,7 @@ export function testSpecAt(model: StateModel, n: SyntaxNode, shell?: Shell): Com
  */
 export function resolveRun(model: StateModel, run: { readonly nameWord: SyntaxNode; readonly env?: ExecEnv }, shell: Shell | undefined): NameResolution | undefined {
   const word = run.nameWord.type === 'command_name' ? run.nameWord.namedChildren[0] : run.nameWord;
-  const value = staticWordValue(word);
+  const value = valueAsWritten(word);
   if (value === undefined) return undefined;
   return resolveName(model, value, run.nameWord, { shell, command: true, quoted: quotedName(word, value), ...(run.env ? { env: run.env } : {}) });
 }

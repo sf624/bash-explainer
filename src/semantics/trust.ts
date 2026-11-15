@@ -369,7 +369,7 @@ class Scan {
         const variable = field(n, 'variable');
         if (variable) {
           // (Each word, once expanded: a glob or an expansion gives text not known; `select`, what the user types.)
-          const values = fields(n, 'value').map((v): Value => (staticWordValue(v) !== undefined ? this.value(v) : 'unknown'));
+          const values = fields(n, 'value').map((v): Value => (wordName(v) !== undefined ? this.value(v) : 'unknown'));
           this.write(variable.text, w, false, n.type === 'select_statement' || !values.length ? 'unknown' : joined(values), { scalar: true, followed: nodeRow(n).effect.kind === 'followed' });
           this.assigned(variable.text, undefined, n, w);
         }
@@ -419,7 +419,7 @@ class Scan {
   private testWords(words: SyntaxNode[], w: Where): void {
     words.forEach((a, i) => {
       const next = words[i + 1] as SyntaxNode | undefined;
-      const v = staticWordValue(a);
+      const v = wordName(a);
       if (v !== undefined) {
         if (v === '-v' && next) this.testV(next, w);
         return;
@@ -437,7 +437,7 @@ class Scan {
       // (A word that starts with text other than `-` is never `-v`: `"x$1"`, `/tmp/*`.)
       const lead = /^[^-$`"'*?[\\{~]/.test(a.text);
       if (lead) return;
-      if (shape === 'glob' || (next && staticWordValue(next) === undefined)) this.blindFor('`-v` may test a variable name not known');
+      if (shape === 'glob' || (next && wordName(next) === undefined)) this.blindFor('`-v` may test a variable name not known');
       if (next) this.testV(next, w);
     });
   }
@@ -447,10 +447,10 @@ class Scan {
    * subscript that assigns any variable (`-v 'a[u=2]'`).
    */
   private testV(word: SyntaxNode, w: Where): void {
-    const text = staticWordValue(word) ?? word.text;
+    const text = wordName(word) ?? word.text;
     const m = /^([A-Za-z_]\w*)(?:\[(.*)\])?$/s.exec(text);
     if (!m) {
-      if (staticWordValue(word) === undefined) this.blindFor('`-v` tests a variable name not known');
+      if (wordName(word) === undefined) this.blindFor('`-v` tests a variable name not known');
       return;
     }
     this.reads.add(m[1]);
@@ -653,7 +653,7 @@ class Scan {
     // A function named as an argument may be run by the command (`complete -F f`, `mapfile -C f`, `trap f INT`).
     // (`eval`'s words are read as its string, below: a name there is a call.)
     const refs = !lookup && !['unset', 'type', 'eval'].includes(name) && !DECLARATIONS.has(name);
-    if (refs) for (const a of args) if (this.functions.has(staticWordValue(a) ?? '')) this.callbacks.add(staticWordValue(a)!);
+    if (refs) for (const a of args) if (this.functions.has(wordName(a) ?? '')) this.callbacks.add(wordName(a)!);
     // (A function the host file defines, bats' `run`, is read by its spec as a builtin, unless the script defines its own.)
     const hosted = direct && !this.functions.has(name) && Object.hasOwn(this.host, name) ? this.host[name] : undefined;
     const spec = hosted ?? builtins[name];
@@ -692,7 +692,7 @@ class Scan {
     if (!this.apply(row)) return;
     // `test` and `[` (by their spec): `-v name` reads a variable.
     if (spec.operandParser === 'test-expression') {
-      this.testWords(name === '[' && staticWordValue(args[args.length - 1] ?? c) === ']' ? args.slice(0, -1) : args, w);
+      this.testWords(name === '[' && wordName(args[args.length - 1] ?? c) === ']' ? args.slice(0, -1) : args, w);
       return;
     }
     switch (name) {
@@ -705,9 +705,9 @@ class Scan {
       case 'trap': {
         // (Its action is the word of the slot that runs it later; the signals are its operands.)
         const at = parse.roles.find((r) => r.role.role === 'command');
-        if (!at || ['', '-'].includes(staticWordValue(args[at.word])!)) return;
+        if (!at || ['', '-'].includes(wordName(args[at.word])!)) return;
         const root = this.strings.script([args[at.word]]);
-        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => staticWordValue(args[r.word]));
+        const signals = parse.roles.filter((r) => r.role.role === 'operand').map((r) => wordName(args[r.word]));
         if (root && signals.some((s) => s === undefined || /^(?:SIG)?(?:DEBUG|RETURN)$/i.test(s))) this.blindFor('a DEBUG or RETURN trap');
         else this.foreign(root, 'a trap of text not known', w);
         return;
@@ -720,7 +720,7 @@ class Scan {
             continue;
           }
           // (Read where commands may run it: see `aliases`. A name bash rejects, `a/b=x`, defines nothing.)
-          const v = staticWordValue(a);
+          const v = wordName(a);
           const def = v === undefined ? undefined : aliasOf(a);
           if (def) this.aliasDefs.push({ ...def, word: a, where: w });
           else if (v === undefined) this.blindFor('an alias of text not known');
@@ -734,7 +734,7 @@ class Scan {
         // in the shell, and `-C cmd` a command. (The word being completed is only matched; `-G`, `-X`, `-P` and `-S`
         // take their words as text.)
         for (const r of parse.roles) {
-          const v = staticWordValue(args[r.word]);
+          const v = wordName(args[r.word]);
           if (r.role.role === 'operand') continue;
           if (v === undefined || r.role.role === 'command' || (r.role.role === 'value' && r.role.of === '-F')
             || (r.role.role === 'value' && r.role.of === '-W' && !quietPrompt(v))) this.blindFor('`compgen` expands a word list or runs a command the model does not read');
@@ -749,7 +749,7 @@ class Scan {
         // (`enable -n x` turns the builtin `x` off: the walk follows a name it knows. `-f` loads a builtin from a
         // shared object, which may replace one, and run code as it loads.)
         if (optionRoles(parse).some((r) => r.flag === '-f')) this.blindFor('`enable -f` loads a builtin the model does not read');
-        if (args.some((a) => staticWordValue(a) === undefined)) this.blindFor('`enable` is given a name not known');
+        if (args.some((a) => wordName(a) === undefined)) this.blindFor('`enable` is given a name not known');
         return;
       case 'unset':
         this.unset(args, w);
@@ -786,7 +786,7 @@ class Scan {
     const set = flags.includes('-o');
     for (const r of parse.roles) {
       if (r.role.role !== 'operand') continue;
-      const name = staticWordValue(args[r.word]);
+      const name = wordName(args[r.word]);
       if (name === undefined) this.blindFor('`shopt` is given an option name not known');
       if (set && on && name === 'allexport') this.exportAll = true;
       this.apply(optionRow(set ? SET_OPTIONS : SHOPT_OPTIONS, name, on));

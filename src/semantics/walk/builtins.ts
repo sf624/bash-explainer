@@ -8,7 +8,7 @@ import { actedNames, has, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
 import { asBash, bracesMayWork, builtinIn } from '../../shellfeatures';
 import { builtins } from '../../dict/builtins';
-import { elementClose, staticWordValue, tildeParts, tildeSpots } from '../../staticword';
+import { elementClose, tildeParts, tildeSpots } from '../../staticword';
 import { descendants, field, fields, type SyntaxNode, wordBraces } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
@@ -94,7 +94,7 @@ export class WalkBuiltins {
     if (spec.ends === 'loop' || spec.ends === 'pass') {
       // `break N`: N loops (a count not known, or not a number above 0, may fail).
       const words = args.filter((a, i) => i > 0 || a.text !== '--');
-      const count = words.length ? staticWordValue(words[0]) : '1';
+      const count = words.length ? this.w.conditions.valueOf(words[0], st) : '1';
       return this.w.jump(spec.ends, words.length < 2 && count !== undefined && /^0*[1-9]\d{0,8}$/.test(count) ? Number(count) : undefined, st);
     }
     if (spec.ends) {
@@ -155,7 +155,7 @@ export class WalkBuiltins {
         const on = has('-s') ? 'on' : has('-u') ? 'off' : undefined;
         if (!on) return st;
         for (const o of operands) {
-          const opt = staticWordValue(o);
+          const opt = this.w.conditions.valueOf(o, st);
           if (opt === 'posix' && has('-o')) st = this.setPosix(st, on === 'on', n);
           else if (opt && (has('-o') || !STARTUP_SHOPT.has(opt))) st = this.w.put(st, has('-o') ? 'set' : 'shopt', opt, on);
         }
@@ -172,7 +172,7 @@ export class WalkBuiltins {
       case 'unalias':
         if (has('-a')) for (const [k, a] of st.aliases) st = this.w.put(st, 'aliases', k, { ...a, state: 'off' });
         for (const o of operands) {
-          const a = staticWordValue(o);
+          const a = this.w.conditions.valueOf(o, st);
           const prev = a ? st.aliases.get(a) : undefined;
           if (prev) st = this.w.put(st, 'aliases', a!, { ...prev, state: 'off' });
         }
@@ -182,7 +182,7 @@ export class WalkBuiltins {
         // With names, `-a` and `-s` choose nothing: `enable -ns exit` turns `exit` off.)
         if (has('-f') || has('-d') || has('-p')) return st;
         for (const o of operands) {
-          const b = staticWordValue(o);
+          const b = this.w.conditions.valueOf(o, st);
           if (b) st = this.w.put(st, 'disabled', b, { state: has('-n') ? 'on' : 'off', at: n });
         }
         return st;
@@ -197,11 +197,11 @@ export class WalkBuiltins {
         const path = valueOf('-p');
         // (`-d` takes no value: it forgets every name after it.)
         for (const o of operands) {
-          const b = staticWordValue(o);
+          const b = this.w.conditions.valueOf(o, st);
           if (!b) continue;
           if (path) {
             // (A path known only at run time has no value: `hash -p "$p" x`; `hash -p '' x` has an empty one.)
-            const value = staticWordValue(path);
+            const value = this.w.conditions.valueOf(path, st);
             st = this.putHashed(st, b, { state: 'on', ...(value !== undefined ? { value } : {}), at: n });
           }
           else if (has('-d')) st = this.unhash(st, b, n);
@@ -439,7 +439,7 @@ export class WalkBuiltins {
     // `local -` (`localOptions`): the set options come back when the function returns.
     const frame = this.w.frames[this.w.frames.length - 1];
     // (No frame: `local -` outside a function, where the walk keeps none, as in zsh's top level.)
-    if (frame && spec.localOptions && decl.words.some((d) => words.includes(d.node) && (d.field ?? staticWordValue(d.node)) === '-')) frame.options ??= st.set;
+    if (frame && spec.localOptions && decl.words.some((d) => words.includes(d.node) && (d.field ?? this.w.conditions.valueOf(d.node, st)) === '-')) frame.options ??= st.set;
     const local = this.w.frames.length > 0 && spec.locals === 'unless-g' && !on.includes('g');
     const gives = builtin === 'export' ? (on.includes('n') ? '' : 'x') : builtin === 'readonly' ? 'r' : [...on].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
     const removes = builtin === 'export' && on.includes('n') ? 'x' : [...off].filter((l) => ATTRIBUTE_LETTERS.has(l)).join('');
@@ -554,7 +554,7 @@ export class WalkBuiltins {
     const temporary = temporariesUnset('unset', ws, n, this.w.shell, parse);
     for (const node of acted.map(({ word }) => ws[word])) {
       // The names the word gives, from the word model: `unset {a,b}` unsets `a` and `b` where the shell expands braces.
-      const value = staticWordValue(node, false, this.w.shell);
+      const value = this.w.conditions.valueOf(node, st);
       const texts = value !== undefined ? [value] : this.w.conditions.fieldsOf(node, st);
       if (!texts) {
         // A name not known here: a variable that `${u:=u}` in it sets may be the one it names.
