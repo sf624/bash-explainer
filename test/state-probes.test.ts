@@ -25,8 +25,10 @@ const BASELINE_ATTRS: Record<string, string> = {
 
 /** How bash's `declare -p` writes a scalar value. */
 const ESCAPES: Record<string, string> = { '\x07': 'a', '\b': 'b', '\x1b': 'E', '\f': 'f', '\n': 'n', '\r': 'r', '\t': 't', '\v': 'v', "'": "'", '\\': '\\' };
-const quoted = (v: string): string => (/[\x00-\x1f\x7f]/.test(v)
-  ? `$'${v.replace(/[\x00-\x1f\x7f'\\]/g, (c) => `\\${ESCAPES[c] ?? c.charCodeAt(0).toString(8).padStart(3, '0')}`)}'`
+// (Under LC_ALL=C, as the probes run, a character outside ASCII is its UTF-8 bytes, each in octal: `é` is `$'\303\251'`.)
+const octal = (b: number): string => `\\${b.toString(8).padStart(3, '0')}`;
+const quoted = (v: string): string => (/[\x00-\x1f\x7f-\u{10ffff}]/u.test(v)
+  ? `$'${v.replace(/[\x00-\x1f\x7f'\\]|[^\x00-\x7f]/gu, (c) => (c.length === 1 && c < '\x80' ? `\\${ESCAPES[c] ?? octal(c.charCodeAt(0)).slice(1)}` : [...Buffer.from(c, 'utf8')].map(octal).join('')))}'`
   : `"${v.replace(/(["\\$`])/g, '\\$1')}"`);
 
 /** The differences between the model's state and bash's facts at one marker: path → what each says. */

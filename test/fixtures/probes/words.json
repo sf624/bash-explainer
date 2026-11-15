@@ -3845,5 +3845,51 @@
       ],
       "status": 0
     }
+  },
+  {
+    "manual": "3.1.2.4",
+    "snippet": "@PROBE:a@ $'エラー\\tです' $'é\\u41\\cA'",
+    "note": "text outside ASCII written as it is in `$'…'` is copied as it is in every locale, and `\\u41` and `\\cA` are ASCII: the probes run under LC_ALL=C",
+    "facts": {
+      "a": [
+        [
+          "エラー\tです",
+          "éA\u0001"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.1.2.4",
+    "snippet": "@PROBE:a@ $'\\u00e9'",
+    "note": "a `\\u` above 0x7f is written in the locale's encoding: `é` in UTF-8, the escape itself, `\\u00E9`, in C (the probes run under LC_ALL=C)",
+    "gaps": {
+      "a": "a `\\u` above 0x7f depends on the locale"
+    },
+    "facts": {
+      "a": [
+        [
+          "\\u00E9"
+        ]
+      ],
+      "status": 0
+    }
+  },
+  {
+    "manual": "3.1.2.4",
+    "snippet": "@PROBE:a@ $'\\xe9'",
+    "note": "a byte above 0x7f is a byte, not a character: the model holds text",
+    "gaps": {
+      "a": "a lone byte above 0x7f is no text of ours"
+    },
+    "facts": {
+      "a": [
+        [
+          "�"
+        ]
+      ],
+      "status": 0
+    }
   }
 ]

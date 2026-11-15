@@ -7,7 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - A command's text is read as bash gives it in more words: `grep foo$ f` explains its regex, and `awk -F$'\t'` runs its example with a tab. A word whose tilde bash expands, `grep ~/a.b f` or `tr ~ x`, is no longer read as the text `~/a.b` or `~`.
-- The values a loop gives are shown in more forms: after `for f in $'a'`, or `for f in {a,b}` under `set +B`, the explanation says what `$f` holds. After `:() { …; }`, `$(:)echo hi` is no longer said to print its arguments.
+- The values a loop or a declaration gives are shown in more forms: after `for f in $'a'`, or `export x={a,b}` under `set +B`, the explanation says what `$f` or `$x` holds. After `:() { …; }`, `$(:)echo hi` is no longer said to print its arguments.
 
 ## 0.15.0
 

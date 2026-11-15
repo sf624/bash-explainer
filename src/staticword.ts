@@ -12,9 +12,11 @@ const ANSI_ESCAPES: Record<string, string> = {
 
 /**
  * The text `$'…'` stands for (the part between the quotes), cut at a NUL as bash does.
- * Undefined when it holds a byte above 0x7f (`\xe3`): only the shell's encoding says what that is.
+ * Undefined when it holds a byte above 0x7f (`\xe3`): only the shell's encoding says what that is. `localeFree`: also
+ * where a `\u` or `\U` gives a character above 0x7f, which bash writes in the locale's encoding (`é` in UTF-8, other
+ * bytes or the escape itself in another); text outside ASCII written as it is stays, its bytes copied in every locale.
  */
-export function ansiCValue(body: string): string | undefined {
+export function ansiCValue(body: string, localeFree = false): string | undefined {
   let out = '';
   for (let i = 0; i < body.length; i++) {
     if (body[i] !== '\\' || i + 1 >= body.length) { out += body[i]; continue; }
@@ -26,7 +28,7 @@ export function ansiCValue(body: string): string | undefined {
       i += num[0].length - 1;
       const code = num[1] ? parseInt(num[1], 16) : num[2] ? parseInt(num[2], 16) : num[3] ? parseInt(num[3], 16) : parseInt(num[4], 8) & 0xff;
       if (code === 0) return out;
-      if (code > 0x10ffff || (code > 0x7f && (num[1] || num[4]))) return undefined;
+      if (code > 0x10ffff || (code > 0x7f && (num[1] || num[4] || localeFree))) return undefined;
       out += String.fromCodePoint(code);
     } else if (c === 'c' && i + 1 < body.length) {
       // (`\c?` is DEL; `\c\\` reads the escaped backslash; `\c@` is NUL, which ends the string.)
@@ -46,9 +48,9 @@ export function ansiCValue(body: string): string | undefined {
  * `$'a\tb'` is `$a\tb` (dash 0.5.12). Undefined in POSIX sh, which may be dash or a shell that decodes it, in the
  * other shells without it, and in dash when the body holds a `\'`, where dash's quote ends earlier than the tree's.
  */
-export function ansiCWordValue(text: string, shell?: Shell): string | undefined {
+export function ansiCWordValue(text: string, shell?: Shell, localeFree = false): string | undefined {
   const body = text.slice(2, -1);
-  if (featureWorks('ansiC', shell)) return ansiCValue(body);
+  if (featureWorks('ansiC', shell)) return ansiCValue(body, localeFree);
   return shell === 'dash' && !body.includes("'") ? `$${body}` : undefined;
 }
 

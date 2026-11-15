@@ -55,10 +55,11 @@ describe('the view of a word (wordview.ts)', () => {
   it('a plain word: its value, one field', () => {
     assert.deepStrictEqual(brief(view('show "b c"')), { value: 'b c', plain: true, count: { min: 1, max: 1 }, start: 'b c', end: 'b c', globs: false, unknown: [], words: [['"b c"', 'b c', ['b c']]] });
     assert.deepStrictEqual(brief(view('show ""')), { value: '', plain: true, count: { min: 1, max: 1 }, start: '', end: '', globs: false, unknown: [], words: [['""', '', ['']]] });
-    // (A value of the script outside ASCII is its text in every locale; `$'é'` is `é` in UTF-8 only, `é` in C,
-    // and its word has no value in the view, so `$x` has none.)
+    // (Text outside ASCII is copied as it is in every locale, also in `$'…'`; a `\u` or `\U` above 0x7f is written in the
+    // locale's encoding (`é` in UTF-8, the escape itself in C), and `\xe9` is a lone byte: no value, so `$x` has none.)
     const fieldsOf = (text: string): string[] | undefined => { const { tree, words } = wordsOf(text); return wordFields(words[0], shellState(tree, 'bash'))?.fields; };
-    assert.deepStrictEqual([fieldsOf("x='é'; show \"$x\""), fieldsOf("x=$'\\u00e9'; show \"$x\""), fieldsOf("x='é\\u'; show \"$x\"")], [['é'], undefined, ['é\\u']]);
+    assert.deepStrictEqual([fieldsOf("x='é'; show \"$x\""), fieldsOf("x=$'é'; show \"$x\""), fieldsOf("x=$'エラー\\tです'; show \"$x\""), fieldsOf("x='é\\u'; show \"$x\"")], [['é'], ['é'], ['エラー\tです'], ['é\\u']]);
+    assert.deepStrictEqual([fieldsOf("x=$'\\u00e9'; show \"$x\""), fieldsOf("x=$'\\U000000e9'; show \"$x\""), fieldsOf("x=$'\\xe9'; show \"$x\""), fieldsOf("x=$'\\351'; show \"$x\""), fieldsOf("x=$'é\\u41'; show \"$x\"")], [undefined, undefined, undefined, undefined, ['éA']]);
   });
 
   it('glob characters pathname expansion does not read are text (`set -f`, an assignment), not where the context matches the word (`case`)', () => {

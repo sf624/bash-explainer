@@ -7405,5 +7405,37 @@
       },
       "status": 0
     }
+  },
+  {
+    "manual": "3.1.2.4",
+    "snippet": "msg=$'エラー\\tです'; for f in $'é'; do :; done; declare d=$'—'; export e=$'résumé.txt'; u=$'\\u00e9'",
+    "note": "text outside ASCII in `$'…'` is the same in every locale: values known (bash writes them as bytes under LC_ALL=C); a `\\u` above 0x7f is the locale's, not known",
+    "facts": {
+      "end": {
+        "variables": {
+          "d": {
+            "attrs": "-",
+            "value": "$'\\342\\200\\224'"
+          },
+          "e": {
+            "attrs": "x",
+            "value": "$'r\\303\\251sum\\303\\251.txt'"
+          },
+          "f": {
+            "attrs": "-",
+            "value": "$'\\303\\251'"
+          },
+          "msg": {
+            "attrs": "-",
+            "value": "$'\\343\\202\\250\\343\\203\\251\\343\\203\\274\\t\\343\\201\\247\\343\\201\\231'"
+          },
+          "u": {
+            "attrs": "-",
+            "value": "\"\\\\u00E9\""
+          }
+        }
+      },
+      "status": 0
+    }
   }
 ]

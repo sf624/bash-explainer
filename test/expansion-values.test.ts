@@ -89,6 +89,8 @@ describe('the value of an expansion where it runs (expansionValue)', () => {
     assert.strictEqual(valueOf("x=$'\\u00e9'; echo \"$x\"", '$x'), undefined);
     // The value as it is: the same bytes in every locale, also split with an ASCII IFS.
     assert.deepStrictEqual(valueOf('a=é; echo "$a"', '$a'), { text: 'é', glob: false });
+    // (So is text outside ASCII written as it is in `$'…'`: only a `\u` above 0x7f is the locale's.)
+    assert.deepStrictEqual(valueOf("a=$'エラー\\tです'; echo \"$a\"", '$a'), { text: 'エラー\tです', glob: false });
     assert.deepStrictEqual(valueOf("a='é ü'; echo ${a}", '${a}'), { text: 'é ü', words: ['é', 'ü'], glob: false });
     assert.deepStrictEqual(valueOf('IFS=é; a=x; echo "$a"', '$a'), { text: 'x', glob: false });
   });

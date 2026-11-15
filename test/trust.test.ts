@@ -2,6 +2,9 @@
 // of the strings the walk runs, not their text again. Each case is compared with bash.
 import * as assert from 'assert';
 import { execFileSync, spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { shellState } from '../src/semantics/state';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field } from '../src/syntax/tree';
@@ -210,6 +213,36 @@ describe('the trust of the decisions (src/semantics/trust.ts)', () => {
     // And a value a declaration reads again as a compound assignment: `([n]=1)` reads `n` where it runs.
     assert.strictEqual(blind("f() { local -a a=$(:)'([n]=1)'; }; n=1"), 'arithmetic reads `n`, which the script may not have set');
     assert.strictEqual(blind(":() { :; }; f() { local -a a=$(:)'([n]=1)'; }; n=1"), 'a declaration with -a or -A is given a value not known, which it may read again as a compound assignment');
+  });
+
+  it('takes a declaration\'s value under `set +B` as its text, braces and all, as bash does (the walk reads the view, not `bracesMayWork`)', () => {
+    for (const [src, value] of [['set +B; declare x={a,b}', '{a,b}'], ['set +B; readonly x={a,b}c', '{a,b}c'], ['set +B; export x={a,b}; x+=c', '{a,b}c']]) {
+      assert.strictEqual(bash(`${src}; echo "$x"`), `${value}\n`, src);
+      assert.strictEqual(decided(`${src}; [ "$x" = plain ] && :`), 'false', src);
+      const tree = parser.parse(`${src}; :`);
+      assert.strictEqual(shellState(tree).at(descendants(tree.root, ['command']).pop()!).run.variables.get('x')?.value, value, src);
+    }
+  });
+
+  it('takes a `for` word that may give a file\'s name as text not known: a file `y=5` makes `(( x ))` assign `y` (`fixed`)', () => {
+    const src = 'y=1; for x in *; do (( x )); done; if [ "$y" = 1 ]; then echo one; fi; echo "$y"';
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trust-for-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'y=5'), '');
+      assert.strictEqual(execFileSync('bash', ['-c', src], { cwd: dir, env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' } }).toString(), '5\n');
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+    const tree = parser.parse(src);
+    assert.strictEqual(shellState(tree).condition(descendants(tree.root, ['if_statement'])[0])?.outcome, undefined);
+    assert.strictEqual(shellState(tree).blind, 'arithmetic reads `x`, which may be set to text not known');
+  });
+
+  it('reads a wrapped declaration\'s word with a tilde after `=` as fields not known as written (deferred.ts `expands`): bash expands it', () => {
+    for (const src of ['command export x=~/c', 'builtin export x=~/c', 'command declare x=~/c']) {
+      assert.strictEqual(spawnSync('bash', ['-c', `${src}; echo "$x"`], { env: { PATH: '/usr/bin:/bin', HOME: '/h' }, encoding: 'utf8' }).stdout, '/h/c\n', src);
+      assert.strictEqual(shellState(parser.parse(src)).blind, 'a builtin is given a word whose fields the trust read, which are not known here', src);
+    }
   });
 
   it('takes the tildes of a value where its context has them (`WordMeaning.tildes`): after `=` and `:` in an assignment, at the start of an element', () => {

@@ -6,6 +6,7 @@
 import type { Shell } from '../dialect';
 import { globby, holeOf, knownValues, misread, readsAsBash, type Shape, wordShapes, type WordShapes } from './fieldshape';
 import type { SyntaxNode } from '../syntax/tree';
+import { decodedText } from '../staticword';
 import { EMPTY, type ShellState } from './shellstate';
 import type { StateModel } from './state';
 import { declaredWord } from './wordcontexts';
@@ -162,12 +163,14 @@ export function valueIn(n: SyntaxNode, st: ShellState, source: WalkSource): stri
 const values = new WeakMap<SyntaxNode, WeakMap<WordOptions, { value: string | undefined }>>();
 
 /**
- * The value of the word `n` where bash takes it as it is written (`PLAIN_TEXT`, words.ts), read at once: its text. (No
+ * The value of the word `n` where bash takes it as it is written (`PLAIN_TEXT`, words.ts), read at once: its text; and
+ * of a word that is one single-quoted string, `'*'`: the text in it, which no step reads in any context or shell. (No
  * such word is read as a regex, where `.` is special: the right side of `[[ =~ ]]` is a `regex` node.)
  */
 function textAsWritten(n: SyntaxNode): string | undefined {
-  if ((n.type !== 'word' && n.type !== 'number') || !PLAIN_TEXT.test(n.text)) return undefined;
-  return wordOf(n)?.nodes[0] === n ? n.text : undefined;
+  const quoted = n.type === 'raw_string';
+  if (!quoted && ((n.type !== 'word' && n.type !== 'number') || !PLAIN_TEXT.test(n.text))) return undefined;
+  return wordOf(n)?.nodes[0] === n ? (quoted ? decodedText(n).slice(1, -1) : n.text) : undefined;
 }
 
 /**
