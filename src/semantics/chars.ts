@@ -5,6 +5,7 @@
 // text, which every locale reads the same.
 import { evalArith } from '../arith';
 import { parseExpansion } from '../expansion';
+import type { Hole } from './fieldshape';
 import type { Tri } from './shellstate';
 
 /**
@@ -20,8 +21,13 @@ export const IFS_WHITESPACE = ' \t\n\v\f\r';
  * printf '<%s>' $x"b"` prints `<><b>`).
  */
 export const IFS_ERRATIC = /[\x01\x7f]/;
-/** A character of a field, quoted or not, and whether word splitting may split there (from an unquoted expansion). */
-export type Char = { c: string; quoted: boolean; split: boolean };
+/**
+ * A character of a field, quoted or not, and whether word splitting may split there (from an unquoted expansion).
+ * `hole`: a part whose value is not known (`c` empty), from a piece with a hole (`ownChars`). `pattern`: a character
+ * that pathname expansion reads as special (`specialAt`), unquoted, in a field it takes as a pattern (`true`), or may
+ * (`'unknown'`), with the glob options in effect (the view of a word, src/semantics/wordview.ts, marks it).
+ */
+export type Char = { c: string; quoted: boolean; split: boolean; hole?: Hole; pattern?: true | 'unknown' };
 
 /**
  * A field as a pattern for globToRegex: quoted characters escaped, a `-`, `^`, `:`, `.` or `=` after an unquoted `[` too
@@ -32,13 +38,15 @@ export type Char = { c: string; quoted: boolean; split: boolean };
  * has an unquoted expansion (`ownChars`).
  */
 export function patternOfChars(f: readonly Char[]): string {
-  const special = (c: Char, i: number): boolean => /[\\*?[\]()|!@+]/.test(c.c) || (/[\^\-:.=]/.test(c.c) && f.slice(0, i).some((d) => d.c === '[' && !d.quoted));
   return f.map((c, i) => {
-    if (c.quoted && special(c, i)) return `\\${c.c}`;
+    if (c.quoted && specialAt(f, i)) return `\\${c.c}`;
     const next = c.c === '\\' && !c.quoted ? nextChar(f, i) : -1;
-    return next >= 0 && f[next].quoted && !special(f[next], next) ? '\\\\' : c.c;
+    return next >= 0 && f[next].quoted && !specialAt(f, next) ? '\\\\' : c.c;
   }).join('');
 }
+
+/** Whether the character `i` of the field `f` may mean something in a pattern, quoting aside: a glob character, a `\\`, or one of `^-:.=` after an unquoted `[` (`patternOfChars`). */
+export const specialAt = (f: readonly Char[], i: number): boolean => /[\\*?[\]()|!@+]/.test(f[i].c) || (/[\^\-:.=]/.test(f[i].c) && f.slice(0, i).some((d) => d.c === '[' && !d.quoted));
 
 /**
  * Whether a field's pattern depends on the bash release: a backslash of a value before a quoted letter, digit or `_` is
@@ -128,8 +136,8 @@ export function plainPattern(pattern: string): string | undefined {
   return /^(?:[^\\*?[\]()|]|\\[^])*$/.test(pattern) ? pattern.replace(/\\([^])/g, '$1') : undefined;
 }
 
-/** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split). */
-export interface Piece { text: string; quoted: boolean; expanded: boolean }
+/** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split); `hole`: a part not known (fieldshape.ts), with no text. */
+export interface Piece { text: string; quoted: boolean; expanded: boolean; hole?: Hole }
 
 /** The glob characters, whose quoting changes what a pattern matches (and `:`, `.`, `=` after a `[`, `IN_BRACKET`). */
 export const GLOB_CHARS = /[*?[\]+@!()|^-]/;
@@ -159,6 +167,10 @@ export function ownChars(pieces: readonly Piece[], splits: boolean, at: { ifs?: 
   let bracket = false;
   for (const p of pieces) {
     const split = splits && p.expanded && !p.quoted;
+    if (p.hole) {
+      chars.push({ c: '', quoted: p.quoted, split, hole: p.hole });
+      continue;
+    }
     if (p.quoted && !p.text) chars.push({ c: '', quoted: true, split: false });
     for (const c of p.text) {
       const changes = rule === 'quote' ? own(p, c) : rule === 'unquote' && p.quoted && (ifs === undefined || ifs.includes(c));

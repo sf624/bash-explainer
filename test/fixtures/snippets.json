@@ -1806,6 +1806,7 @@
  "shopt -u extglob; trap 'echo @(a|b)' INT; shopt -s extglob",
  "shopt -u globstar\nls **/*.ts",
  "shopt -u sourcepath\nsource lib.sh",
+ "show a",
  "sleep 9; alert",
  "socat - - -u",
  "socat -b8192 - -",

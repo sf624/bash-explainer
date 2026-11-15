@@ -79,7 +79,7 @@ const unsplit = new WeakSet<Hole>();
 const nulls = new WeakSet<Hole>();
 
 /** The hole that stands for `part` (a string: a tilde prefix not known). */
-function holeOf(part: SyntaxNode | string, quoted: boolean, w: WordMeaning): Hole {
+export function holeOf(part: SyntaxNode | string, quoted: boolean, w: WordMeaning): Hole {
   if (typeof part === 'string') {
     if (!/[*?[]/.test(part)) return { kind: 'text', quoted: true, empty: true };
     const h: Hole = { kind: 'text', quoted: false, empty: false };
@@ -187,6 +187,16 @@ function selfAssigned(w: WordMeaning): SelfAssigned {
   return out;
 }
 
+/** The values `source` knows of the parameters the word `w` reads, one each (the model's: the view of a word, src/semantics/wordview.ts). */
+export function knownValues(w: WordMeaning, source: ValueSource): Values {
+  const out = new Map<string, readonly (string | null)[]>();
+  for (const [e, p] of expansionsOf(w)) {
+    const v = p && !out.has(p.name) ? source.variable(p.name, e) : undefined;
+    if (v !== undefined) out.set(p!.name, [v]);
+  }
+  return out;
+}
+
 /**
  * The readings of the word's parameters: each tuple of the values `values` lists for the parameters the word reads,
  * and for each `${x:+w}` or `${x+w}` whose `x` is a hole, `w` or nothing; at most TUPLES, the dimensions past them left as holes.
@@ -251,7 +261,7 @@ function patternText(atoms: readonly Atom[], fill: string, open = fill): string 
 }
 
 /** Whether a hole may hold a glob character, or a `\\` that quotes the character after it. */
-const globby = (h: Hole): boolean => !h.quoted && (h.kind === 'text' || h.kind === 'elements');
+export const globby = (h: Hole): boolean => !h.quoted && (h.kind === 'text' || h.kind === 'elements');
 /**
  * Whether the elements of `"$@"` in the word `w` are fields of their own: where its context splits (manual 3.5.7, 3.4.2),
  * also with an empty IFS or no unquoted part; joined where the context does not split it (`x="$@"`), or POSIX mode
@@ -459,7 +469,7 @@ function risky(p: ReturnType<typeof parseExpansion>, w: WordMeaning): boolean {
  * word model does not: after `:` in a here-string (`<<< x:~`), in an element `[k]=…` of an array, in the operand of an
  * expansion in an assignment (`a=${x:+x:~}`, F100).
  */
-function misread(w: WordMeaning): boolean {
+export function misread(w: WordMeaning): boolean {
   const text = w.nodes.map((x) => x.text).join('');
   // (A line continuation outside quotes and outside a substitution, which is a hole: F98. An even run of backslashes
   // before a newline quotes the last of them, and is no continuation.)
