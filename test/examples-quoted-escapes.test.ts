@@ -227,7 +227,7 @@ describe('tr runs its example only on the sets bash gives it', () => {
   }
   // (bash gives tr the home directory for `~` (`printf '/home/u\n' | tr ~ x` prints `xxxxxxx`), and nothing for a pattern no file matches under nullglob.)
   for (const line of ['tr ~ x', 'shopt -s nullglob\ntr [:lower:] [:upper:]']) {
-    it(`${line.replace('\n', '; ')}: no example, no summary of the sets`, () => {
+    it(`${line.split('\n').join('; ')}: no example, no summary of the sets`, () => {
       assert.strictEqual(trExample(line), undefined);
       const e = analyzer.explainLine(parser.parse(line), line.split('\n').length - 1);
       assert.ok(!JSON.stringify(e.items).includes('that is, it'), 'no summary');
