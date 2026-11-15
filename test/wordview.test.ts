@@ -73,6 +73,8 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(brief(view('show x{a,b}y')), { plain: false, count: { min: 2, max: 2 }, start: 'xay', end: 'xby', globs: false, unknown: [], words: [['xay', 'xay', ['xay']], ['xby', 'xby', ['xby']]] });
     assert.deepStrictEqual(brief(view('e=; show {$e,$y}')), { plain: false, count: { min: 0 }, globs: 'unknown', unknown: ['value'], words: [['$e', '', []], ['$y', '<>', null]] });
     assert.deepStrictEqual(brief(view('e=; show {$e,"$y"}')), { plain: false, count: { min: 1, max: 1 }, start: '', end: '', globs: false, unknown: ['value'], words: [['$e', '', []], ['"$y"', '<>', null]] });
+    // (The field domain: the first word's text starts it; the last may give no field, so nothing is known of the end.)
+    assert.deepStrictEqual([view('show {a,$y}').count, view('show {a,$y}').start, view('show {a,$y}').end], [{ min: 1 }, 'a', '']);
     assert.deepStrictEqual(brief(view('e=; show $e')), { plain: false, count: { min: 0, max: 0 }, globs: false, unknown: [], words: [['$e', '', []]] });
   });
 
