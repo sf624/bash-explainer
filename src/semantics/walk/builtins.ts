@@ -6,9 +6,9 @@ import type { ArgRole, ArgvParse } from '../../argv/interpret';
 import type { CommandSpec } from '../../argv/spec';
 import { actedNames, has, onlyInFunction } from '../../argv/query';
 import { prefixOf } from '../../argv/words';
-import { asBash, bracesMayWork, builtinIn } from '../../shellfeatures';
+import { asBash, builtinIn } from '../../shellfeatures';
 import { builtins } from '../../dict/builtins';
-import { elementClose, tildeParts, tildeSpots } from '../../staticword';
+import { meaningIn } from '../words';
 import { descendants, field, fields, type SyntaxNode, wordBraces } from '../../syntax/tree';
 import { parseExpansion } from '../../expansion';
 import { expansionFailure, sameInEveryLocale, substring } from '../chars';
@@ -382,7 +382,7 @@ export class WalkBuiltins {
         const value = field(w, 'value');
         const subscript = nameNode.type === 'subscript';
         // (bash brace-expands it as a word, `declare x={a,b}` is `x=a x=b`: its value is not followed.)
-        const text = !value ? '' : bracesMayWork(value, this.w.shell) ? undefined : this.w.conditions.staticText(value, st, true);
+        const text = !value ? '' : this.w.conditions.valueOf(value, st);
         out.push({ node: w, name: subscript ? field(nameNode, 'name')!.text : nameNode.text, subscript,
           assign: { append: w.children.some((c) => c.type === '+='), text, array: value?.type === 'array', source: value, kept: !!value && this.readsUnwritten(value, st) } });
         continue;
@@ -390,7 +390,7 @@ export class WalkBuiltins {
       // A word: `x`, `a[1]` (a glob that matches no file, as the walk takes it), `y=2` in `command declare y=2`; `"c"=$x`
       // (whose value is not known here). It is expanded as any argument: `\declare a=$v` declares a name in each field.
       // (`local {a,b}` declares `a` and `b` where the shell expands braces; an unquoted `a[1]` that matches no file is itself.)
-      const text = this.w.conditions.staticText(w, st);
+      const text = this.w.conditions.valueOf(w, st);
       const texts = text !== undefined ? [text] : this.w.conditions.fieldsOf(w, st) ?? [w.type === 'word' ? w.text : undefined];
       for (const t of texts) named(w, t);
     }
@@ -649,8 +649,9 @@ export class WalkBuiltins {
       const v = st.variables.get(target);
       return !changedByBash(target) && target !== 'IFS' && (!v || !!v.kept);
     };
-    // (Each element of `a=(~ x)` starts a word of its own; one with a subscript has its tilde after the `=`: `a=([1]=~)`.)
-    const tildes = (w.type === 'array' ? w.namedChildren : [w]).flatMap((e) => tildeSpots(tildeParts([e]), w.type === 'array' && elementClose(e.text) ? 'element' : 'assignment'));
+    // (Where a tilde expands is the word model's, by its context: each element of `a=(~ x)` is a word of its own, one
+    // with a subscript has its tilde after the `=` (`a=([1]=~)`), and one without none after a `:` (`a=(x:~)`).)
+    const tildes = (w.type === 'array' ? w.namedChildren : [w]).flatMap((e) => meaningIn(e, st, this.w.shell)!.tildes);
     if (tildes.some((t) => t.user !== '' || unwritten('HOME'))) return true;
     return [w, ...descendants(w, ['simple_expansion', 'expansion'])].some((e) => {
       const name = (e.type === 'simple_expansion' || e.type === 'expansion') ? e.namedChildren[0] : undefined;
@@ -678,7 +679,7 @@ export class WalkBuiltins {
     const value = field(a, 'value');
     const subscript = nameNode.type === 'subscript';
     const name = subscript ? field(nameNode, 'name')!.text : nameNode.text;
-    const text = value ? this.w.conditions.staticText(value, st, true) : '';
+    const text = value ? this.w.conditions.valueOf(value, st) : '';
     const kept = !!value && this.readsUnwritten(value, st);
     // (dash ends the shell on a prefix assignment to a readonly variable too: `r=2 true`.)
     if (statement || !this.w.bash) this.assignmentError(st, name, value?.type === 'array' ? '' : text, a);
@@ -728,7 +729,7 @@ export class WalkBuiltins {
       seen.add(nameNode.text);
       if (!first || nameNode.type === 'subscript' || !value || !a.children.some((c) => c.type === '+=')) continue;
       const target = this.resolve(st, nameNode.text);
-      const text = this.w.conditions.staticText(value, st, true);
+      const text = this.w.conditions.valueOf(value, st);
       if (target === undefined || attribute(st, target, 'i') !== 'on' || text === undefined) continue;
       st = this.w.arith.integer(text, st, a).st;
     }

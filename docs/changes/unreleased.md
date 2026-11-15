@@ -17,6 +17,7 @@ A text a command reads in a language of its own (a regex, a sed or awk program, 
 
 The model of the script (the variables a loop sets, the names a command runs, the words of `unset`, `trap`, `shopt`, `printf -v` and the like) reads a word's value from the view of the word, as bash expands it there.
 
-- **A `for` list in more forms.** After `for f in $'a'`, `for f in "a"b`, or `for f in {a,b}` under `set +B`, the explanation of `echo "$f"` says that `$f` holds `a`, `ab` or `{a,b}`. Before, only a list of plain or quoted words was read, and braces were never text.
+- **A `for` list in more forms.** After `for f in $'a'`, `for f in "a"b`, or `for f in {a,b}` under `set +B`, the explanation of `echo "$f"` says that `$f` holds `a`, `ab` or `{a,b}`; after `set -f; for f in *.txt`, that it holds `*.txt`, and `bash -c 'echo "$f"'` gets the note that `f` is not exported.
+- **A declaration's value with braces under `set +B`.** After `set +B; export x={a,b}` (or `declare`, `readonly`, `typeset`), `[ "$x" = plain ] && echo same` gets the note that `$x` is `{a,b}` there, so the test always fails. Before, the value was not known. Before, only a list of plain or quoted words was read, and braces were never text.
 - **`printf -v` with an empty substitution.** `printf -v $(:)x %s hi` shows its example (the value stored in `x`), as for `printf -v x %s hi`.
-- **A substitution that prints nothing, where `:` is a function.** After `:() { printf x; }`, the line `$(:)echo hi` no longer says it prints its arguments: it says that it runs the expanded value as a command. Before, it was explained as `echo`. (Its texts still say the name becomes `echo`; bash runs `xecho`.)
+- **`$(:)` where `:` is a function.** After `:() { printf x; }`, the line `$(:)echo hi` no longer says it prints its arguments: it says that it runs the expanded value as a command. Before, it was explained as `echo`. (Its texts still say the name becomes `echo`; bash runs `xecho`.)

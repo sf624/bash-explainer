@@ -27,7 +27,7 @@ const PINNED: Partial<Record<SuggestionId, IdCounts>> = {
   'bracket-close-glued': { subjects: 4, ran: 3, checks: 3, skipped: { 'not a plain name before `]`': 1 } },
   'bracket-close-in-word': { subjects: 7, ran: 7, checks: 40, skipped: {} },
   'bracket-no-space': { subjects: 4, ran: 4, checks: 8, skipped: {} },
-  'declaration-masks-status': { subjects: 6, ran: 5, checks: 11, skipped: { 'bash does not parse it': 1 } },
+  'declaration-masks-status': { subjects: 8, ran: 5, checks: 11, skipped: { 'bash does not parse it': 1, 'the status of `$( )` does not come from the state': 2 } },
   'failure-reported-as-success': { subjects: 2, ran: 2, checks: 16, skipped: {} },
   'for-over-unquoted-args': { subjects: 4, ran: 4, checks: 12, skipped: {} },
   'nounset-unbound': { subjects: 6, ran: 6, checks: 18, skipped: {} },

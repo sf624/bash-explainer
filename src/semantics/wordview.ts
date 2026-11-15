@@ -117,8 +117,8 @@ export function wordViewAsWritten(n: SyntaxNode, shell?: Shell): WordView | unde
   return wordViewIn(n, EMPTY, asWritten(shell));
 }
 
-/** The values of a script that sets nothing (`wordViewAsWritten`). */
-const asWritten = (shell: Shell | undefined): WalkSource => ({ variable: () => undefined, tilde: () => undefined, builtinRuns: () => false, shell: () => shell });
+/** The values of a script that sets nothing (`wordViewAsWritten`); `builtinRuns`, the names that run their builtin in a command substitution (none). */
+const asWritten = (shell: Shell | undefined, builtinRuns: (name: string) => boolean = () => false): WalkSource => ({ variable: () => undefined, tilde: () => undefined, builtinRuns, shell: () => shell });
 
 /** `value` of the view of the word that holds `n` in the finished model (`wordView`), for a reader that needs only that: a word with no value in its meaning has none, and costs nothing more. */
 export function valueOf(n: SyntaxNode, model: StateModel): string | undefined {
@@ -140,16 +140,22 @@ export function valueIn(n: SyntaxNode, st: ShellState, source: WalkSource): stri
   const text = textAsWritten(n);
   if (text !== undefined) return text;
   const w = meaningIn(n, st, source.shell());
-  if (!w || !mayHaveValue(w)) return undefined;
-  // (A substitution that prints nothing, `$(:)`, does so where its name runs the builtin, which the state says: read each
-  // time; and so may the value word of a declaration.)
-  const again = (v: SyntaxNode): WordView => wordViewIn(v, st, source)!;
-  if (w.value === undefined || w.steps.some((s) => s.kind === 'command' && s.applies !== false)) return plainValue(w, source, again);
+  if (!w) return undefined;
+  // (An assignment given to a declaration builtin, `export A=$x`: its head, then the value of its value's word, as the view has it.)
+  const declared = declaredWord(w, w.steps[0].applies);
+  if (declared === 'unread') return undefined;
+  if (declared) {
+    const inner = declared.value ? valueIn(declared.value, st, source) : '';
+    return inner === undefined ? undefined : declared.head + inner;
+  }
+  if (w.value === undefined) return undefined;
+  // (A substitution that prints nothing, `$(:)`, does so where its name runs the builtin, which the state says: read each time.)
+  if (w.steps.some((s) => s.kind === 'command' && s.applies !== false)) return plainValue(w, source);
   let byOptions = values.get(w.nodes[0]);
   if (!byOptions) values.set(w.nodes[0], (byOptions = new WeakMap()));
   const key = optionsOf(st, source.shell());
   let kept = byOptions.get(key);
-  if (!kept) byOptions.set(key, (kept = { value: plainValue(w, source, again) }));
+  if (!kept) byOptions.set(key, (kept = { value: plainValue(w, source) }));
   return kept.value;
 }
 
@@ -164,8 +170,28 @@ function textAsWritten(n: SyntaxNode): string | undefined {
   return wordOf(n)?.nodes[0] === n ? n.text : undefined;
 }
 
-/** `value` of the view of the word that holds `n` before or without a model (`wordViewAsWritten`): what bash gives a word whose value is known as written, never a command substitution's (`$(:)echo` has none). */
-export const valueAsWritten = (n: SyntaxNode, shell?: Shell): string | undefined => valueIn(n, EMPTY, asWritten(shell));
+/**
+ * `value` of the view of the word that holds `n` before or without a model (`wordViewAsWritten`): what bash gives a
+ * word whose value is known as written, never a command substitution's (`$(:)echo` has none), but where `builtinRuns`
+ * says that its name runs the builtin (the trust scan, which reads the whole script: `$(true)` prints nothing).
+ */
+export const valueAsWritten = (n: SyntaxNode, shell?: Shell, builtinRuns?: (name: string) => boolean): string | undefined => valueIn(n, EMPTY, asWritten(shell, builtinRuns));
+
+/**
+ * Each value the word that holds `n` may give as written, where braces may expand or not (the trust scan reads the
+ * whole script, which may run `set +B`): the field of each word of its brace expansion, then its value with braces as
+ * text (`declare a={x,}`: `a=x`, `a=`, then `a={x,}`); its value alone where the brace step does not apply. Undefined
+ * for one not known (`valueAsWritten`, with `builtinRuns` as there).
+ */
+export function valuesAsWritten(n: SyntaxNode, shell?: Shell, builtinRuns?: (name: string) => boolean): (string | undefined)[] {
+  const source = asWritten(shell, builtinRuns);
+  if (meaningIn(n, EMPTY, shell)!.steps[0].applies === false) return [valueIn(n, EMPTY, source)];
+  const words = wordViewIn(n, EMPTY, source)!.words;
+  return [...(words.length ? words.map((x) => (x.fields?.length === 1 ? x.fields[0] : undefined)) : [undefined]), valueIn(n, NO_BRACES, source)];
+}
+
+/** A script that sets nothing but `set +B` (`valuesAsWritten`). */
+const NO_BRACES: ShellState = { ...EMPTY, set: EMPTY.set.with('braceexpand', 'off') };
 
 /**
  * The view of the word `w`, read with `source`; `again`, the view of another word in the same way (the value of an
@@ -215,8 +241,7 @@ const isPlain = (w: WordMeaning, words: readonly ViewWord[], globs: Applies): bo
   w.value !== undefined && words.length === 1 && globs === false && !!words[0].chars && !words[0].chars.some((c) => c.hole || c.pattern) && words[0].fields?.length !== 0;
 
 /** `value` of the view of the word `w` (`viewOf`), worked out alone: its words and whether they are plain, for a reader that asks only that. */
-function plainValue(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => WordView): string | undefined {
-  if (declaredWord(w, w.steps[0].applies)) return viewOf(w, source, again).value;
+function plainValue(w: WordMeaning, source: ValueSource): string | undefined {
   const got = viewWords(w, source, holeIn(w), globby);
   return typeof got !== 'string' && isPlain(w, got, globsOf(got)) ? w.value : undefined;
 }

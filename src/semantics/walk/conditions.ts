@@ -4,7 +4,6 @@ import type { Shell } from '../../dialect';
 import { evalArith } from '../../arith';
 import { modelLimit } from '../../examples/regexguard';
 import { parseExpansion } from '../../expansion';
-import { staticWordValue, substitutionNames } from '../../staticword';
 import { assignmentsOnly, descendants, field, fields, prefixAssignments, rootOf, substitutionForm, type SyntaxNode } from '../../syntax/tree';
 import { compareIntegers, extendedTestInteger, INTEGER_OPS, patternMatches, plainRegex, testStatus, type TestEnv, unaryTest } from '../conditions';
 import { attribute, EMPTY, merge, option, type ShellState, type Tri, withStatus } from '../shellstate';
@@ -155,7 +154,7 @@ export class WalkConditions {
       if (!target || attribute(st, target, 'r') !== 'off') return undefined;
       // (An integer runs its text: only a constant surely gives a number, `OPTIND=1`.)
       const value = field(a, 'value');
-      if (attribute(st, target, 'i') !== 'off' && (!value || evalArith(this.staticText(value, st, true) ?? '') === undefined)) return undefined;
+      if (attribute(st, target, 'i') !== 'off' && (!value || evalArith(this.valueOf(value, st) ?? '') === undefined)) return undefined;
     }
     return 0;
   }
@@ -368,13 +367,11 @@ export class WalkConditions {
     return p.op.endsWith('+') === empty ? 'off' : 'on';
   }
 
-  /** The text of the word `w`, when nothing in it varies from `st`: `$(true)` prints nothing only when `true` runs the builtin. */
-  staticText(w: SyntaxNode, st: ShellState, assignment = false): string | undefined {
-    const v = staticWordValue(w, assignment, this.w.shell);
-    return v !== undefined && substitutionNames(w).every((x) => this.builtinRuns(x, st)) ? v : undefined;
-  }
-
-  /** The value of the word `w` from `st`, where the view of the word is plain (`valueIn`): `unset {a,b}` has none where the shell expands braces. */
+  /**
+   * The value of the word `w` from `st`, where the view of the word is plain (`valueIn`): `unset {a,b}` has none where
+   * the shell expands braces; an assignment's value `x=*.txt` is its text, `x=~` none; `$(true)` prints nothing only
+   * where `true` runs the builtin.
+   */
   valueOf(w: SyntaxNode, st: ShellState): string | undefined {
     return valueIn(w, st, this.values(st));
   }

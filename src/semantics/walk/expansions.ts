@@ -262,7 +262,7 @@ export class WalkExpansions {
       // (A variable alone, `${n:=$v}`, gives its value as the state holds it, as the words read it.)
       const read = /^\$\{?([A-Za-z_]\w*)\}?$/.exec(word.text)?.[1];
       const value = read === undefined ? undefined : this.w.variableText(st, read, () => true);
-      const text = this.w.conditions.staticText(word, st, true) ?? (value === null ? '' : value);
+      const text = this.w.conditions.valueOf(word, st) ?? (value === null ? '' : value);
       if (text === undefined) st = this.anyAssigned(st, e);
       else {
         const after = this.w.arith.integer(text, st, e).st;

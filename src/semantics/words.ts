@@ -15,7 +15,7 @@ import { patsubMiscounts } from '../bracket';
 import { type Shell, zshOtherwise } from '../dialect';
 import { asBash, featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
-import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
+import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, quoteRemoved, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
 import { caseConverted, type Char, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, type Piece, regexChars, sameInEveryLocale, specialChars, splitOn, substring, wildcardChars } from './chars';
 import { alternativesOrWhy, bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
@@ -329,11 +329,11 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   }
   const meaning: WordMeaning = { nodes, context, rule, steps, tildes, ifs, glob, posix, state: st, ...(shell ? { shell } : {}), ...(version ? { version } : {}) };
   steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
-  steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
-  steps.push(mk({ kind: 'quote-removal', applies: shape.quotes.length > 0, parts: shape.quotes }));
-  // (The value also where the walk reads the word, for its view: `meaningIn`. Braces are text where the brace step does not apply: `set +B`, dash. `$(:)e` is `e` where `:` runs the builtin, as the view's characters say: a hole where it may not.)
-  const literal = steps[0].applies === false && !tildes.length && expansions.every((e) => e.type === 'command_substitution') && !globWords.length;
-  const values = literal ? nodes.map((x) => staticWordValue(x, false, shell, true)) : [];
+  const globbing = mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted));
+  steps.push(globbing, mk({ kind: 'quote-removal', applies: shape.quotes.length > 0, parts: shape.quotes }));
+  // (The value, also for the walk's view: braces are text where the brace step does not apply (`set +B`, dash), glob characters where neither pathname expansion nor the context's matching reads them (`x=*.txt`; not a `case` pattern), and `$(:)e` is `e` where `:` runs the builtin, as the view's characters say.)
+  const literal = steps[0].applies === false && !tildes.length && expansions.every((e) => e.type === 'command_substitution') && (!globWords.length || (globbing.applies === false && !rule.match));
+  const values = literal ? nodes.map((x) => quoteRemoved(x, globWords.length > 0, shell)) : [];
   if (literal && values.every((v) => v !== undefined)) meaning.value = values.join('');
   if (!whole) return meaning;
   const failure = failureOf(meaning, expansions.some((e) => e.type === 'simple_expansion' || e.type === 'expansion'));

@@ -1,9 +1,11 @@
 // What a write gives a variable, as the trust of the decisions reads it (src/semantics/trust.ts): text the script
 // wrote, with the names in it, or a value not known; and the names in a text that arithmetic reads.
 import type { Shell } from '../shellfeatures';
-import { staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import { pushAll } from '../lists';
+import { EMPTY } from './shellstate';
+import { valueAsWritten } from './wordview';
+import { meaningIn } from './words';
 
 /** The names in an arithmetic text or a value read as one (not the digits of `0x1f` or `16#ff`, nor `${#x}`'s). */
 const IDENTIFIERS = /(?<![\w#@.])[A-Za-z_]\w*/g;
@@ -31,16 +33,18 @@ export const joined = (values: WrittenValue[]): WrittenValue => {
 export const COPY = /^\$\{?([A-Za-z_]\w*)\}?$/;
 
 /**
- * What the word `v` assigns (undefined: the empty value): text with the names in it, or `unknown`.
- * `renamed`: whether `$(name)` may print something (a function or an alias of `true`: `$(true)` prints nothing only
- * when `true` is the builtin). `shell`: the shell the script is for (bash when absent).
+ * What the word `v` assigns (undefined: the empty value): text with the names in it, or `unknown`. Its value as
+ * written is the word model's (`valueAsWritten`). `builtinRuns`: whether `$(name)` runs the builtin, which prints
+ * nothing (`$(true)`; not where `true` may be a function or an alias). `shell`: the shell the script is for (bash
+ * when absent).
  */
-export function writtenValue(v: SyntaxNode | undefined, renamed: (name: string) => boolean, shell?: Shell): WrittenValue {
+export function writtenValue(v: SyntaxNode | undefined, builtinRuns: (name: string) => boolean, shell?: Shell): WrittenValue {
   if (!v) return { names: [], text: '', fixed: true };
-  const s = substitutionNames(v).some(renamed) ? undefined : staticWordValue(v, true, shell);
+  const s = valueAsWritten(v, shell, builtinRuns);
   if (s !== undefined) return { names: identifiers(s), text: s, fixed: true };
-  // (A tilde gives the value of HOME, `~user` a home not known: `m=~; (( m ))` runs a HOME from the environment.)
-  const tildes = tildeSpots(tildeParts([v]), 'assignment');
+  // (A tilde gives the value of HOME, `~user` a home not known: `m=~; (( m ))` runs a HOME from the environment. Where
+  // a tilde expands is the context's: after each `:` in an assignment's value, not in an element, `a=(x:~)`.)
+  const tildes = meaningIn(v, EMPTY, shell)!.tildes;
   if (tildes.some((t) => t.user !== '')) return 'unknown';
   const names: string[] = tildes.length ? ['HOME'] : [];
   const parts: string[] = [];

@@ -9,11 +9,10 @@ import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, OperandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
-import { tildeParts, tildeSpots } from '../staticword';
 import { descendants, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { builtinRead, DECLARATIONS, effectKey, namesByWords } from './effects';
 import { EMPTY, type ShellState } from './shellstate';
-import { type WalkSource, wordIn } from './words';
+import { meaningIn, type WalkSource, wordIn } from './words';
 import { valueAsWritten } from './wordview';
 import { mostOf } from '../lists';
 
@@ -159,8 +158,9 @@ function literalStart(w: SyntaxNode, shell: Shell | undefined): string | undefin
 /** What `literalStart` takes each parameter to expand to: a character no word holds. */
 const HOLE = '\u0000';
 
-/** Whether the word `w` expands something: a parameter, a substitution, braces or a tilde. */
-const expands = (w: SyntaxNode): boolean => descendants(w, EXPANSIONS).length > 0 || wordBraces(w).length > 0 || tildeSpots(tildeParts([w]), 'start').length > 0;
+/** Whether the word `w` expands something as written, by the word model: braces, a tilde (where its context has one), a parameter or a substitution. */
+const expands = (w: SyntaxNode, shell: Shell | undefined): boolean => meaningIn(w, EMPTY, shell)!.steps.some((s) => EXPANDING.has(s.kind) && s.applies !== false);
+const EXPANDING: ReadonlySet<string> = new Set(['brace', 'tilde', 'parameter', 'command', 'arithmetic', 'process']);
 const EXPANSIONS = ['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution'];
 
 /** Whether the expansion `e` is in double quotes within the word `word`. */
@@ -181,7 +181,7 @@ export function unknownWords(name: string, spec: CommandSpec, args: readonly Syn
   const out: DeferredWord[] = [];
   for (const [j, a] of args.entries()) {
     // (A word that expands nothing is a glob at most, which the model takes as matching no file: `declare a[1]`.)
-    if (a.type === 'variable_assignment' || valueAsWritten(a, shell) !== undefined || !expands(a)) continue;
+    if (a.type === 'variable_assignment' || valueAsWritten(a, shell) !== undefined || !expands(a, shell)) continue;
     // (A word whose fields cannot change what the builtin sets is read as written: `printf "%s\n" "$m"`, as before.)
     if (!out.length && inert((more) => builtinRead(name, args, shell, spec, undefined, more).parse, spec, j, a, shell)) continue;
     const names: string[] = [];
