@@ -24,7 +24,7 @@ import { type ExecEnv, linksAfter, reachOf, type SlotLink, subshellReasons } fro
 import { commandSlots } from './nested';
 import { type AliasState, type CommandEntry, type FunctionState, hashOutcomes, option, type ShellState, type StateModel, type Tri } from './state';
 import { unlessUnread } from './shellstate';
-import { valueAsWritten } from './wordview';
+import { valueAsWritten, valueOf } from './wordview';
 import { docIndex } from './state';
 
 /** bash's reserved words: keywords where a command name may start (3.2, and `[[ ]]`). */
@@ -446,8 +446,8 @@ export function assignmentsOf(model: StateModel, command: SyntaxNode, res: NameR
   // (`x=1 unset x` removes that `x`: it does not stay.)
   const unset = res !== 'dynamic' && res?.kind === 'builtin' ? temporariesUnset(res.name, fields(command, 'argument'), command, model.shell) : undefined;
   // (A word of known text gives one word: `x=1 $cmd env`.)
-  const named = res === 'dynamic' && fields(command, 'argument').some((w) => valueAsWritten(w) !== undefined);
-  const exported = res !== 'dynamic' && res?.kind === 'builtin' ? keptPrefixes(command, (w) => valueAsWritten(w), model.shell) : undefined;
+  const named = res === 'dynamic' && fields(command, 'argument').some((w) => valueOf(w, model) !== undefined);
+  const exported = res !== 'dynamic' && res?.kind === 'builtin' ? keptPrefixes(command, (w) => valueOf(w, model), model.shell) : undefined;
   return assignments.map((a) => {
     const name = (field(field(a, 'name')!, 'name') ?? field(a, 'name')!).text;
     if (exported?.names.get(name)) return { node: a, name, scope: 'persists', sure: true, named: exported.builtin };

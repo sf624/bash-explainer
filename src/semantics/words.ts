@@ -948,7 +948,7 @@ export function meaningIn(n: SyntaxNode, st: ShellState, shell: Shell | undefine
 }
 
 /** A word that bash takes as it is written: no expansion, quote, escape, tilde, brace, glob or extended glob. */
-const PLAIN_TEXT = /^[\w.,:/@%+=-]+$/;
+export const PLAIN_TEXT = /^[\w.,:/@%+=-]+$/;
 
 /** The characters of the IFS in effect at the word; undefined when they are not known. */
 const ifsOfWord = (w: WordMeaning): string | undefined => (w.ifs.kind === 'default' ? DEFAULT_IFS : w.ifs.kind === 'value' ? w.ifs.value : undefined);

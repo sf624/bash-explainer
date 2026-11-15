@@ -212,6 +212,12 @@ describe('the view of a word (wordview.ts)', () => {
         const short = unmatchedOf(n, model);
         const v = wordView(n, model)!;
         if (short !== v.unmatched) wrong.push(`${JSON.stringify(text)} ${n.text}: unmatchedOf ${JSON.stringify(short)}, view ${JSON.stringify(v.unmatched)}`);
+        // (What a reader of a name asks, `valueAsWritten` and `valueIn`, is the value of the view they stand for: read at once for most words.)
+        const asWritten = wordViewAsWritten(n, 'bash')!.value;
+        if (valueAsWritten(n, 'bash') !== asWritten) wrong.push(`${JSON.stringify(text)} ${n.text}: valueAsWritten ${JSON.stringify(valueAsWritten(n, 'bash'))}, view ${JSON.stringify(asWritten)}`);
+        const st = model.at(n).run;
+        const source = { variable: () => undefined, tilde: () => undefined, builtinRuns: () => true, shell: () => 'bash' as const };
+        if (valueIn(n, st, source) !== wordViewIn(n, st, source)!.value) wrong.push(`${JSON.stringify(text)} ${n.text}: valueIn ${JSON.stringify(valueIn(n, st, source))}, view ${JSON.stringify(wordViewIn(n, st, source)!.value)}`);
         const d = declaredWord(w, w.steps[0].applies);
         // (An assignment given to a declaration builtin: its head before the value of its value's word.)
         const value = d && d !== 'unread' ? (d.value ? ((x) => x === undefined ? undefined : d.head + x)(wordMeaning(d.value, model)!.value) : d.head) : w.value;
