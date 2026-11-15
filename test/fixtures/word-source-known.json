@@ -98,65 +98,33 @@
     {"file":"src/semanticFacts.ts","fn":"command","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semantics/argwords.ts","fn":"countIn","kind":"helper","count":1,"row":"W-C2"},
     {"file":"src/semantics/commandhead.ts","fn":"headFacts","kind":"helper","count":1,"row":"W-L2"},
-    {"file":"src/semantics/commandhead.ts","fn":"headOf","kind":"helper","count":3,"row":"W-P1"},
+    {"file":"src/semantics/commandhead.ts","fn":"headOf","kind":"helper","count":2,"row":"W-P1"},
     {"file":"src/semantics/deferred.ts","fn":"expands","kind":"helper","count":2,"row":"W-T1"},
     {"file":"src/semantics/deferred.ts","fn":"quotedIn","kind":"node-type","count":1,"row":"W-P4"},
-    {"file":"src/semantics/deferred.ts","fn":"unknownWords","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/effects.ts","fn":"aliasOf","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/effects.ts","fn":"builtinRead","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/effects.ts","fn":"commandName","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/effects.ts","fn":"quotedName","kind":"node-type","count":1,"row":"W-P4"},
-    {"file":"src/semantics/effects.ts","fn":"wordName","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/effects.ts","fn":"wordsAfterAlias","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/effects.ts","fn":"wrapped","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/elements.ts","fn":"givesElements","kind":"node-type","count":3,"row":"W-C5"},
-    {"file":"src/semantics/env.ts","fn":"shellEffectOf","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/globwords.ts","fn":"severalFields","kind":"node-type","count":7,"row":"W-C5"},
-    {"file":"src/semantics/names.ts","fn":"assignmentsOf","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/names.ts","fn":"resolveRun","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/names.ts","fn":"temporariesUnset","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/nofield.ts","fn":"elementsAlone","kind":"node-type","count":2,"row":"W-C4"},
     {"file":"src/semantics/nofield.ts","fn":"givesOneNumber","kind":"node-type","count":1,"row":"W-C4"},
     {"file":"src/semantics/nofield.ts","fn":"integerDefault","kind":"node-type","count":1,"row":"W-C4"},
     {"file":"src/semantics/nofield.ts","fn":"isNumber","kind":"node-type","count":3,"row":"W-C4"},
     {"file":"src/semantics/nofield.ts","fn":"neverEmpty","kind":"node-type","count":1,"row":"W-C4"},
-    {"file":"src/semantics/posixexits.ts","fn":"builtinExit","kind":"helper","count":5,"row":"W-L1"},
-    {"file":"src/semantics/posixexits.ts","fn":"exitRefusal","kind":"helper","count":3,"row":"W-L1"},
-    {"file":"src/semantics/redirects.ts","fn":"closesStandard","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/redirects.ts","fn":"redirectionMayFail","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/redirects.ts","fn":"safeRedirect","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/shvalues.ts","fn":"readOtherwise","kind":"helper","count":2,"row":"W-P4"},
     {"file":"src/semantics/shvalues.ts","fn":"readOtherwise","kind":"node-type","count":2,"row":"W-P4"},
     {"file":"src/semantics/shvalues.ts","fn":"shellValueRefused","kind":"node-type","count":1,"row":"W-P4"},
-    {"file":"src/semantics/state.ts","fn":"childModel","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semantics/testwords.ts","fn":"testSplits","kind":"glob-class","count":1,"row":"W-C3"},
     {"file":"src/semantics/testwords.ts","fn":"testSplits","kind":"ifs","count":1,"row":"W-C3"},
     {"file":"src/semantics/testwords.ts","fn":"testWordShape","kind":"glob-class","count":1,"row":"W-C3"},
     {"file":"src/semantics/testwords.ts","fn":"testWordShape","kind":"helper","count":1,"row":"W-C3"},
     {"file":"src/semantics/testwords.ts","fn":"testWordShape","kind":"node-type","count":6,"row":"W-C3"},
-    {"file":"src/semantics/trust.ts","fn":"builtinWords","kind":"helper","count":6,"row":"W-L1"},
-    {"file":"src/semantics/trust.ts","fn":"command","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semantics/trust.ts","fn":"declaration","kind":"helper","count":4,"row":"W-G5"},
     {"file":"src/semantics/trust.ts","fn":"declaration","kind":"node-type","count":1,"row":"W-G5"},
-    {"file":"src/semantics/trust.ts","fn":"shopt","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/trust.ts","fn":"testV","kind":"helper","count":2,"row":"W-L1"},
     {"file":"src/semantics/trust.ts","fn":"testWords","kind":"glob-class","count":1,"row":"W-C3"},
-    {"file":"src/semantics/trust.ts","fn":"testWords","kind":"helper","count":2,"row":"W-C3"},
-    {"file":"src/semantics/trust.ts","fn":"visit","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/arith.ts","fn":"letText","kind":"glob-class","count":1,"row":"W-C6"},
     {"file":"src/semantics/walk/arith.ts","fn":"letText","kind":"helper","count":1,"row":"W-C6"},
     {"file":"src/semantics/walk/arith.ts","fn":"letText","kind":"node-type","count":4,"row":"W-C6"},
-    {"file":"src/semantics/walk/builtins.ts","fn":"builtinOn","kind":"helper","count":6,"row":"W-L1"},
-    {"file":"src/semantics/walk/builtins.ts","fn":"declare","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/builtins.ts","fn":"readsUnwritten","kind":"helper","count":2,"row":"W-T1"},
     {"file":"src/semantics/walk/builtins.ts","fn":"readsUnwritten","kind":"node-type","count":4,"row":"W-T1"},
-    {"file":"src/semantics/walk/builtins.ts","fn":"unset","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/walk/conditions.ts","fn":"staticText","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/walk/conditions.ts","fn":"unsetStatus","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/walk/traps.ts","fn":"trapSignals","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/walk/walker.ts","fn":"command","kind":"node-type","count":6,"row":"W-P4"},
-    {"file":"src/semantics/walk/forloop.ts","fn":"forStatement","kind":"helper","count":1,"row":"W-L1"},
-    {"file":"src/semantics/walk/walker.ts","fn":"program","kind":"helper","count":1,"row":"W-L1"},
     {"file":"src/semantics/written.ts","fn":"writtenValue","kind":"helper","count":3,"row":"W-T1"},
     {"file":"src/semantics/written.ts","fn":"writtenValue","kind":"node-type","count":9,"row":"W-T1"},
     {"file":"src/staticword.ts","fn":"plainText","kind":"helper","count":1,"row":"W-P1"},
@@ -441,9 +409,8 @@
     },
     {
       "file": "src/semantics/stdout.ts",
-      "reason": "where a command's stdout goes is read from the statements and substitutions around it; a word is read only to see `exec` as `command`'s first word",
+      "reason": "where a command's stdout goes is read from the statements and substitutions around it",
       "uses": [
-        {"fn": "movesStdout", "kind": "helper", "count": 1},
         {"fn": "from", "kind": "node-type", "count": 2}
       ]
     },
@@ -542,8 +509,7 @@
         {"fn":"marksOf","kind":"node-type","count":1},
         {"fn":"readOnlySometimes","kind":"node-type","count":3},
         {"fn":"readWithItsLine","kind":"node-type","count":5},
-        {"fn":"stderrDiscarded","kind":"node-type","count":4},
-        {"fn":"stopOf","kind":"helper","count":1}
+        {"fn":"stderrDiscarded","kind":"node-type","count":4}
       ]
     },
     {
@@ -625,13 +591,6 @@
       "uses": [
         {"fn":"inShell","kind":"node-type","count":1},
         {"fn":"changesWords","kind":"node-type","count":1}
-      ]
-    },
-    {
-      "file": "src/semantics/walk/forloop.ts",
-      "reason": "recursion into substitutions and arithmetic, or a walk of the tree",
-      "uses": [
-        {"fn":"forStatement","kind":"node-type","count":4}
       ]
     },
     {

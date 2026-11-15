@@ -4301,6 +4301,23 @@
     }
   },
   {
+    "manual": "3.7.1",
+    "snippet": "x=1 $\"\"; y=2 $(:)$(:)",
+    "note": "`$\"\"` is a quoted empty field: a command (not found), whose assignments are not the shell's; `$(:)$(:)` gives no field, as `$(:)` does (the builtin `:`)",
+    "facts": {
+      "end": {
+        "variables": {
+          "y": {
+            "attrs": "-",
+            "value": "\"2\""
+          }
+        }
+      },
+      "status": 0,
+      "stderr": "SCRIPT: line 1: : command not found"
+    }
+  },
+  {
     "manual": "3.2.5.1",
     "snippet": "for i in a; do x=1; break; x=2; done; if [ \"$x\" = 2 ]; then y=1; else z=1; fi",
     "note": "`break` leaves the loop with the state there: the condition after it reads x=1 (4.13, jumps)",

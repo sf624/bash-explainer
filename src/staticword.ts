@@ -272,14 +272,15 @@ export function surelyHasSlash(n: SyntaxNode): boolean {
  * What a word becomes after quote removal, when that is known without running anything:
  * `h\i` is `hi`, `"a"'b'` is `ab`, `$'\x24HOME'` is `$HOME`, `$(:)e` is `e`. Undefined if any part
  * depends on a variable, a command, a glob, a brace expansion or a tilde. `assignment`: the word is the value of an
- * assignment, where globs and braces are plain text and a tilde also expands after a `:`.
+ * assignment, where globs and braces are plain text and a tilde also expands after a `:`. `bracesOff`: braces are plain
+ * text, as the word model says where the brace step does not apply (`set +B`, a shell without them).
  */
-export function staticWordValue(n: SyntaxNode, assignment = false, shell?: Shell): string | undefined {
+export function staticWordValue(n: SyntaxNode, assignment = false, shell?: Shell, bracesOff = false): string | undefined {
   if (tildeSpots(tildeParts([n]), assignment ? 'assignment' : 'start').length) return undefined;
-  return literalValue(n, assignment, shell);
+  return literalValue(n, assignment, shell, bracesOff);
 }
 
-function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefined): string | undefined {
+function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefined, bracesOff = false): string | undefined {
   const text = decodedText(n);
   switch (n.type) {
     case 'word': case 'number': {
@@ -289,10 +290,10 @@ function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefin
     }
     case 'brace_expression': {
       // (Braces the shell may expand are not text yet: `{x,EXIT}` is text in dash, `{1..3}` in mksh; in an assignment's value too.)
-      if (!assignment && bracesMayWork(n, shell)) return undefined;
+      if (!assignment && !bracesOff && bracesMayWork(n, shell)) return undefined;
       let out = '';
       for (const c of n.children) {
-        const v = c.named ? literalValue(c, assignment, shell) : c.type;
+        const v = c.named ? literalValue(c, assignment, shell, bracesOff) : c.type;
         if (v === undefined) return undefined;
         out += v;
       }
@@ -308,7 +309,7 @@ function literalValue(n: SyntaxNode, assignment: boolean, shell: Shell | undefin
     case 'concatenation': {
       let out = '';
       for (const c of n.namedChildren) {
-        const v = literalValue(c, assignment, shell);
+        const v = literalValue(c, assignment, shell, bracesOff);
         if (v === undefined) return undefined;
         out += v;
       }

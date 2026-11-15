@@ -6,7 +6,6 @@ import type { ArgvParse } from '../../argv/interpret';
 import type { Ends } from '../../argv/spec';
 import { isBash, type Shell } from '../../shellfeatures';
 import { builtins } from '../../dict/builtins';
-import { staticWordValue } from '../../staticword';
 import { assignmentsOnly, coprocName, descendants, field, fields, nameText, prefixAssignments, redirectionsOf, type SyntaxNode, rootOf } from '../../syntax/tree';
 import { commandName } from '../effects';
 import { lastStageInShell, slotEnvs, STATEMENTS, subshellReasons } from '../env';
@@ -18,6 +17,7 @@ import {
 import type { Scripts } from '../state';
 import { type HostCommands, NO_HOST, type Trust } from '../trust';
 import { alwaysNumeric, changedByBash, EXPORTED_AT_START, INTEGERS_AT_START, READONLY_AT_START } from '../vars';
+import { valueAsWritten } from '../wordview';
 import { WalkAliases } from './aliases';
 import { WalkArith } from './arith';
 import { temporariesUnset } from '../names';
@@ -256,7 +256,7 @@ export class Walker {
   program(root: SyntaxNode, start: ShellState): ShellState {
     // (One pass over the tree: the definitions, and the names `unset` may remove.)
     const nodes = this.collectDefinitions(root, ['function_definition', 'command']);
-    const unset = new Set(nodes.filter((c) => c.type === 'command' && commandName(c) === 'unset').flatMap((c) => fields(c, 'argument')).map((w) => staticWordValue(w) ?? w.text));
+    const unset = new Set(nodes.filter((c) => c.type === 'command' && commandName(c) === 'unset').flatMap((c) => fields(c, 'argument')).map((w) => valueAsWritten(w) ?? w.text));
     for (const def of nodes.filter((d) => d.type === 'function_definition')) {
       // (At the top level, or first in a list there: `f() { …; } && complete -F f x` always defines it.)
       let x = def;
@@ -1078,13 +1078,12 @@ export class Walker {
     // (Those of its redirections when they are made, below.)
     const redirs = redirectionsOf(n);
     st = this.expansions.substitutions(n, st, false, redirs);
-    const name = commandName(n);
     const nameNode = field(n, 'name')!;
+    const name = this.conditions.valueOf(nameNode.namedChildren[0], st);
     const assignments = prefixAssignments(n);
-    // With no command name, the assignments are the shell's, made before the redirections; their status is that of
-    // the last command substitution. (A quoted empty name is a command: `x=1 ''` is "command not found".)
-    const word = nameNode.namedChildren[0];
-    if (name === '' && !descendants(word, ['string', 'raw_string', 'ansi_c_string']).length && !['string', 'raw_string', 'ansi_c_string'].includes(word.type)) {
+    // With no command name (its word gives no field: `x=1 $(:)`), the assignments are the shell's, made before the redirections;
+    // their status is that of the last command substitution. (A quoted empty name is a field, a command: `x=1 ''` is not found.)
+    if (this.conditions.fieldsOf(nameNode.namedChildren[0], st)?.length === 0) {
       for (const a of assignments) {
         this.record(a, st);
         st = this.builtins.assignNode(a, this.expansions.defaults(a, st), true);

@@ -14,13 +14,14 @@ import type { HostId } from '../hosts';
 import { lineListLabel } from '../i18n';
 import { isProgram } from '../namefacts';
 import { isBash, type RealShell } from '../shellfeatures';
-import { isPlainWord, literalContent, plainText, staticWordValue, unquotedWord } from '../staticword';
+import { isPlainWord, literalContent, plainText, unquotedWord } from '../staticword';
 import type { SyntaxNode } from '../syntax/tree';
 import { braceExpansion } from './brace';
 import { readAs } from './env';
 import { type AliasResolution, type MaybeHashed, type Missed, type NameResolution, resolveName, testSpecOf } from './names';
 import { docLine, option, type StateModel, treeTextOf } from './state';
 import { wordMeaning } from './words';
+import { valueOf } from './wordview';
 
 /** The spec of a command with none: no options, no operands. */
 export const NO_SPEC: CommandSpec = { summary: { ja: '', en: '' } };
@@ -222,7 +223,7 @@ function headOf(model: StateModel, lookup: CommandLookup, nameNode: SyntaxNode, 
   const resolve = (name: string, at: SyntaxNode, opts: { quoted?: boolean } = {}): NameResolution => resolveName(model, name, at, { shell, command: true, program: isProgram, ...opts });
   // Commands with an empty name (`FOO=1 2>/dev/null`) do not get here.
   // A name made of quotes, escapes or empty `$(:)` is the command it spells once they are removed (`e\c'h'"o"` is `echo`).
-  const spelled = staticWordValue(word, false, shell);
+  const spelled = valueOf(word, model);
   const sv = spelled && spelled !== word.text ? spelled : undefined;
   const name = as ?? sv ?? (isPlainWord(word) ? word.text : nameNode.text);
   // (A word of plain text with braces is the first word they give, `as`; where they do not expand, `{echo,hi}` in dash, it is a name as written.)

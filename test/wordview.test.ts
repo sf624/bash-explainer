@@ -2,7 +2,7 @@
 // the field domain, case by case. test/word-probes.test.ts holds it against bash on probes/words.json.
 import * as assert from 'assert';
 import { shellState } from '../src/semantics/state';
-import { unmatchedOf, wordView, type WordView, wordViewAsWritten, wordViewIn } from '../src/semantics/wordview';
+import { unmatchedOf, valueAsWritten, valueIn, valueOf, wordView, type WordView, wordViewAsWritten, wordViewIn } from '../src/semantics/wordview';
 import { EMPTY } from '../src/semantics/shellstate';
 import type { WordEnv } from '../src/semantics/words';
 import type { Shell } from '../src/shellfeatures';
@@ -192,6 +192,7 @@ describe('the view of a word (wordview.ts)', () => {
     const TOPS = new Set(['word', 'number', 'string', 'raw_string', 'ansi_c_string', 'translated_string', 'concatenation', 'simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'brace_expression', 'variable_assignment', 'heredoc_body', 'regex', 'extglob_pattern', 'variable_name']);
     /** Where `WordMeaning.value` has a value and the view has none, on purpose: the snippet, the word, and why. */
     const KNOWN: Record<string, string> = {
+      '` `': 'an unterminated backquote, read as a substitution that prints nothing: alone and unquoted, it gives no field, so no value',
       '[[ a == ]] ]]': 'a syntax error in bash ("unexpected argument `]]`"): the parser takes the closing `]]` for a pattern, whose unquoted `]` the view, as `plainPattern`, takes for a wildcard',
     };
     let words = 0;
@@ -226,9 +227,26 @@ describe('the view of a word (wordview.ts)', () => {
     assert.ok(words > 7000, `${words} words`);
   });
 
+  it('its value alone (`valueOf`, `valueIn`, `valueAsWritten`), for the readers of names and of a builtin\'s words', () => {
+    const { tree, words } = wordsOf(':() { printf x; }; set +B; show $(:)echo {a,b} \'x\'y *.txt');
+    const model = shellState(tree, 'bash');
+    // (bash runs `xecho` there: a command substitution has no value as written, nor in the model, `:` being a function.)
+    assert.deepStrictEqual(words.map((w) => valueOf(w, model)), [undefined, '{a,b}', 'xy', undefined]);
+    assert.deepStrictEqual(words.map((w) => valueAsWritten(w)), [undefined, undefined, 'xy', undefined]);
+    // (Braces are text where the brace step does not apply: dash.)
+    assert.strictEqual(valueAsWritten(words[1], 'dash'), '{a,b}');
+    // (Kept by the word and the options it is read with: as written first, then in the state of the walk after `set +B`.)
+    const source = { variable: () => undefined, tilde: () => undefined, builtinRuns: () => true, shell: () => undefined };
+    assert.strictEqual(valueIn(words[1], EMPTY, source), undefined);
+    assert.strictEqual(valueIn(words[1], model.at(words[1]).run, source), '{a,b}');
+    assert.strictEqual(valueIn(words[1], EMPTY, source), undefined);
+  });
+
   it('outside a word: none', () => {
     const tree = parser.parse('show a');
     assert.strictEqual(wordView(tree.root, shellState(tree, 'bash')), undefined);
+    assert.strictEqual(valueOf(tree.root, shellState(tree, 'bash')), undefined);
+    assert.strictEqual(valueAsWritten(tree.root), undefined);
     assert.strictEqual(wordViewIn(tree.root, EMPTY, { variable: () => undefined, tilde: () => undefined, builtinRuns: () => false, shell: () => undefined }), undefined);
   });
 });

@@ -9,11 +9,12 @@ import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, OperandSpec } from '../argv/spec';
 import { argWordFor } from '../argv/words';
 import type { Shell } from '../dialect';
-import { staticWordValue, tildeParts, tildeSpots } from '../staticword';
+import { tildeParts, tildeSpots } from '../staticword';
 import { descendants, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { builtinRead, DECLARATIONS, effectKey, namesByWords } from './effects';
 import { EMPTY, type ShellState } from './shellstate';
 import { type WalkSource, wordIn } from './words';
+import { valueAsWritten } from './wordview';
 import { mostOf } from '../lists';
 
 /**
@@ -180,7 +181,7 @@ export function unknownWords(name: string, spec: CommandSpec, args: readonly Syn
   const out: DeferredWord[] = [];
   for (const [j, a] of args.entries()) {
     // (A word that expands nothing is a glob at most, which the model takes as matching no file: `declare a[1]`.)
-    if (a.type === 'variable_assignment' || staticWordValue(a, false, shell) !== undefined || !expands(a)) continue;
+    if (a.type === 'variable_assignment' || valueAsWritten(a, shell) !== undefined || !expands(a)) continue;
     // (A word whose fields cannot change what the builtin sets is read as written: `printf "%s\n" "$m"`, as before.)
     if (!out.length && inert((more) => builtinRead(name, args, shell, spec, undefined, more).parse, spec, j, a, shell)) continue;
     const names: string[] = [];

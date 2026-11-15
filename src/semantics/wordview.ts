@@ -9,6 +9,7 @@ import type { SyntaxNode } from '../syntax/tree';
 import { EMPTY, type ShellState } from './shellstate';
 import type { StateModel } from './state';
 import { declaredWord } from './wordcontexts';
+import { optionsOf, type WordOptions } from './wordoptions';
 import { type Applies, type Char, type Fields, type HoleOf, meaningIn, modelValues, type ValueSource, viewWords, type WalkSource, type WordEnv, wordFields, wordMeaning, type WordMeaning } from './words';
 
 /** A word of the brace expansion of a word, as its view reads it (src/semantics/wordview.ts, `viewWords`). */
@@ -94,7 +95,7 @@ const views = new WeakMap<WordMeaning, WordView>();
  */
 export function unmatchedOf(n: SyntaxNode, model: StateModel): string | undefined {
   const w = wordMeaning(n, model);
-  if (!w || (!declaredWord(w, w.steps[0].applies) && !throughGlobOnly(w))) return undefined;
+  if (!w || (w.value === undefined && !declaredWord(w, w.steps[0].applies) && !throughGlobOnly(w))) return undefined;
   return wordView(n, model)!.unmatched;
 }
 
@@ -113,8 +114,40 @@ export function wordViewIn(n: SyntaxNode, st: ShellState, source: WalkSource): W
  * a hole, never empty (`$(:)echo`).
  */
 export function wordViewAsWritten(n: SyntaxNode, shell?: Shell): WordView | undefined {
-  return wordViewIn(n, EMPTY, { variable: () => undefined, tilde: () => undefined, builtinRuns: () => false, shell: () => shell });
+  return wordViewIn(n, EMPTY, asWritten(shell));
 }
+
+/** The values of a script that sets nothing (`wordViewAsWritten`). */
+const asWritten = (shell: Shell | undefined): WalkSource => ({ variable: () => undefined, tilde: () => undefined, builtinRuns: () => false, shell: () => shell });
+
+/** `value` of the view of the word that holds `n` in the finished model (`wordView`), for a reader that needs only that: a word with no value in its meaning has none, and costs nothing more. */
+export function valueOf(n: SyntaxNode, model: StateModel): string | undefined {
+  return wordMeaning(n, model)?.value === undefined ? undefined : wordView(n, model)!.value;
+}
+
+/**
+ * `value` of the view of the word that holds `n` in the state `st` of the walk (`wordViewIn`), for a reader that needs
+ * only that. A word with no value in its meaning has none; the value of one that has rests on the options of the state
+ * alone (no part of the word has a value there, but a substitution that prints nothing where its name runs the
+ * builtin), so it is worked out once per word and options (`optionsOf`).
+ */
+export function valueIn(n: SyntaxNode, st: ShellState, source: WalkSource): string | undefined {
+  const w = meaningIn(n, st, source.shell());
+  if (w?.value === undefined) return undefined;
+  // (A substitution that prints nothing, `$(:)`, does so where its name runs the builtin, which the state says: read each time.)
+  if (w.steps.some((s) => s.kind === 'command' && s.applies !== false)) return viewOf(w, source, (v) => wordViewIn(v, st, source)!).value;
+  let byOptions = values.get(w.nodes[0]);
+  if (!byOptions) values.set(w.nodes[0], (byOptions = new WeakMap()));
+  const key = optionsOf(st, source.shell());
+  let kept = byOptions.get(key);
+  if (!kept) byOptions.set(key, (kept = { value: viewOf(w, source, (v) => wordViewIn(v, st, source)!).value }));
+  return kept.value;
+}
+
+const values = new WeakMap<SyntaxNode, WeakMap<WordOptions, { value: string | undefined }>>();
+
+/** `value` of the view of the word that holds `n` before or without a model (`wordViewAsWritten`): what bash gives a word whose value is known as written, never a command substitution's (`$(:)echo` has none). */
+export const valueAsWritten = (n: SyntaxNode, shell?: Shell): string | undefined => valueIn(n, EMPTY, asWritten(shell));
 
 /**
  * The view of the word `w`, read with `source`; `again`, the view of another word in the same way (the value of an
@@ -140,8 +173,9 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   if (w.ifs.kind === 'unknown' && split.applies !== false) unknown.add('ifs');
   if (w.steps.some((s) => s.applies === 'unknown' && s.why)) unknown.add('option');
   const globs: Applies = words.some((x) => x.globs === true) ? true : typeof got === 'string' || words.some((x) => x.globs === 'unknown') ? 'unknown' : false;
-  const plain = w.value !== undefined && words.length === 1 && globs === false && w.steps.every((s) => s.kind === 'quote-removal' || s.applies === false)
-    && !!words[0].chars && !words[0].chars.some((c) => c.hole || c.pattern);
+  // (A word with a value has no step but quote removal, or the substitutions that print nothing, `$(:)`, which leave a
+  // hole where the name may not run the builtin, and give no field alone, unquoted.)
+  const plain = w.value !== undefined && words.length === 1 && globs === false && !!words[0].chars && !words[0].chars.some((c) => c.hole || c.pattern) && words[0].fields?.length !== 0;
   const unmatched = plain ? w.value : unmatchedText(w, words);
   // (The walk's view knows no error of the word: a redirection's target is one field there, or not known.)
   const each = words.length && words.every((x) => x.fields) ? words.flatMap((x) => x.fields!) : undefined;

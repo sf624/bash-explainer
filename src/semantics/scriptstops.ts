@@ -1,7 +1,6 @@
 import { builtinIn, builtinRow, featureIn, type ScriptEvidence, type Shell } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { outputsOf } from '../idioms';
-import { staticWordValue } from '../staticword';
 import { ancestor, descendants, field, fields, type SyntaxNode, type SyntaxTree } from '../syntax/tree';
 import { shellFromName } from '../dialect';
 import { commandName } from './effects';
@@ -9,6 +8,7 @@ import { processOf, subshellReasons } from './env';
 import type { NestedScript } from './nested';
 import { shellState, type StateModel } from './state';
 import { conditionOf, statusModel } from './status';
+import { valueAsWritten } from './wordview';
 import { parser } from './walk/shared';
 
 // What may keep a shell from getting to a line, or from reading it as it is written: the one table of the problems that say
@@ -170,7 +170,7 @@ function handsOver(c: SyntaxNode, words: Words): boolean {
  */
 function stopOf(c: SyntaxNode, lastError: number, shell: Shell | undefined): Stop | undefined {
   const name = commandName(c);
-  const words = fields(c, 'argument').map((a) => staticWordValue(a));
+  const words = fields(c, 'argument').map((a) => valueAsWritten(a));
   const stop = name === undefined ? 'may' : namedStop(name, words, c, shell);
   if (stop !== 'sure') return stop;
   return !inSubshell(c) && (atTop(c) || c.endIndex <= lastError || handsOver(c, words)) ? 'sure' : 'may';

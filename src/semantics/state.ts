@@ -31,12 +31,13 @@ import { NESTED_DEPTH, type NestedScript, type NotRead, scriptSourceIndex, scrip
 import type { ShellState, Tri } from './shellstate';
 import { childOpening, HARMLESS_START, type Opening, openingBlinds } from './opening';
 import { BLIND, type HostCommands, NO_HOST, scriptTrust, type StringTrees, type Trust, withinTrust } from './trust';
-import { type MappedText, staticWordValue } from '../staticword';
+import type { MappedText } from '../staticword';
 import { parser, WalkAgain } from './walk/shared';
 import { type HostCall, type HostRun, hostRunKey } from './walk/host';
 import { Walker } from './walk/walker';
 import { childStart, restrictedStart } from './walk/child';
 import type { TrapSet } from './walk/traps';
+import { valueAsWritten } from './wordview';
 import { stackFull } from '../failures';
 import { isBash } from '../shellfeatures';
 
@@ -385,10 +386,10 @@ function childModel(script: NestedScript): StateModel {
   for (const c of cmd.namedChildren) {
     if (c.type === 'variable_assignment') {
       const value = field(c, 'value');
-      values.set(field(c, 'name')!.text, value ? staticWordValue(value, false, script.outer.shell) : '');
+      values.set(field(c, 'name')!.text, value ? valueAsWritten(value, script.outer.shell) : '');
       continue;
     }
-    const m = c.startIndex < first.startIndex ? /^([A-Za-z_]\w*)=(.*)$/s.exec(staticWordValue(c, false, script.outer.shell) ?? '') : null;
+    const m = c.startIndex < first.startIndex ? /^([A-Za-z_]\w*)=(.*)$/s.exec(valueAsWritten(c, script.outer.shell) ?? '') : null;
     if (m) values.set(m[1], m[2]);
   }
   const start = (w: Walker): ShellState => {

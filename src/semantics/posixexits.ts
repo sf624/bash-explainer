@@ -18,9 +18,9 @@ import { earlier, POSIX_EXITS_SINCE, POSIX_FUNCTION_NAMES_SINCE, type BashVersio
 import type { Shell } from '../dialect';
 import { builtins, shellOptions } from '../dict/builtins';
 import { givenOptions } from '../argv/query';
-import { staticWordValue } from '../staticword';
 import { field, prefixAssignments, type SyntaxNode } from '../syntax/tree';
 import { attribute, type ShellState } from './shellstate';
+import { valueAsWritten } from './wordview';
 
 export type PosixExitWhy = 'special-function-name' | 'function-name' | 'invalid-option' | 'option-value' | 'option-name' | 'no-file'
   | 'trap-word' | 'identifier' | 'readonly' | 'numeric' | 'readonly-assignment';
@@ -58,12 +58,12 @@ const NUMBER = /^\s*[-+]?\d+\s*$/;
  * bash 5.3. `unknown` where a word not known decides it; undefined where `exit` exits as usual.
  */
 export function exitRefusal(args: readonly SyntaxNode[], version: BashVersion): { why: 'numeric' | 'too-many'; at: SyntaxNode; word: string; status: number; exits: boolean } | 'unknown' | undefined {
-  const words = args.length && staticWordValue(args[0]) === '--' ? args.slice(1) : args;
+  const words = args.length && valueAsWritten(args[0]) === '--' ? args.slice(1) : args;
   if (!words.length) return undefined;
-  const first = staticWordValue(words[0]);
+  const first = valueAsWritten(words[0]);
   if (first !== undefined && !NUMBER.test(first)) return { why: 'numeric', at: words[0], word: first, status: 2, exits: version === '5.2' };
   if (words.length < 2) return undefined;
-  return first === undefined ? 'unknown' : { why: 'too-many', at: words[1], word: staticWordValue(words[1]) ?? words[1].text, status: version === '5.2' ? 1 : 2, exits: false };
+  return first === undefined ? 'unknown' : { why: 'too-many', at: words[1], word: valueAsWritten(words[1]) ?? words[1].text, status: version === '5.2' ? 1 : 2, exits: false };
 }
 
 /** What bash `version` does in POSIX mode with the function definition `def`: exits, or nothing (undefined). */
@@ -102,7 +102,7 @@ export function builtinExit(n: SyntaxNode, name: string, args: readonly SyntaxNo
   const operands = parse.roles.filter((r) => r.role.role === 'operand').map((r) => args[r.word]);
   // (`set -oposix`: letters after `o` in its word, which bash reads erratically: it goes on there, or exits with status
   // 1, after listing the options. Nothing is said.)
-  if (name === 'set' && args.some((a) => /^[-+][^-+]*o./.test(staticWordValue(a) ?? ''))) return undefined;
+  if (name === 'set' && args.some((a) => /^[-+][^-+]*o./.test(valueAsWritten(a) ?? ''))) return undefined;
   if (GETOPT.has(name)) {
     for (const { word, role } of options) {
       const since = role.role === 'option' ? role.spec.since : undefined;
@@ -112,12 +112,12 @@ export function builtinExit(n: SyntaxNode, name: string, args: readonly SyntaxNo
     }
     // (`set -o NAME`, `set +o NAME`: the names of `shellOptions`.)
     for (const { word, role } of parse.roles) {
-      const value = role.role === 'value' && role.spec?.values === shellOptions ? staticWordValue(args[word]) : undefined;
+      const value = role.role === 'value' && role.spec?.values === shellOptions ? valueAsWritten(args[word]) : undefined;
       if (value !== undefined && !Object.hasOwn(shellOptions, value)) return make('option-name', args[word], value);
     }
     if ((name === '.' || name === 'source') && !operands.length) return make('no-file', field(n, 'name')!, name);
     // (In POSIX mode, `trap WORD` alone resets nothing: a usage error unless WORD is a number.)
-    const lone = name === 'trap' && operands.length === 1 && parse.roles.filter((r) => r.role.role !== 'end-of-options').length === 1 ? staticWordValue(operands[0]) : undefined;
+    const lone = name === 'trap' && operands.length === 1 && parse.roles.filter((r) => r.role.role !== 'end-of-options').length === 1 ? valueAsWritten(operands[0]) : undefined;
     if (lone !== undefined && !/^\d+$/.test(lone)) return make('trap-word', operands[0], lone);
   }
   if (name === 'export' || name === 'readonly' || name === 'unset') {
@@ -125,7 +125,7 @@ export function builtinExit(n: SyntaxNode, name: string, args: readonly SyntaxNo
     // name is no variable's.)
     if (flags.has('-f') || (name === 'unset' && flags.has('-n'))) return undefined;
     for (const a of operands) {
-      const text = staticWordValue(a);
+      const text = valueAsWritten(a);
       const nm = text === undefined ? undefined : /^[^=]*?(?=\+?=|$)/.exec(text)![0];
       if (nm === undefined || nm.includes('[')) continue;
       if (!validName(nm)) {
@@ -134,7 +134,7 @@ export function builtinExit(n: SyntaxNode, name: string, args: readonly SyntaxNo
     }
   }
   if (name === 'shift' && operands.length === 1) {
-    const count = staticWordValue(operands[0]);
+    const count = valueAsWritten(operands[0]);
     if (count !== undefined && !NUMBER.test(count)) return make('numeric', operands[0], count);
   }
   // (`exit x` in bash 5.3: in POSIX mode an error of a special builtin; bash 5.2 exits anywhere, `exitRefusal`.)
