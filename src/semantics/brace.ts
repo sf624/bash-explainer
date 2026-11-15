@@ -94,10 +94,20 @@ export function braceAlternatives(nodes: readonly SyntaxNode[], part = false, ve
  * brace expansion applies, when the caller reads one reading of a step not known (`mayGiveNoField`).
  */
 export function wordAlternatives(w: WordMeaning, applies = w.steps[0].applies): BraceAlternative[] | undefined {
+  const words = alternativesOrWhy(w, applies);
+  return typeof words === 'string' ? undefined : words;
+}
+
+/**
+ * The words of `w` as `wordAlternatives` gives them, or why they are not known here: `option`, braces apply on some
+ * paths only; `too-many`, more than are listed; `misread`, a word bash reads otherwise than its parts say (`rejoined`).
+ */
+export function alternativesOrWhy(w: WordMeaning, applies = w.steps[0].applies): BraceAlternative[] | 'option' | 'too-many' | 'misread' {
   if (applies === false) return [[...w.nodes]];
+  if (applies === 'unknown') return 'option';
   // (A word whose brace step applies has a brace expression; null: too many words to list.)
-  const words = applies === 'unknown' ? undefined : braceAlternatives(w.nodes, false, w.version) ?? undefined;
-  return words?.some(rejoined) ? undefined : words;
+  const words = braceAlternatives(w.nodes, false, w.version);
+  return words === null ? 'too-many' : words?.some(rejoined) === false ? words : 'misread';
 }
 
 /**

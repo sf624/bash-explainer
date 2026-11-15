@@ -6,8 +6,11 @@ import { wordView, type WordView, wordViewAsWritten, wordViewIn } from '../src/s
 import { EMPTY } from '../src/semantics/shellstate';
 import type { WordEnv } from '../src/semantics/words';
 import type { Shell } from '../src/shellfeatures';
+import { declaredWord } from '../src/semantics/wordcontexts';
+import { wordMeaning } from '../src/semantics/words';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, field, fields, type SyntaxNode } from '../src/syntax/tree';
+import { corpus } from './support/corpus';
 
 const parser = createUnbashParser();
 
@@ -27,8 +30,19 @@ function view(text: string, i = 0, opts: { shell?: Shell; env?: WordEnv } = {}):
 /** The view of the `i`th word of the last `show` of `text`, as written. */
 const written = (text: string, i = 0): WordView => wordViewAsWritten(wordsOf(text).words[i], 'bash')!;
 
+/** The view of the word written `word` in `text` (the first, top of its word), in the finished model; `as written`, before any. */
+function viewAt(text: string, word: string, how: 'model' | 'as written' = 'model'): WordView {
+  const tree = parser.parse(text);
+  const model = shellState(tree, 'bash');
+  const all: SyntaxNode[] = [];
+  const walk = (n: SyntaxNode): void => { all.push(n); n.children.forEach(walk); };
+  walk(tree.root);
+  const n = all.find((x) => x.named && x.text === word && wordMeaning(x, model)?.nodes[0] === x)!;
+  return how === 'model' ? wordView(n, model)! : wordViewAsWritten(n, 'bash')!;
+}
+
 /** What a view says, in short: the chars with `<>` for a hole, `[c]` for a pattern character (`[c?]` where it may be). */
-function brief(v: WordView): object {
+function brief(v: WordView): { words: unknown } & Record<string, unknown> {
   const chars = (x: WordView['words'][number]): string | undefined => x.chars?.map((c) => (c.hole ? '<>' : c.pattern ? `[${c.c}${c.pattern === 'unknown' ? '?' : ''}]` : c.c)).join('');
   return {
     ...(v.value !== undefined ? { value: v.value } : {}), plain: v.plain, count: v.count, ...(v.start !== undefined ? { start: v.start, end: v.end } : {}),
@@ -42,8 +56,29 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(brief(view('show ""')), { value: '', plain: true, count: { min: 1, max: 1 }, start: '', end: '', globs: false, unknown: [], words: [['""', '', ['']]] });
   });
 
-  it('a pattern bash leaves as written (`set -f`, an assignment) is plain', () => {
-    assert.deepStrictEqual(brief(view('set -f; show ./x*')), { value: './x*', plain: true, count: { min: 1, max: 1 }, start: './x*', end: './x*', globs: false, unknown: [], words: [['./x*', './x*', ['./x*']]] });
+  it('a pattern bash leaves as written (`set -f`) has the value `WordMeaning.value` gives: none yet (word-source step 3b)', () => {
+    assert.deepStrictEqual(brief(view('set -f; show ./x*')), { plain: false, count: { min: 1, max: 1 }, start: './x*', end: './x*', globs: false, unknown: [], words: [['./x*', './x*', ['./x*']]] });
+  });
+
+  it('where the context matches the word as a pattern or a regex, its wildcards are patterns, and it is not plain', () => {
+    assert.deepStrictEqual(brief(viewAt('case $y in *.txt) ;; esac', '*.txt')), { plain: false, count: { min: 1, max: 1 }, start: '*.txt', end: '*.txt', globs: false, unknown: [], words: [['*.txt', '[*].txt', ['*.txt']]] });
+    assert.deepStrictEqual(brief(viewAt('case $y in a"*"\\?) ;; esac', 'a"*"\\?')), { value: 'a*?', plain: true, count: { min: 1, max: 1 }, start: 'a*?', end: 'a*?', globs: false, unknown: [], words: [['a"*"\\?', 'a*?', ['a*?']]] });
+    // (An unquoted backslash of a value escapes the character after it: `\*` matches a `*`.)
+    assert.deepStrictEqual(brief(viewAt("x='\\*'; case $y in $x) ;; esac", '$x')).words, [['$x', '\\*', ['\\*']]]);
+    assert.deepStrictEqual(brief(viewAt('[[ $f == @(a|b)"]" ]]', '@(a|b)"]"')).words, [['@(a|b)"]"', '@[(]a[|]b[)]]', ['@(a|b)]']]]);
+    assert.deepStrictEqual(brief(viewAt('echo ${x%.*}', '.*')).words, [['.*', '.[*]', ['.*']]]);
+    assert.deepStrictEqual(brief(viewAt('[[ $x =~ ^[0-9]+"."$ ]]', '^[0-9]+"."$')).words, [['^[0-9]+"."$', '[^][[]0-9[]][+].[$]', ['^[0-9]+.$']]]);
+    assert.strictEqual(viewAt('[[ $x =~ abc ]]', 'abc').value, 'abc');
+  });
+
+  it('an assignment given to a declaration builtin: its name and `=`, then the view of its value', () => {
+    assert.deepStrictEqual(brief(viewAt('export FOO=bar', 'FOO=bar')), { value: 'FOO=bar', plain: true, count: { min: 1, max: 1 }, start: 'FOO=bar', end: 'FOO=bar', globs: false, unknown: [], words: [['FOO=bar', 'FOO=bar', ['FOO=bar']]] });
+    assert.deepStrictEqual(brief(viewAt('x="a b"; export y="$x"', 'y="$x"')), { plain: false, count: { min: 1, max: 1 }, start: 'y=a b', end: 'y=a b', globs: false, unknown: [], words: [['y="$x"', 'y=a b', ['y=a b']]] });
+    assert.deepStrictEqual(brief(viewAt('export w=', 'w=')), { value: 'w=', plain: true, count: { min: 1, max: 1 }, start: 'w=', end: 'w=', globs: false, unknown: [], words: [['w=', 'w=', ['w=']]] });
+    assert.deepStrictEqual(brief(viewAt('export z="$x"', 'z="$x"', 'as written')), { plain: false, count: { min: 0 }, globs: false, unknown: ['value'], words: [['z="$x"', 'z=<>', null]] });
+    assert.deepStrictEqual(brief(viewAt('export FOO=bar', 'FOO=bar', 'as written')), { value: 'FOO=bar', plain: true, count: { min: 1, max: 1 }, start: 'FOO=bar', end: 'bar', globs: false, unknown: [], words: [['FOO=bar', 'FOO=bar', ['FOO=bar']]] });
+    // (One the builtin reads itself, an array, or a subscript of the name.)
+    assert.deepStrictEqual(brief(viewAt('declare -a b=(1 2)', 'b=(1 2)')), { plain: false, count: { min: 0 }, globs: 'unknown', unknown: ['misread'], words: [] });
   });
 
   it('a pattern: its fields with the files of the environment, else what the field domain says', () => {
@@ -83,7 +118,11 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(view('IFS=$1; x=a; show $x').unknown, ['ifs']);
     // (How bash quotes the `*` here rests on the IFS: the characters are as written.)
     const ifs = view('IFS=$1; x=a; show $x*');
-    assert.deepStrictEqual([ifs.words[0].asWritten, ifs.globs, ifs.unknown], [true, 'unknown', ['ifs']]);
+    assert.deepStrictEqual([ifs.words[0].asWritten, ifs.globs, ifs.unknown], ['ifs', 'unknown', ['ifs']]);
+    // (A shell that may be bash: its quoting of IFS characters is not known.)
+    assert.deepStrictEqual(view('IFS="*"; x=a; show $x*', 0, { shell: 'sh' }).words[0].asWritten, 'misread');
+    // (A value the IFS may unquote: not plain, though `WordMeaning.value` has it.)
+    assert.deepStrictEqual([view('IFS=$1; show "*"a').plain, view('IFS=$1; show "*"a').meaning.value], [false, '*a']);
     // (On POSIX mode, which may be on.)
     assert.deepStrictEqual(view('IFS="*"; [ $1 ] && set -o posix; show > $x*').unknown, ['value', 'option']);
     assert.deepStrictEqual(brief(view('[ $1 ] && set +B; show {a,b}')), { plain: false, count: { min: 1, max: 2 }, start: '', end: '', globs: 'unknown', unknown: ['option'], words: [] });
@@ -109,6 +148,42 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(brief(written('x=1; set -f; show $x *.txt', 1)), { plain: false, count: { min: 0 }, globs: true, unknown: [], words: [['*.txt', '[*].txt', null]] });
     assert.deepStrictEqual(written('show a$((1+2))').value, undefined);
     assert.deepStrictEqual(brief(written('show a$((1+2))')), { plain: false, count: { min: 1, max: 1 }, start: 'a3', end: 'a3', globs: false, unknown: [], words: [['a$((1+2))', 'a3', ['a3']]] });
+  });
+
+  it('its value is `WordMeaning.value`, over the corpus: the same, or none where the view is not plain, for a reason listed', () => {
+    // (The node types of the top of a word; a test may name them: the guard reads src/ only.)
+    const TOPS = new Set(['word', 'number', 'string', 'raw_string', 'ansi_c_string', 'translated_string', 'concatenation', 'simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion', 'process_substitution', 'brace_expression', 'variable_assignment', 'heredoc_body', 'regex', 'extglob_pattern', 'variable_name']);
+    /** Where `WordMeaning.value` has a value and the view has none, on purpose: the snippet, the word, and why. */
+    const KNOWN: Record<string, string> = {
+      '[[ a == ]] ]]': 'a syntax error in bash ("unexpected argument `]]`"): the parser takes the closing `]]` for a pattern, whose unquoted `]` the view, as `plainPattern`, takes for a wildcard',
+    };
+    let words = 0;
+    const wrong: string[] = [];
+    const seen = new Set<string>();
+    for (const { text } of corpus().snippets) {
+      const tree = parser.parse(text);
+      const model = shellState(tree, 'bash');
+      const all: SyntaxNode[] = [];
+      const walk = (n: SyntaxNode): void => { all.push(n); n.children.forEach(walk); };
+      walk(tree.root);
+      for (const n of all) {
+        const w = n.named && TOPS.has(n.type) ? wordMeaning(n, model) : undefined;
+        if (w?.nodes[0] !== n) continue;
+        words++;
+        const v = wordView(n, model)!;
+        const d = declaredWord(w, w.steps[0].applies);
+        // (An assignment given to a declaration builtin: its head before the value of its value's word.)
+        const value = d && d !== 'unread' ? (d.value ? ((x) => x === undefined ? undefined : d.head + x)(wordMeaning(d.value, model)!.value) : d.head) : w.value;
+        if (v.value !== undefined && v.value !== value) wrong.push(`${JSON.stringify(text)} ${n.text}: view ${JSON.stringify(v.value)}, meaning ${JSON.stringify(value)}`);
+        if (value !== undefined && v.value === undefined) {
+          const key = `${text} ${n.text}`;
+          seen.add(key);
+          if (!KNOWN[key]) wrong.push(`${JSON.stringify(text)} ${n.text}: meaning ${JSON.stringify(value)}, view none (${v.unknown.join(', ')})`);
+        }
+      }
+    }
+    assert.deepStrictEqual({ wrong, stale: Object.keys(KNOWN).filter((k) => !seen.has(k)) }, { wrong: [], stale: [] });
+    assert.ok(words > 7000, `${words} words`);
   });
 
   it('outside a word: none', () => {

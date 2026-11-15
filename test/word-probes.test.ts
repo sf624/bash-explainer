@@ -17,7 +17,7 @@ import { descendants, field, fields } from '../src/syntax/tree';
 import { shellState } from '../src/semantics/state';
 import { unboundRead } from '../src/semantics/unbound';
 import { wordFields, type WordEnv } from '../src/semantics/words';
-import { wordView } from '../src/semantics/wordview';
+import { wordView, type WordView } from '../src/semantics/wordview';
 import type { StateModel } from '../src/semantics/state';
 import type { SyntaxNode } from '../src/syntax/tree';
 import { alignRuns, BOX, FILES, instrument, PROBE_ENV, readProbeTable } from './support/probe';
@@ -83,6 +83,8 @@ describe('the word model against bash (probes/words.json)', () => {
           if (!target.startsWith('/') && !FILES.includes(target) && !created.includes(target)) found.set(`${id.text}.redirect`, `model: ${target}, bash created: ${JSON.stringify(created)}`);
         }
       }
+      const declared = declarationFindings(tree, state, row.facts);
+      if (declared) found.set('declaration.view', declared);
       const gaps = row.gaps ?? {};
       const unexplained = [...found].filter(([k]) => !(k in gaps)).map(([k, v]) => `${k}: ${v}`);
       const stale = Object.keys(gaps).filter((k) => !found.has(k));
@@ -93,27 +95,74 @@ describe('the word model against bash (probes/words.json)', () => {
 
 /**
  * What the views of the words `args` say that the fields bash gave them (`run`, one after another) contradict: their
- * counts against the number of fields; and each word whose place in the run is known (every word before it has an
- * exact count) against its fields: its start and end, its value where it is plain, and its words' fields where it
- * does not glob. Undefined when everything holds.
+ * counts against the number of fields; each word whose place in the run is known from the start (every word before it
+ * has an exact count) or from the end (every word after it has one) against its fields: its start and its end, and,
+ * where its count is exact, its value where it is plain, its words' fields, and the text of its words where it does
+ * not glob (so a pattern that matched files must glob); and a word that globs has a character marked as a pattern.
+ * Undefined when everything holds.
  */
 function viewFindings(args: readonly SyntaxNode[], model: StateModel, run: readonly string[]): string | undefined {
   const views = args.map((a) => wordView(a, model, ENV)!);
   const min = views.reduce((n, v) => n + v.count.min, 0);
   const max = views.some((v) => v.count.max === undefined) ? undefined : views.reduce((n, v) => n + v.count.max!, 0);
   if (run.length < min || (max !== undefined && run.length > max)) return `view: ${min} to ${max ?? 'any'} fields, bash: ${run.length}`;
-  let at = 0;
-  for (const [i, v] of views.entries()) {
+  const exact = (v: WordView): boolean => v.count.min === v.count.max;
+  /** What is wrong with the view of the word `i`, whose first field is the field `at` of the run, or whose last is `last`. */
+  const check = (i: number, at?: number, last?: number): string | undefined => {
+    const v = views[i];
     const said = `view of ${JSON.stringify(args[i].text)}`;
-    if (v.plain && (v.count.min !== 1 || v.count.max !== 1 || v.globs !== false)) return `${said}: plain, but ${JSON.stringify(v.count)} fields, globs ${String(v.globs)}`;
-    if (v.count.min > 0 && !(run[at].startsWith(v.start!))) return `${said}: starts with ${JSON.stringify(v.start)}, bash: ${JSON.stringify(run[at])}`;
-    if (v.count.min !== v.count.max) return undefined;
-    const own = run.slice(at, at + v.count.min);
-    if (own.length && !own[own.length - 1].endsWith(v.end!)) return `${said}: ends with ${JSON.stringify(v.end)}, bash: ${JSON.stringify(own)}`;
+    if (v.plain && (!exact(v) || v.count.min !== 1 || v.globs !== false)) return `${said}: plain, but ${JSON.stringify(v.count)} fields, globs ${String(v.globs)}`;
+    if (v.globs === true && !v.words.some((x) => x.chars?.some((c) => c.pattern === true))) return `${said}: globs, but no character is a pattern`;
+    if (at !== undefined && v.count.min > 0 && !run[at].startsWith(v.start!)) return `${said}: starts with ${JSON.stringify(v.start)}, bash: ${JSON.stringify(run[at])}`;
+    if (last !== undefined && v.count.min > 0 && !run[last].endsWith(v.end!)) return `${said}: ends with ${JSON.stringify(v.end)}, bash: ${JSON.stringify(run[last])}`;
+    if (!exact(v) || !v.count.min) return undefined;
+    const from = at ?? last! + 1 - v.count.min;
+    const own = run.slice(from, from + v.count.min);
+    if (!own[0].startsWith(v.start!) || !own[own.length - 1].endsWith(v.end!)) return `${said}: ${JSON.stringify([v.start, v.end])}, bash: ${JSON.stringify(own)}`;
     if (v.plain && own[0] !== v.value) return `${said}: ${JSON.stringify(v.value)}, bash: ${JSON.stringify(own)}`;
     const each = v.words.every((x) => x.fields) ? v.words.flatMap((x) => x.fields!) : undefined;
-    if (v.globs === false && each && JSON.stringify(each) !== JSON.stringify(own)) return `${said}: words ${JSON.stringify(each)}, bash: ${JSON.stringify(own)}`;
-    at += v.count.min;
+    if (each && JSON.stringify(each) !== JSON.stringify(own)) return `${said}: words ${JSON.stringify(each)}, bash: ${JSON.stringify(own)}`;
+    // (A word that does not glob gives the text of its words, where no character splits: a pattern bash expanded globs.)
+    const texts = v.words.every((x) => x.chars && !x.chars.some((c) => c.hole || c.split)) ? v.words.filter((x) => x.chars!.length).map((x) => x.chars!.map((c) => c.c).join('')) : undefined;
+    if (v.globs === false && texts && JSON.stringify(texts) !== JSON.stringify(own)) return `${said}: no glob, its text ${JSON.stringify(texts)}, bash: ${JSON.stringify(own)}`;
+    return undefined;
+  };
+  let at: number | undefined = 0;
+  for (let i = 0; i < views.length && at !== undefined; i++) {
+    const wrong = check(i, at);
+    if (wrong) return wrong;
+    at = exact(views[i]) ? at + views[i].count.min : undefined;
+  }
+  let last: number | undefined = run.length - 1;
+  for (let i = views.length - 1; i >= 0 && last !== undefined; i--) {
+    const wrong = check(i, undefined, last);
+    if (wrong) return wrong;
+    last = exact(views[i]) ? last - views[i].count.min : undefined;
   }
   return undefined;
 }
+
+/**
+ * What the views of the assignments given to a declaration builtin in the snippet (`export y=$x`) say that the values
+ * bash assigned contradict: where a view's one field is known (its value, or a start that is its end), it must be the
+ * name, `=` and the value the first later marker with the argument `"$y"` printed for it (a row must not assign `y`
+ * again between them).
+ */
+function declarationFindings(tree: ReturnType<ReturnType<typeof createUnbashParser>['parse']>, model: StateModel, facts: Record<string, unknown>): string | undefined {
+  const markers = descendants(tree.root, ['command']).filter((c) => field(c, 'name')?.text === '__probe');
+  for (const c of descendants(tree.root, ['command']).filter((x) => DECLARES.has(field(x, 'name')?.text ?? ''))) {
+    for (const a of fields(c, 'argument').filter((x) => x.type === 'variable_assignment')) {
+      const v = wordView(a, model, ENV)!;
+      const name = field(a, 'name')!.text;
+      const marker = markers.find((m) => m.startIndex > a.startIndex && fields(m, 'argument').some((x) => x.text === `"$${name}"`));
+      const said = v.plain ? v.value! : v.count.min === 1 && v.count.max === 1 && v.start === v.end ? v.start! : undefined;
+      if (!marker || said === undefined) continue;
+      const [id, ...args] = fields(marker, 'argument');
+      const printed = (facts[id.text] as string[][])[0][args.findIndex((x) => x.text === `"$${name}"`)];
+      if (said !== `${name}=${printed}`) return `view of ${JSON.stringify(a.text)}: ${JSON.stringify(said)}, bash assigned ${JSON.stringify(printed)}`;
+    }
+  }
+  return undefined;
+}
+
+const DECLARES = new Set(['declare', 'typeset', 'export', 'readonly', 'local']);

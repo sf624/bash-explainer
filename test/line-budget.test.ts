@@ -24,6 +24,7 @@ import { scriptTrust, type StringTrees } from '../src/semantics/trust';
 import { Walker } from '../src/semantics/walk/walker';
 import { shellState } from '../src/semantics/state';
 import { wordFields } from '../src/semantics/words';
+import { wordView, wordViewAsWritten } from '../src/semantics/wordview';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import { descendants, type SyntaxNode } from '../src/syntax/tree';
 import { main } from '../cli/main';
@@ -691,6 +692,15 @@ describe('one line must not stop the whole tool', () => {
       const script = `shopt -s expand_aliases\n${lines.join('\n')}\na16\n`;
       assert.ok(shellState(parser.parse(script), 'bash').blind);
       assert.strictEqual(shellState(parser.parse('shopt -s expand_aliases\nalias a=b\nalias c="a; a"\nc\n'), 'bash').blind, undefined);
+    });
+
+    it("a word's view reads its characters once: a pattern of 200,000 characters (docs/design/word-source.md, 3.2)", function () {
+      // (Marking the special characters of a field once looked at every character before each: a minute here.)
+      this.timeout(15000);
+      const tree = parser.parse(`show *${'.'.repeat(200000)}`);
+      const w = descendants(tree.root, ['command'])[0].namedChildren[1];
+      assert.strictEqual(wordView(w, shellState(tree, 'bash'))!.words[0].chars!.length, 200001);
+      assert.strictEqual(wordViewAsWritten(w, 'bash')!.globs, true);
     });
 
     it('the lists that grow with a script fit: a long file is read, and a line of it is explained', function () {

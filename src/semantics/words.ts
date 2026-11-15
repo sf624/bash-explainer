@@ -17,8 +17,8 @@ import { asBash, featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
-import { caseConverted, type Char, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, type Piece, sameInEveryLocale, specialAt, splitOn, substring } from './chars';
-import { bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
+import { caseConverted, type Char, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, type Piece, regexChars, sameInEveryLocale, specialChars, splitOn, substring, wildcardChars } from './chars';
+import { alternativesOrWhy, bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
 import { ARITH_ASSIGNED, attribute, modelVersion, option, type ShellState, type StateModel, type Tri } from './state';
@@ -331,10 +331,11 @@ function build(nodes: SyntaxNode[], found: WordContext, st: ShellState, shell: S
   steps.push(mk(splitStep(meaning, unquoted, someQuoted)));
   steps.push(mk(globStep(meaning, [...globWords, ...unquoted].sort((a, b) => a.startIndex - b.startIndex), someQuoted)));
   steps.push(mk({ kind: 'quote-removal', applies: shape.quotes.length > 0, parts: shape.quotes }));
-  if (!whole) return meaning;
+  // (The value also where the walk reads the word, for its view: `meaningIn`.)
   const literal = !brace && !tildes.length && !expansions.length && !globWords.length;
   const values = literal ? nodes.map((x) => staticWordValue(x, false, shell)) : [];
   if (literal && values.every((v) => v !== undefined)) meaning.value = values.join('');
+  if (!whole) return meaning;
   const failure = failureOf(meaning, expansions.some((e) => e.type === 'simple_expansion' || e.type === 'expansion'));
   if (failure) meaning.failure = failure;
   return meaning;
@@ -778,12 +779,12 @@ export function holedWords(n: SyntaxNode, model: StateModel, source: ValueSource
 /**
  * The words of the brace expansion of `w`, read with the values of `source` and `hole` for each part whose value is not
  * known there (`HoleOf`), each with its characters, its fields and whether it globs (`ViewWord`); `holeGlobs`: whether
- * a hole may hold a glob character. Undefined where the words are not known here (`{,$x}a`, too many, braces on
- * some paths only). For the view of a word (src/semantics/wordview.ts).
+ * a hole may hold a glob character. Where the words are not known here, why (`alternativesOrWhy`: braces on some
+ * paths only, too many, `{,$x}a`). For the view of a word (src/semantics/wordview.ts).
  */
-export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, holeGlobs: (h: Hole) => boolean, env?: WordEnv): ViewWord[] | undefined {
-  const alternatives = wordAlternatives(w);
-  if (!alternatives) return undefined;
+export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, holeGlobs: (h: Hole) => boolean, env?: WordEnv): ViewWord[] | 'option' | 'too-many' | 'misread' {
+  const alternatives = alternativesOrWhy(w);
+  if (typeof alternatives === 'string') return alternatives;
   const ev = new Evaluator(w, source, w.state, hole);
   const splits = w.steps.find((s) => s.kind === 'split')!.applies !== false;
   const glob = w.steps.find((s) => s.kind === 'glob')!;
@@ -795,15 +796,21 @@ export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, hol
     const g = globsField(w, f);
     const may = g === false && glob.applies !== false && f.some((c) => c.hole && holeGlobs(c.hole)) ? 'unknown' : g;
     const marked = sure || may === false ? may : 'unknown';
-    if (marked !== false) f.forEach((c, i) => { if (!c.quoted && !c.hole && specialAt(f, i)) c.pattern = marked; });
+    if (marked !== false) specialChars(f).forEach((special, i) => { if (special && !f[i].quoted && !f[i].hole) f[i].pattern = marked; });
     return marked;
+  };
+  // (Where the context matches the word as a pattern or a regex, its wildcards are marked by that rule: `case`, `[[ == ]]`, `${x#p}`, `[[ =~ ]]`.)
+  const matched = (f: Char[]): void => {
+    if (w.rule.match) (w.rule.match === 'pattern' ? wildcardChars(f) : regexChars(f)).forEach((m, i) => { if (m) f[i].pattern = true; });
   };
   return alternatives.map((nodes): ViewWord => {
     const written = nodes.map((p) => (typeof p === 'string' ? p : p.text)).join('');
     const pieces = attempt(() => piecesOf(w, nodes, ev, (quoted, part, tilde) => hole(part ?? tilde!, quoted)));
     if (!pieces) return { written, globs: 'unknown' };
     const exact = charsOf(w, pieces, splits);
-    if (!exact) return { written, chars: ownChars(pieces, splits, { context: false }), asWritten: true, globs: 'unknown' };
+    // (What `ownChars` lacks to know bash's quoting of IFS characters: the IFS, POSIX mode, or a shell that may not be bash.)
+    if (!exact) return { written, chars: ownChars(pieces, splits, { context: false }), asWritten: ifsOfWord(w) === undefined ? 'ifs' : contextAllows(w, 'split').applies === 'unknown' ? 'option' : 'misread', globs: 'unknown' };
+    matched(exact);
     const split = splitChars(w, exact, pieces);
     const each = split ? split.map((f) => fieldGlobs(f, true)) : [fieldGlobs(exact, false)];
     const globs: Applies = each.includes(true) ? true : each.every((g) => g === false) ? false : 'unknown';
@@ -825,14 +832,7 @@ export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, hol
  * whole word, before brace and pathname expansion): its text, and its fields where `split` (each with whether it has a glob character); undefined when bash fails on it or a value is not known.
  */
 export function trustedPart(part: SyntaxNode, w: WordMeaning, model: StateModel, quoted: boolean, split: boolean, values: 'trusted' | 'model' = 'trusted'): { text: string; fields: { text: string; glob: boolean }[] } | undefined {
-  let pieces: Piece[] | undefined;
-  try {
-    pieces = new Evaluator(w, new ModelValues(w, model, undefined, new Set(), values === 'trusted')).pieces(part, quoted);
-  } catch (e) {
-    /* c8 ignore next -- a rethrow guard, as in `fieldsAt`. */
-    if (!(e instanceof Failure)) throw e;
-    return undefined;
-  }
+  const pieces = attempt(() => new Evaluator(w, new ModelValues(w, model, undefined, new Set(), values === 'trusted')).pieces(part, quoted));
   if (!pieces) return undefined;
   // (Not split, as in double quotes or with an empty IFS: one text, which may still be globbed.)
   const fields = split ? splitPieces(w, pieces) : [pieces.flatMap((p) => [...p.text].map((c): Char => ({ c, quoted: p.quoted, split: false })))];
@@ -908,7 +908,7 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
   /* c8 ignore next -- a guard: the walk reads only words of a command, of `[[ ]]` and of `case` */
   if (!seen) return undefined;
   const w = ifs ? seen.meaning : (seen.noIfs ??= { ...seen.meaning, ifs: { kind: 'unknown', at: seen.meaning.nodes[0] } });
-  try {
+  return attempt(() => {
     const split = splitFields(w, new Evaluator(w, source, st));
     if (!split) return undefined;
     if (as !== 'fields') {
@@ -923,11 +923,7 @@ export function wordIn(n: SyntaxNode, st: ShellState, source: WalkSource, as: 'f
       pushAll(fields, g);
     }
     return fields;
-  } catch (e) {
-    /* c8 ignore next -- a rethrow guard, as in fieldsAt */
-    if (!(e instanceof Failure)) throw e;
-    return undefined;
-  }
+  });
 }
 
 /**

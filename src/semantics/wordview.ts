@@ -4,11 +4,11 @@
 // reads it (`viewWords`, `wordFields`) and the field domain (`wordShapes`, src/semantics/fieldshape.ts), and decides
 // nothing of its own. test/word-probes.test.ts holds it against bash.
 import type { Shell } from '../dialect';
-import { braceAlternatives } from './brace';
 import { globby, holeOf, knownValues, misread, readsAsBash, type Shape, wordShapes, type WordShapes } from './fieldshape';
 import type { SyntaxNode } from '../syntax/tree';
 import { EMPTY, type ShellState } from './shellstate';
 import type { StateModel } from './state';
+import { declaredWord } from './wordcontexts';
 import { type Applies, type Char, type Fields, type HoleOf, meaningIn, modelValues, type ValueSource, viewWords, type WalkSource, type WordEnv, wordFields, wordMeaning, type WordMeaning } from './words';
 
 /** A word of the brace expansion of a word, as its view reads it (src/semantics/wordview.ts, `viewWords`). */
@@ -16,13 +16,14 @@ export interface ViewWord {
   /** As written, with the braces gone (`a{b,c}` gives `ab` and `ac`). */
   written: string;
   /**
-   * Its characters before word splitting, a hole for each part whose value is not known (`Char.hole`), and the glob
-   * characters of a field that pathname expansion takes as a pattern marked (`Char.pattern`); undefined where bash
-   * fails on the word (`${x:?}` with `x` unset) or its text is not known.
+   * Its characters before word splitting, a hole for each part whose value is not known (`Char.hole`), and the special
+   * characters of a field that is a pattern marked (`Char.pattern`): one pathname expansion takes as a pattern, or one
+   * the context matches as a pattern or a regex (`case`, `[[ == ]]`, `${x#p}`, `[[ =~ ]]`); undefined where bash fails
+   * on the word (`${x:?}` with `x` unset) or its text is not known.
    */
   chars?: Char[];
-  /** The characters are as written: how bash quotes the characters of IFS in it is not known (`ownChars`; the IFS, POSIX mode or the shell). */
-  asWritten?: true;
+  /** The characters are as written, since how bash quotes the characters of IFS in it is not known (`ownChars`), and why: the IFS, POSIX mode (`option`), or a shell that may not be bash (`misread`). */
+  asWritten?: 'ifs' | 'option' | 'misread';
   /** Its fields after every step, where they are known (a pattern: with the files of the environment, `WordEnv.files`). */
   fields?: string[];
   /** Some field of it is a pattern that pathname expansion expands here (a hole for which `holeGlobs` holds: may be). */
@@ -32,17 +33,21 @@ export interface ViewWord {
 /**
  * What is not known of a word here: `value`, a part's value (a hole, `Char.hole`); `ifs`, the IFS where it splits;
  * `option`, an option that a step rests on (`set -f`, braceexpand, POSIX mode, on some paths only); `misread`, a word
- * the word model reads otherwise than bash or than the script's shell (`misread`, `readsAsBash`; `{,$x}a`); `too-many`,
- * more words of its brace expansion than are listed.
+ * the word model reads otherwise than bash or than the script's shell (`misread`, `readsAsBash`; `{,$x}a`; an array or
+ * a subscript given to a declaration builtin, which it reads itself); `too-many`, more words of its brace expansion
+ * than are listed.
  */
 export type Unknown = 'value' | 'ifs' | 'option' | 'misread' | 'too-many';
 
 export interface WordView {
   /** Its context, steps, tildes, IFS and glob options (words.ts). */
   meaning: WordMeaning;
-  /** Its one field where it is `plain`. */
+  /** Its one field where it is `plain`: `WordMeaning.value`, the one source of a word's literal value. */
   value?: string;
-  /** Its value is known, and no step but quote removal changes the text: no brace, tilde, expansion, splitting or pattern. */
+  /**
+   * Its value is known (`WordMeaning.value`), and no step but quote removal changes the text: no brace, tilde,
+   * expansion, splitting or pathname expansion, and no character the context matches as a pattern or a regex.
+   */
   plain: boolean;
   /** One per word of its brace expansion (one where braces do not apply); none where they are not known (`unknown`). */
   words: ViewWord[];
@@ -51,7 +56,7 @@ export interface WordView {
   /** The text its first field surely starts with, and its last ends with, where it gives one (`count.min` at least 1). */
   start?: string;
   end?: string;
-  /** Some field is a pattern that pathname expansion expands here. */
+  /** Some field is a pattern that pathname expansion expands here (a pattern a context matches is `Char.pattern` with `meaning.rule.match`). */
   globs: Applies;
   /** The fields it may give, from the field domain, where they are not known exactly and the domain can say (`wordView` only). */
   shapes?: WordShapes;
@@ -64,13 +69,13 @@ export function wordView(n: SyntaxNode, model: StateModel, env?: WordEnv): WordV
   if (!w) return undefined;
   const known = wordFields(n, model, env);
   const source = modelValues(w, model, env);
-  return viewOf(w, source, env, known, known.fields || known.error ? undefined : wordShapes(n, model, knownValues(w, source)));
+  return viewOf(w, source, (v) => wordView(v, model, env)!, env, known, () => (known.fields || known.error ? undefined : wordShapes(n, model, knownValues(w, source))));
 }
 
 /** The view of the word that holds `n` in the state `st` of the walk, with its values (`source`); its count is known only where its fields are. */
 export function wordViewIn(n: SyntaxNode, st: ShellState, source: WalkSource): WordView | undefined {
   const w = meaningIn(n, st, source.shell());
-  return w && viewOf(w, source);
+  return w && viewOf(w, source, (v) => wordViewIn(v, st, source)!);
 }
 
 /**
@@ -82,25 +87,55 @@ export function wordViewAsWritten(n: SyntaxNode, shell?: Shell): WordView | unde
   return wordViewIn(n, EMPTY, { variable: () => undefined, tilde: () => undefined, builtinRuns: () => false, shell: () => shell });
 }
 
-function viewOf(w: WordMeaning, source: ValueSource, env?: WordEnv, known?: Fields, shapes?: WordShapes): WordView {
+/**
+ * The view of the word `w`, read with `source`; `again`, the view of another word in the same way (the value of an
+ * assignment given to a declaration builtin); `known`, its fields (`wordFields`), and `shapes`, the field domain, for
+ * the finished model.
+ */
+function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => WordView, env?: WordEnv, known?: Fields, shapes?: () => WordShapes | undefined): WordView {
+  // (An assignment given to a declaration builtin, `export A=$x`: its head as written, then the view of its value, as `wordFields` reads it.)
+  const declared = declaredWord(w, w.steps[0].applies);
+  if (declared === 'unread') return { meaning: w, plain: false, words: [], count: { min: 0 }, globs: 'unknown', unknown: ['misread'] };
+  if (declared) return declarationView(w, declared.head, declared.value && again(declared.value), known);
   const unknown = new Set<Unknown>();
   if (misread(w) || !readsAsBash(w)) unknown.add('misread');
   const hole: HoleOf = (part, quoted) => [{ text: '', quoted, expanded: !quoted, hole: holeOf(part, quoted, w) }];
   const got = viewWords(w, source, hole, globby, env);
-  if (!got) unknown.add(w.steps[0].applies === 'unknown' ? 'option' : braceAlternatives(w.nodes, false, w.version) === null ? 'too-many' : 'misread');
-  const words = got ?? [];
-  if (words.some((x) => x.chars?.some((c) => c.hole))) unknown.add('value');
+  if (typeof got === 'string') unknown.add(got);
+  const words = typeof got === 'string' ? [] : got;
+  for (const x of words) {
+    if (x.chars?.some((c) => c.hole)) unknown.add('value');
+    if (x.asWritten) unknown.add(x.asWritten);
+  }
   const split = w.steps.find((s) => s.kind === 'split')!;
   if (w.ifs.kind === 'unknown' && split.applies !== false) unknown.add('ifs');
-  if (w.steps.some((s) => s.applies === 'unknown' && s.why) || words.some((x) => x.asWritten && w.ifs.kind !== 'unknown')) unknown.add('option');
-  const globs: Applies = words.some((x) => x.globs === true) ? true : !got || words.some((x) => x.globs === 'unknown') ? 'unknown' : false;
-  const plain = words.length === 1 && globs === false && w.steps.every((s) => s.kind === 'quote-removal' || s.applies === false)
-    && !!words[0].chars && !words[0].chars.some((c) => c.hole) && words[0].fields?.length === 1;
+  if (w.steps.some((s) => s.applies === 'unknown' && s.why)) unknown.add('option');
+  const globs: Applies = words.some((x) => x.globs === true) ? true : typeof got === 'string' || words.some((x) => x.globs === 'unknown') ? 'unknown' : false;
+  const plain = w.value !== undefined && words.length === 1 && globs === false && w.steps.every((s) => s.kind === 'quote-removal' || s.applies === false)
+    && !!words[0].chars && !words[0].chars.some((c) => c.hole || c.pattern);
   // (The walk's view knows no error of the word: a redirection's target is one field there, or not known.)
-  const each = got && words.every((x) => x.fields) ? words.flatMap((x) => x.fields!) : undefined;
+  const each = words.length && words.every((x) => x.fields) ? words.flatMap((x) => x.fields!) : undefined;
   const exact = known ? (known.error ? [] : known.fields) : each && (w.rule.fields !== 'one-or-error' || each.length === 1) ? each : undefined;
-  const ends = exact ? { count: { min: exact.length, max: exact.length }, ...(exact.length ? { start: exact[0], end: exact[exact.length - 1] } : {}) } : shapes ? fromShapes(shapes) : { count: { min: 0 } };
-  return { meaning: w, ...(plain ? { value: words[0].fields![0] } : {}), plain, words, ...ends, globs, ...(shapes ? { shapes } : {}), unknown: [...unknown] };
+  const domain = exact ? undefined : shapes?.();
+  const ends = exact ? exactEnds(exact) : domain ? fromShapes(domain) : { count: { min: 0 } };
+  return { meaning: w, ...(plain ? { value: w.value } : {}), plain, words, ...ends, globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
+}
+
+/** The count, the start and the end of fields known exactly. */
+const exactEnds = (fields: readonly string[]): Pick<WordView, 'count' | 'start' | 'end'> => ({ count: { min: fields.length, max: fields.length }, ...(fields.length ? { start: fields[0], end: fields[fields.length - 1] } : {}) });
+
+/**
+ * The view of an assignment given to a declaration builtin (`declaredWord`): `head`, its name and `=` as written, before
+ * each field of the view of its value (`inner`; none for `x=`, which gives `head` alone). It is plain where its value
+ * is, and its value is the head before the value's (`WordMeaning.value` of the value's word, the one source).
+ */
+function declarationView(w: WordMeaning, head: string, inner: WordView | undefined, known?: Fields): WordView {
+  const headChars = (): Char[] => [...head].map((c) => ({ c, quoted: false, split: false }));
+  if (!inner) return { meaning: w, value: head, plain: true, words: [{ written: head, chars: headChars(), fields: [head], globs: false }], ...exactEnds([head]), globs: false, unknown: [] };
+  const words = inner.words.map((x) => ({ ...x, written: head + x.written, ...(x.chars ? { chars: [...headChars(), ...x.chars] } : {}), ...(x.fields ? { fields: x.fields.map((f) => head + f) } : {}) }));
+  const exact = known ? (known.error ? [] : known.fields) : undefined;
+  const ends = exact ? exactEnds(exact) : { count: inner.count, ...(inner.start !== undefined ? { start: head + inner.start, end: inner.end } : {}) };
+  return { meaning: w, ...(inner.plain ? { value: head + inner.value } : {}), plain: inner.plain, words, ...ends, globs: inner.globs, ...(inner.shapes ? { shapes: inner.shapes } : {}), unknown: inner.unknown };
 }
 
 /** The count, the start and the end that hold in every case of the field domain. */

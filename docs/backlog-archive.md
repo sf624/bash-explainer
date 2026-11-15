@@ -1351,3 +1351,10 @@ Rare corner, dropped (YAGNI). Kind: `bug`. Each says in the sentence what its ro
 - **`gawk -e` keeps the general sentence.** `gawk -e 'NR>1' f`: an option the spec does not know gives no reading (#844), and the awk spec, shared by awk, gawk, mawk and nawk, has no `-e` (gawk's `--source`), so the sentence says "Runs `gawk` (pattern-scanning language …) using `-e`" and not that it prints the lines after the first. Not wrong; the reading is lost.
 - **`-exec … \;` in a branch of `-o`.** `find . -name a -exec echo E {} \; -o -print`: the sentence says "if name matches a, run "echo E {}" for each, or print it"; the `-exec` is a test there, and where the command fails find prints `a` too (GNU find, with a command that fails: `./a` is printed).
 - **A semicolon list in parentheses.** `find . -perm /222` says in English "permissions have at least one of the bits of 222 (owner write; group write; others write)": the bits named by `permBits` are joined with `; ` inside the parentheses.
+
+## The view of a word (found building and reviewing #846, 2026-11-15)
+
+Rare corner, dropped (YAGNI). Kind: `bug`. Both predate #846; no explanation shows either today.
+
+- **`WordMeaning.value` of a word whose quoted glob character IFS unquotes.** `IFS='?a'; echo "?"a`: `WordMeaning.value` says `?a`; bash unquotes the `?` (it is in IFS, and so is the word's own `a`) and globs it: next to a file `xa`, bash 5.2.21 prints `xa`. The view says the word globs, and gives no value.
+- **`$"hi"`: a hole in the view, a value in `wordFields`.** `echo $"hi"`: `wordFields` gives `hi`, as bash does with no message catalog (so the view's count, start and end are `hi`); the view's characters, like `receivedWords`, read a translation as a hole (any text), and say `unknown: value`. `WordMeaning.value` has none, so neither has the view.

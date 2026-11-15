@@ -24,8 +24,9 @@ export const IFS_ERRATIC = /[\x01\x7f]/;
 /**
  * A character of a field, quoted or not, and whether word splitting may split there (from an unquoted expansion).
  * `hole`: a part whose value is not known (`c` empty), from a piece with a hole (`ownChars`). `pattern`: a character
- * that pathname expansion reads as special (`specialAt`), unquoted, in a field it takes as a pattern (`true`), or may
- * (`'unknown'`), with the glob options in effect (the view of a word, src/semantics/wordview.ts, marks it).
+ * that is special, unquoted, in a field that is a pattern (`true`) or may be (`'unknown'`): where pathname expansion takes
+ * it as one (`specialChars`, with the glob options in effect), or where the context matches it as a pattern or a regex
+ * (`wildcardChars`, `regexChars`). `viewWords` (src/semantics/words.ts) marks it, for the view of a word.
  */
 export type Char = { c: string; quoted: boolean; split: boolean; hole?: Hole; pattern?: true | 'unknown' };
 
@@ -38,15 +39,45 @@ export type Char = { c: string; quoted: boolean; split: boolean; hole?: Hole; pa
  * has an unquoted expansion (`ownChars`).
  */
 export function patternOfChars(f: readonly Char[]): string {
+  const special = specialChars(f);
   return f.map((c, i) => {
-    if (c.quoted && specialAt(f, i)) return `\\${c.c}`;
+    if (c.quoted && special[i]) return `\\${c.c}`;
     const next = c.c === '\\' && !c.quoted ? nextChar(f, i) : -1;
-    return next >= 0 && f[next].quoted && !specialAt(f, next) ? '\\\\' : c.c;
+    return next >= 0 && f[next].quoted && !special[next] ? '\\\\' : c.c;
   }).join('');
 }
 
-/** Whether the character `i` of the field `f` may mean something in a pattern, quoting aside: a glob character, a `\\`, or one of `^-:.=` after an unquoted `[` (`patternOfChars`). */
-export const specialAt = (f: readonly Char[], i: number): boolean => /[\\*?[\]()|!@+]/.test(f[i].c) || (/[\^\-:.=]/.test(f[i].c) && f.slice(0, i).some((d) => d.c === '[' && !d.quoted));
+/**
+ * For each character of the field `f`, whether it may mean something in a pattern, quoting aside: a glob character, a
+ * `\\`, or one of `^-:.=` after an unquoted `[` (`patternOfChars`). One pass, with whether an unquoted `[` came before.
+ */
+export function specialChars(f: readonly Char[]): boolean[] {
+  let bracket = false;
+  return f.map((c) => {
+    const special = /[\\*?[\]()|!@+]/.test(c.c) || (bracket && /[\^\-:.=]/.test(c.c));
+    bracket ||= c.c === '[' && !c.quoted;
+    return special;
+  });
+}
+
+/**
+ * For each character of the field `f`, whether it acts as a wildcard where the field is matched as a pattern against a
+ * string (`case`, `[[ == ]]`, `${x#p}`; the `match` of the context, src/semantics/wordcontexts.ts): an unquoted `*`, `?`,
+ * `[`, `]`, `(`, `)` or `|`, not after an unquoted `\\` of a value, which escapes it (`plainPattern` of `patternOfChars`).
+ */
+export function wildcardChars(f: readonly Char[]): boolean[] {
+  let escaped = false;
+  return f.map((c) => {
+    // (The empty mark of quotes, `""`, or a hole, leaves an escape to the character after it.)
+    if (!c.c) return false;
+    const was = escaped;
+    escaped = !was && !c.quoted && c.c === '\\';
+    return !was && !c.quoted && /^[*?[\]()|]$/.test(c.c);
+  });
+}
+
+/** For each character of the field `f`, whether it means something in a regex (`[[ =~ ]]`, POSIX ERE): an unquoted one of `\\^$.[]|()*+?{}`. */
+export const regexChars = (f: readonly Char[]): boolean[] => f.map((c) => !c.quoted && /^[\\^$.[\]|()*+?{}]$/.test(c.c));
 
 /**
  * Whether a field's pattern depends on the bash release: a backslash of a value before a quoted letter, digit or `_` is
