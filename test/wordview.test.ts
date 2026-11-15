@@ -250,6 +250,10 @@ describe('the view of a word (wordview.ts)', () => {
     const regex = parser.parse('[[ x =~ a.b ]]');
     const right = descendants(regex.root, ['regex', 'word']).find((w) => w.text === 'a.b')!;
     assert.deepStrictEqual([valueAsWritten(right), wordViewAsWritten(right)!.value], [undefined, undefined]);
+    // (A part of a word is read as the word that holds it; a function's name is no word.)
+    const plainWords = descendants(tree.root, ['word']);
+    assert.deepStrictEqual([plainWords[0].parent!.type, valueAsWritten(plainWords[0])], ['function_definition', undefined]);
+    assert.strictEqual(valueAsWritten(plainWords.find((w) => w.text === 'y')!), 'xy');
   });
 
   it('outside a word: none', () => {
