@@ -804,7 +804,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
         if (letters && set1.length >= 10) return ['Hello World 123'];
         // Make sure characters of the set appear in the text.
         const picks = [...new Set(chars)].filter((c) => c >= ' ').slice(0, 3).join('');
-        return [`abc ${picks} xyz ${picks.slice(0, 1)}`];
+        return [`abc ${picks} xyz ${[...picks][0] ?? ''}`];
       }
       case 'head':
       case 'tail': {

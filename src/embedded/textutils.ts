@@ -90,7 +90,8 @@ function trCharName(c: string): [string, string] {
   if (c.length > 1 && /^\\[0-7]/.test(c)) return [`8進数 ${c.slice(1)} の文字`, `the character with octal code ${c.slice(1)}`];
   const named = c[0] === '\\' ? TR_ESCAPES[c[1]] : undefined;
   if (named) return named;
-  const ch = c[c.length - 1];
+  // (The last character, whole: `😀` is two UTF-16 units.)
+  const ch = [...c].at(-1)!;
   return ch === ' ' ? [blankWord(' ', true), blankWord(' ', false)] : [`「${ch}」`, `"${ch}"`];
 }
 
@@ -152,7 +153,7 @@ function wideRange(s: (ja: string, en: string) => string, from: [string, string]
 
 /** A character of several bytes in a set (`い`): tr reads each of its bytes as a member. */
 const wideChar = (s: (ja: string, en: string) => string, c: string, bytes: readonly number[]): string =>
-  s(`「${c}」の${bytes.length}バイト ${octals(bytes)}（それぞれが要素）`, `the ${bytes.length} bytes ${octals(bytes)} of "${c}", each a member`);
+  s(`「${c}」の${bytes.length}バイト ${octals(bytes)}（それぞれが要素）`, `the ${bytes.length} bytes ${octals(bytes)} of "${c}" (each a member)`);
 
 /** One `tr` character set. `role` says how tr uses it. */
 export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'squeeze', lang: Lang, complement = false, truncate = false): Explained | undefined {

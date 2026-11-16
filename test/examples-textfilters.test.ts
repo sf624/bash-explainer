@@ -204,6 +204,9 @@ function realBytes(cases: readonly { words: string[]; lines: string[] }[], local
   }
 }
 
+/** 3,000 bytes of ASCII text: 100 lines of 30. */
+const SIZED = Array.from({ length: 100 }, (_, i) => `line ${String(i).padStart(3, '0')} abcdefghijklmnopqrst`);
+
 describe('tr, cut -c and -b, head -c and tail -c work on bytes beyond ASCII, as GNU coreutils does in every locale', () => {
   // [words, input lines]. A character beyond ASCII is its bytes of UTF-8: each is a member of a tr set, and cut, head and
   // tail count them. Where the bytes printed are not UTF-8, the example says it does not show them; where the tool refuses
@@ -224,15 +227,15 @@ describe('tr, cut -c and -b, head -c and tail -c work on bytes beyond ASCII, as 
     { words: ['head', '-c', '3'], lines: ['あいう'] }, { words: ['head', '-c', '2'], lines: ['あいう'] }, { words: ['head', '-c', '-4'], lines: ['あいう'] },
     { words: ['tail', '-c', '4'], lines: ['あいう'] }, { words: ['tail', '-c', '+4'], lines: ['あいう'] }, { words: ['tail', '-c', '3'], lines: ['あいう'] },
     { words: ['tr', 'ｚ-ａ', 'x'], lines: ['ａｂｃ'] }, { words: ['tr', 'é-a', 'x'], lines: ['abc'] }, { words: ['tr', 'a-é', 'x'], lines: ['abc é'] },
-    // (Sizes with a suffix, as GNU head and tail read them, and `tail -c +0`, which is all of it.)
-    { words: ['head', '-c', '1K'], lines: ['abcdef'] }, { words: ['head', '-c', '1kB'], lines: ['abcdef'] }, { words: ['head', '-c', '1KiB'], lines: ['abcdef'] },
-    { words: ['head', '-c', '1b'], lines: ['abcdef'] }, { words: ['head', '-c', '-1K'], lines: ['abcdef'] }, { words: ['head', '-c', '1x'], lines: ['abcdef'] },
-    { words: ['tail', '-c', '+0'], lines: ['abc', 'de'] }, { words: ['tail', '-c', '1M'], lines: ['abc'] }, { words: ['tail', '-c', '+1'], lines: ['abc'] },
+    // (Sizes with a suffix, as GNU head and tail read them, on 3,000 bytes, so that 1000 and 1024 differ; and `tail -c +0`, which is all of it.)
+    ...['1b', '2b', '1k', '1K', '1kB', '1KB', '1KiB', '2kB', '1m', '1M', '1MB', '1MiB', '1G', '010', '-1kB', '-1K', '-1b', '1kiB', '1Gb', '1bB', '1kb', '1x']
+      .map((n) => ({ words: ['head', '-c', n], lines: SIZED })),
+    ...['1b', '1kB', '1K', '1KiB', '+1kB', '+1K', '+1b', '1MB', '+0', '+1', '1kb'].map((n) => ({ words: ['tail', '-c', n], lines: SIZED })),
   ];
   const locales = ['C', 'C.UTF-8'].map((l) => realBytes(CASES, l));
   const utf8 = new TextDecoder('utf-8', { fatal: true });
   CASES.forEach(({ words, lines }, i) => {
-    it(`${words.join(' ')} on ${JSON.stringify(lines)}`, () => {
+    it(`${words.join(' ')} on ${lines === SIZED ? `${SIZED.length} lines of 30 bytes` : JSON.stringify(lines)}`, () => {
       const [cmd, ...args] = words;
       const [c, u] = locales.map((l) => l[i]);
       // (The same in both locales: GNU tr, cut and head have no characters of more bytes.)
@@ -326,7 +329,7 @@ describe('a line of tr or cut with text beyond ASCII says what GNU tr and cut do
   });
   it('says the bytes a tr set holds beyond ASCII, as GNU tr reads them', () => {
     const rows = (line: string, lang: 'en' | 'ja' = 'en') => allTokens(explain(line, lang).items).filter((t) => t.kind === 'pattern').map((t) => `\`${t.label}\`: ${t.explanation.replace(/^`[^`]*`: /, '')}`);
-    assert.deepStrictEqual(rows("tr -d 'い'"), ['`い`: the 3 bytes `\\343 \\201 \\204` of "い", each a member']);
+    assert.deepStrictEqual(rows("tr -d 'い'"), ['`い`: the 3 bytes `\\343 \\201 \\204` of "い" (each a member)']);
     assert.deepStrictEqual(rows("tr -d 'い'", 'ja'), ['`い`: 「い」の3バイト `\\343 \\201 \\204`（それぞれが要素）']);
     assert.deepStrictEqual(rows("tr 'ａ-ｚ' 'a-z'")[0], '`ａ-ｚ`: not the characters from "ａ" to "ｚ": the bytes `\\357 \\275`, the bytes from `\\201` to `\\357`, the bytes `\\275 \\232`');
     assert.deepStrictEqual(rows("tr 'ａ-ｚ' 'a-z'", 'ja')[0], '`ａ-ｚ`: 「ａ」〜「ｚ」の範囲の文字ではない: バイト `\\357 \\275`、`\\201`〜`\\357` の範囲のバイト、バイト `\\275 \\232`');
@@ -337,10 +340,13 @@ describe('a line of tr or cut with text beyond ASCII says what GNU tr and cut do
     assert.deepStrictEqual(rows("tr 'é-\\377' x")[0], '`é-\\377`: not the characters from "é" to octal 377: the bytes `\\303`, the bytes from `\\251` to `\\377`');
     assert.deepStrictEqual(rows("tr '\\n-é' x")[0], '`\\n-é`: not the characters from newline to "é": the bytes from `\\012` to `\\303`, the bytes `\\251`');
     assert.deepStrictEqual(rows("tr '\\q-é' x")[0], '`\\q-é`: not the characters from "q" to "é": the bytes from `\\161` to `\\303`, the bytes `\\251`');
-    assert.deepStrictEqual(rows("tr '\\é' x")[0], '`\\é`: the 2 bytes `\\303 \\251` of "é", each a member');
+    assert.deepStrictEqual(rows("tr '\\é' x")[0], '`\\é`: the 2 bytes `\\303 \\251` of "é" (each a member)');
     assert.deepStrictEqual(rows("tr 'Ａ-Ｚａ-ｚ' 'A-Za-z'").length, 4);
     // (`[é*3]` is no repeat: tr reads `[`, the bytes of `é`, `*`, `3` and `]`.)
-    assert.deepStrictEqual(rows("tr '[é*3]' x").slice(0, 2), ['`[`: "["', '`é`: the 2 bytes `\\303 \\251` of "é", each a member']);
+    assert.deepStrictEqual(rows("tr '[é*3]' x").slice(0, 2), ['`[`: "["', '`é`: the 2 bytes `\\303 \\251` of "é" (each a member)']);
+    // (A character of two UTF-16 units is named whole, and the sample holds it whole.)
+    assert.match(rows("tr '😀-😂' x")[0], /^`😀-😂`: not the characters from "😀" to "😂": /);
+    assert.deepStrictEqual(explain("tr '😀-😂' x").examples[0].sections[0].lines, ['abc 😀😂 xyz 😀']);
     assert.deepStrictEqual(rows("tr '\\n-\\r' x").slice(0, 1), ['`\\n-\\r`: the characters from newline to carriage return']);
     assert.notStrictEqual(runBash("echo a | tr 'é-a' x").status, 0);
   });
