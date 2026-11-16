@@ -25,7 +25,7 @@ const neverEmpty = (n: SyntaxNode): boolean => isNumber(n) || n.type === 'proces
  * (`declare -i n; ${n:=b=5}` gives `5`), and a number gives a field with any IFS. Not where the value it holds may be
  * other text, given before the attribute (`n=' '; declare -i n; ${n:=5}` gives no field).
  */
-function integerDefault(n: SyntaxNode, st: ShellState): boolean {
+export function integerDefault(n: SyntaxNode, st: ShellState): boolean {
   const p = n.type === 'expansion' ? parseExpansion(n.text) : undefined;
   if (!p || p.op !== ':=' || p.prefix || p.subscript !== undefined) return false;
   const target = refTarget(st, p.name);
@@ -33,16 +33,6 @@ function integerDefault(n: SyntaxNode, st: ShellState): boolean {
   return attribute(st, target, 'i') === 'on' && !!v && v.declared === 'on' && (v.set === 'off' || (v.set === 'on' && v.value !== undefined && /^(-?\d+)?$/.test(v.value)));
 }
 
-/**
- * Whether the word `n` is a lone expansion whose value is a number (`$#`, `$?`, `$$`, `${#x}`, `$((…))`, or `${n:=w}` of
- * an integer, `integerDefault`) where the IFS holds no digit and no `-`: one field, the number (with IFS `-5`, `-5`
- * gives two; with IFS `1`, `$((11))` gives two empty fields and none).
- */
-export function givesOneNumber(n: SyntaxNode, model: StateModel): boolean {
-  if (!isNumber(n) && n.type !== 'expansion') return false;
-  const w = wordMeaning(n, model)!;
-  return (isNumber(n) || integerDefault(n, w.state)) && (w.ifs.kind === 'default' || (w.ifs.kind === 'value' && !/[\d-]/.test(w.ifs.value)));
-}
 
 /**
  * `"$@"`, `"${a[@]}"` alone in double quotes, also with a slice, a pattern, case or transform operator, or `${@:+x}`:

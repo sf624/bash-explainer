@@ -131,8 +131,10 @@ function throughShell(n: SyntaxNode, vars: readonly string[], v: string, model: 
  * The words of a parse (numbered in its words) that the command reads as data: an operand or a value written in another
  * language (`OperandSpec.lang`, `ValueSpec.lang`: grep's pattern, sed's script), those of its subcommands too.
  */
-function dataWords(p: ArgvParse): number[] {
-  return p.roles.flatMap(({ word, role }) => (role.role === 'subcommand' ? dataWords(role.parse) : dataRole(role) ? [word] : []));
+function dataWords(p: ArgvParse): { word: number; fields?: true }[] {
+  // (A word read by its fields where one of them is data, `p='a* b'; grep $p f`.)
+  return p.roles.flatMap(({ word, role }) => (role.role === 'subcommand' ? dataWords(role.parse) : dataRole(role) ? [{ word }]
+    : role.role === 'fields' && role.roles.some((r) => dataRole(r.role)) ? [{ word, fields: true as const }] : []));
 }
 
 /** An expansion that bash word-splits or globs here (not in quotes, not with `IFS=` and `set -f` both). */
@@ -176,12 +178,13 @@ export function dataValues(n: SyntaxNode, model: StateModel, shell: Shell | unde
 function findDataValues(n: SyntaxNode, model: StateModel, shell: Shell | undefined): DataValue[] {
   const out: DataValue[] = [];
   for (const r of specRuns(n, model, shell)) {
-    for (const k of dataWords(r.parse)) {
+    for (const { word: k, fields } of dataWords(r.parse)) {
       const word = r.run.args[k];
       // (The expansion is named, with its value: `$r` of `/$r/p`.)
       for (const part of barePartsIn(word, model)) {
         const value = expansionValue(part, model);
-        if (!value || !(value.glob || (value.words?.length ?? 0) > 1)) continue;
+        // (Of a word read by its fields, only a pattern: its fields are what the command reads, `x='-e s/a/b/'; sed $x f`.)
+        if (!value || !(value.glob || (!fields && (value.words?.length ?? 0) > 1))) continue;
         const extglob = value.glob ? wordMeaning(part, model)!.glob.extglob : 'off';
         out.push({ word, part, value, command: r.parse.command, globs: value.glob ? globParts(value.text, extglob) : [], bash: isBash(model.shell) === 'yes' });
         break;

@@ -3,7 +3,7 @@ import { Lang } from './i18n';
 import { interpret } from './argv/interpret';
 import type { ArgvParse } from './argv/interpret';
 import { has, values } from './argv/query';
-import { argWordFor } from './argv/words';
+import { argWordAsWritten } from './argv/words';
 import { lookupCommand } from './dict/aliases';
 import { hasGlob } from './embedded/glob';
 import { staticWordValue } from './staticword';
@@ -121,7 +121,7 @@ const wordsOf = (c: SyntaxNode): (string | undefined)[] => argsOf(c).map((w) => 
 const parseOf = (c: SyntaxNode, shell: Shell | undefined): ArgvParse | undefined => {
   const name = nameOf(c);
   const spec = name === undefined ? undefined : lookupCommand(name);
-  return spec && interpret(spec, argsOf(c).map(argWordFor(shell)), { name, lookup: lookupCommand });
+  return spec && interpret(spec, argsOf(c).map(argWordAsWritten(shell)), { name, lookup: lookupCommand });
 };
 /** The parses of a command and of the commands it runs with its words (`sudo -u w xargs -0 rm`: sudo's, xargs's, rm's) named `name`. */
 const parsesOf = (c: SyntaxNode, name: string, shell: Shell | undefined): ArgvParse[] => {

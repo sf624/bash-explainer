@@ -4,12 +4,12 @@
 // reads it (`viewWords`, `wordFields`) and the field domain (`wordShapes`, src/semantics/fieldshape.ts), and decides
 // nothing of its own. test/word-probes.test.ts holds it against bash.
 import type { Shell } from '../dialect';
-import { globby, holeOf, knownValues, misread, readsAsBash, type Shape, wordShapes, type WordShapes } from './fieldshape';
-import type { SyntaxNode } from '../syntax/tree';
+import { globby, holeOf, knownValues, misread, readsAsBash, type Shape, shapesOf, wordShapes, type WordShapes } from './fieldshape';
+import { descendants, type SyntaxNode } from '../syntax/tree';
 import { decodedText } from '../staticword';
 import { EMPTY, type ShellState } from './shellstate';
 import type { StateModel } from './state';
-import { declaredWord } from './wordcontexts';
+import { assignmentHead, declaredWord } from './wordcontexts';
 import { optionsOf, type WordOptions } from './wordoptions';
 import { type Applies, type Char, type Fields, type HoleOf, meaningIn, modelValues, PLAIN_TEXT, type ValueSource, viewWords, type WalkSource, type WordEnv, wordFields, wordMeaning, type WordMeaning, wordOf } from './words';
 
@@ -68,12 +68,16 @@ export interface WordView {
   end?: string;
   /** Some field is a pattern that pathname expansion expands here (a pattern a context matches is `Char.pattern` with `meaning.rule.match`). */
   globs: Applies;
-  /** The fields it may give, from the field domain, where they are not known exactly and the domain can say (`wordView` only). */
+  /** The fields it may give, from the field domain, where they are not known exactly and the domain can say. */
   shapes?: WordShapes;
   unknown: readonly Unknown[];
 }
 
-/** The view of the word that holds `n` where it runs in the finished model, with the environment `env` for what the script does not set (the probes'); undefined outside a word. */
+/**
+ * The view of the word that holds `n` where it runs in the finished model, with the environment `env` for what the
+ * script does not set (the probes'); undefined outside a word. Its field domain takes a value read as arithmetic to be
+ * a number, as the explanations do (`$((n-1))` is one field; `y='IFS=1'; $((y+10))` gives two, F89).
+ */
 export function wordView(n: SyntaxNode, model: StateModel, env?: WordEnv): WordView | undefined {
   const w = wordMeaning(n, model);
   if (!w) return undefined;
@@ -82,7 +86,7 @@ export function wordView(n: SyntaxNode, model: StateModel, env?: WordEnv): WordV
   if (kept) return kept;
   const known = wordFields(n, model, env);
   const source = modelValues(w, model, env);
-  const view = viewOf(w, source, (v) => wordView(v, model, env)!, env, known, () => wordShapes(n, model, knownValues(w, source)));
+  const view = viewOf(w, source, (v) => wordView(v, model, env)!, env, known, () => wordShapes(n, model, knownValues(w, source), { numbers: true }));
   if (!env) views.set(w, view);
   return view;
 }
@@ -103,20 +107,30 @@ export function unmatchedOf(n: SyntaxNode, model: StateModel): string | undefine
 /** No step but quote removal and pathname expansion applies to the word `w`. */
 const throughGlobOnly = (w: WordMeaning): boolean => w.steps.every((s) => s.kind === 'quote-removal' || s.kind === 'glob' || s.applies === false);
 
-/** The view of the word that holds `n` in the state `st` of the walk, with its values (`source`); its count is known only where its fields are. */
+/**
+ * The view of the word that holds `n` in the state `st` of the walk, with its values (`source`): where its fields are
+ * not known, its count, start and end come from the field domain with the values `source` knows (`shapesOf`).
+ */
 export function wordViewIn(n: SyntaxNode, st: ShellState, source: WalkSource): WordView | undefined {
   const w = meaningIn(n, st, source.shell());
-  return w && viewOf(w, source, (v) => wordViewIn(v, st, source)!);
+  return w && viewOf(w, source, (v) => wordViewIn(v, st, source)!, undefined, undefined, () => shapesOf(w, knownValues(w, source)));
 }
 
 /**
  * The view of the word that holds `n` before or without a model: in the state of a script that sets nothing (the
  * default IFS, the options as the shell starts), where no value is known, and no command substitution either: it is
- * a hole, never empty (`$(:)echo`).
+ * a hole, never empty (`$(:)echo`). Made once per node and shell: the walk reads a builtin's words each time it runs it.
  */
 export function wordViewAsWritten(n: SyntaxNode, shell?: Shell): WordView | undefined {
-  return wordViewIn(n, EMPTY, asWritten(shell));
+  // (Kept by the shell's name, as the cache of each script's shell.)
+  const key = String(shell);
+  let kept = writtenViews.get(n);
+  if (!kept) writtenViews.set(n, (kept = new Map()));
+  if (!kept.has(key)) kept.set(key, wordViewIn(n, EMPTY, asWritten(shell)));
+  return kept.get(key);
 }
+
+const writtenViews = new WeakMap<SyntaxNode, Map<string, WordView | undefined>>();
 
 /** The values of a script that sets nothing (`wordViewAsWritten`); `builtinRuns`, the names that run their builtin in a command substitution (none). */
 const asWritten = (shell: Shell | undefined, builtinRuns: (name: string) => boolean = () => false): WalkSource => ({ variable: () => undefined, tilde: () => undefined, builtinRuns, shell: () => shell });
@@ -167,7 +181,7 @@ const values = new WeakMap<SyntaxNode, WeakMap<WordOptions, { value: string | un
  * of a word that is one single-quoted string, `'*'`: the text in it, which no step reads in any context or shell. (No
  * such word is read as a regex, where `.` is special: the right side of `[[ =~ ]]` is a `regex` node.)
  */
-function textAsWritten(n: SyntaxNode): string | undefined {
+export function textAsWritten(n: SyntaxNode): string | undefined {
   const quoted = n.type === 'raw_string';
   if (!quoted && ((n.type !== 'word' && n.type !== 'number') || !PLAIN_TEXT.test(n.text))) return undefined;
   return wordOf(n)?.nodes[0] === n ? (quoted ? decodedText(n).slice(1, -1) : n.text) : undefined;
@@ -204,7 +218,11 @@ const NO_BRACES: ShellState = { ...EMPTY, set: EMPTY.set.with('braceexpand', 'of
 function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => WordView, env?: WordEnv, known?: Fields, shapes?: () => WordShapes | undefined): WordView {
   // (An assignment given to a declaration builtin, `export A=$x`: its head as written, then the view of its value, as `wordFields` reads it.)
   const declared = declaredWord(w, w.steps[0].applies);
-  if (declared === 'unread') return { meaning: w, plain: false, words: [], count: { min: 0 }, globs: 'unknown', unknown: ['misread'] };
+  // (An array or a subscript is one word the builtin reads itself, where no braces may make several of it: `declare -a b=(1 2)`, `local c[$i]=1`; `declare d[{1,2}]=x` is two.)
+  if (declared === 'unread') {
+    const one = assignmentHead(w) === 'unread' && !w.nodes.some((x) => descendants(x, ['brace_expression']).length);
+    return { meaning: w, plain: false, words: [], count: one ? { min: 1, max: 1 } : { min: 0 }, globs: 'unknown', unknown: ['misread'] };
+  }
   if (declared) return declarationView(w, declared.head, declared.value && again(declared.value), known);
   const unknown = new Set<Unknown>();
   if (misread(w) || !readsAsBash(w)) unknown.add('misread');
@@ -224,8 +242,12 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   // (The walk's view knows no error of the word: a redirection's target is one field there, or not known.)
   const each = words.length && words.every((x) => x.fields) ? words.flatMap((x) => x.fields!) : undefined;
   const exact = known ? (known.error ? [] : known.fields) : each && (w.rule.fields !== 'one-or-error' || each.length === 1) ? each : undefined;
-  const domain = exact ? undefined : shapes?.();
-  const ends = exact ? exactEnds(exact) : domain ? fromShapes(domain) : { count: { min: 0 } };
+  // (Nor its field domain, which knows no error of the word either.)
+  // (Words whose every part is quoted give one field each, with no need of the domain; in a shell that may read them
+  // otherwise, their characters, read as bash reads them, tell no start or end.)
+  const quoted = !exact && (w.rule.fields !== 'one-or-error' || words.length === 1) && quotedWords(words) ? (readsAsBash(w) && !misread(w) ? (w.ifs.kind === 'default' ? quotedEnds(words) : undefined) : { count: { min: words.length, max: words.length }, start: '', end: '' }) : undefined;
+  const domain = exact || quoted || (!known && w.rule.fields === 'one-or-error') ? undefined : shapes?.();
+  const ends = exact ? exactEnds(exact) : quoted ?? (domain ? fromShapes(domain) : { count: { min: 0 } });
   return { meaning: w, ...(plain ? { value: w.value } : {}), ...(unmatched !== undefined ? { unmatched } : {}), plain, words, ...ends, globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
 }
 
@@ -260,6 +282,25 @@ function unmatchedText(w: WordMeaning, words: readonly ViewWord[]): string | und
   if (!throughGlobOnly(w)) return undefined;
   if (glob.applies !== false && (w.glob.nullglob !== 'off' || w.glob.failglob !== 'off')) return undefined;
   return words[0].chars.map((c) => c.c).join('');
+}
+
+/**
+ * Whether every word of a brace expansion has characters, only quoted parts, none a pattern nor `"$@"`, and characters
+ * whose quoting is known (an empty word of `{$e,"$y"}` gives none): each gives one field, in every shell (`"$f"`, `"-v$x"`; `"$a[1].b"` in zsh, which reads `$a[1]` as an
+ * element). With the IFS as the shell starts: bash 5.2 splits some of them where IFS holds a control character.
+ */
+const quotedWords = (words: readonly ViewWord[]): boolean =>
+  words.length > 0 && words.every((x) => x.chars?.length && !x.asWritten && x.globs === false && x.chars.every((c) => !c.split && (!c.hole || (c.hole.quoted && c.hole.kind !== 'elements'))));
+
+/** The count, the start and the end of quoted words (`quotedWords`): the text before the first hole of the first, and after the last of the last. */
+function quotedEnds(words: readonly ViewWord[]): Pick<WordView, 'count' | 'start' | 'end'> {
+  const first = words[0].chars!;
+  const last = words[words.length - 1].chars!;
+  const text = (cs: readonly Char[]): string => cs.map((c) => c.c).join('');
+  const hole = first.findIndex((c) => c.hole);
+  let after = last.length - 1;
+  while (after >= 0 && !last[after].hole) after--;
+  return { count: { min: words.length, max: words.length }, start: text(hole < 0 ? first : first.slice(0, hole)), end: text(last.slice(after + 1)) };
 }
 
 /** The count, the start and the end of fields known exactly. */

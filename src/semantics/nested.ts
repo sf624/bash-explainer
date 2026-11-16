@@ -3,7 +3,7 @@
 // source range of each character, and says which shell reads it; src/semantics/state.ts parses it and gives it a
 // model (`StateModel.script`).
 import { interpret } from '../argv/interpret';
-import { argWordFor } from '../argv/words';
+import { argWordAsWritten } from '../argv/words';
 import { lookupCommand } from '../dict/aliases';
 import type { Shell } from '../dialect';
 import { parseExpansion } from '../expansion';
@@ -112,7 +112,7 @@ export function commandSlots(model: StateModel, cmd: SyntaxNode, strings?: Map<S
   const spec = name === undefined ? undefined : lookupCommand(name);
   const args = fields(cmd, 'argument');
   if (!spec || !args.length) return undefined;
-  return slotEnvs(model.env(cmd), interpret(spec, args.map(argWordFor(model.shell)), { name, lookup: lookupCommand }), spec, args, model.shell, lookupCommand, strings);
+  return slotEnvs(model.env(cmd), interpret(spec, args.map(argWordAsWritten(model.shell)), { name, lookup: lookupCommand }), spec, args, model.shell, lookupCommand, strings);
 }
 
 /**

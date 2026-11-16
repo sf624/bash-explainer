@@ -5,11 +5,10 @@
 import type { Shell } from './dialect';
 import { interpret, type ArgvParse, type ArgWord } from './argv/interpret';
 import type { CommandSpec } from './argv/spec';
-import { argWordFor } from './argv/words';
 import { lookupCommand } from './dict/aliases';
 import type { HighlightKind } from './highlight';
 import { isProgram } from './namefacts';
-import { bracesIn } from './semantics/argwords';
+import { viewedIn } from './semantics/argwords';
 import { slotEnvs } from './semantics/env';
 import { isFunction, type NameResolution, resolveName, testSpecOf } from './semantics/names';
 import { quotedName } from './semantics/effects';
@@ -70,14 +69,14 @@ function command(c: SyntaxNode, model: StateModel, shell: Shell | undefined, out
   const spec = isFunction(res) || res.kind === 'alias' || testSpecOf(res) ? undefined : lookupCommand(name);
   const args = fields(c, 'argument');
   if (!spec || !args.length) return;
-  const argWord = argWordFor(shell, bracesIn(model));
+  const argWord = viewedIn(model);
   const parse = interpret(spec, args.map(argWord), { name, lookup: lookupCommand });
   // (Where each command it runs runs, read only when it runs one: `sudo ls`.)
   let envs: ReturnType<typeof slotEnvs> | undefined;
   roles(parse, spec, args, (w) => {
     // (A plain word, so it has a value; slotEnvs keys the first word of each command a slot runs.)
     const env = (envs ??= slotEnvs(model.env(c), parse, spec, args, shell, lookupCommand)).get(w)!;
-    return nameKind(resolveName(model, staticWordValue(w, false, shell)!, w, { ...resolveOpts(shell), env }));
+    return nameKind(resolveName(model, argWord(w).value!, w, { ...resolveOpts(shell), env }));
   }, out, argWord);
 }
 

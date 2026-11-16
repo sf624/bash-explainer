@@ -126,7 +126,8 @@ describe('an operand that becomes several words', () => {
   it('counts the words of braces only where brace expansion is on (`set +B`)', () => {
     // (bash runs `cp {a,b} d`: a source and the destination.)
     assert.strictEqual(tokenOf('set +B; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory)');
-    assert.strictEqual(tokenOf('if c; then set +B; fi; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory). When `{a,b}` expands to several words, it is destination directory');
+    // (Brace expansion on some paths only: one word or two.)
+    assert.strictEqual(tokenOf('if c; then set +B; fi; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory). When `{a,b}` expands to 2 words, it is destination directory');
   });
 
   it('counts the words of braces whose words hold an expansion as bash gives them: a range, or the fields the model knows', () => {
@@ -140,7 +141,8 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf('x=p; cp {a,$x} d', 'd').explanation, 'destination directory');
     const hedge = (w: string) => `source when \`${w}\` expands to a single word; when it expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory`;
     assert.strictEqual(tokenOf('cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
-    assert.strictEqual(tokenOf('x="*"; cp {a,$x}', '{a,$x}').explanation, hedge('{a,$x}'));
+    // (`x='*'`: `a`, then `*` or the names it matches, two words at least.)
+    assert.strictEqual(tokenOf('x="*"; cp {a,$x}', '{a,$x}').explanation, 'when `{a,$x}` expands to 2 words, they are source, then destination (the new name, or an existing directory); when it expands to more words, they are source, then destination directory');
     // (`cp {a,$(echo b c)}` runs `cp a b c`; `set -- 1 2; cp {a,"$@"}` runs `cp a 1 2`, and with no parameters `cp a`.)
     assert.strictEqual(tokenOf('cp {a,$(echo b c)}', '{a,$(echo b c)}').explanation, hedge('{a,$(echo b c)}'));
     assert.strictEqual(tokenOf('cp {a,"$@"}', '{a,"$@"}').explanation, hedge('{a,"$@"}'));
@@ -176,9 +178,10 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(count('x=; cp {a,$x}'), undefined);
     // (A known field that starts with `-` too: the interpreter reads it as an option, bug 7 of oracles.md 2.8.)
     assert.deepStrictEqual(count('x=-r; cp {a,$x}'), { min: 2, max: 2 });
-    // (`{,$x}a` is `a` and `$xa`, the variable `xa`: none or more.)
-    assert.deepStrictEqual(count('cp {,$x}a'), { min: 1 });
-    assert.deepStrictEqual(count('cp {b,$x}a'), { min: 1 });
+    // (`{,$x}a` is `a` and `$xa`, the variable `xa`: one or more, but the view does not read such words (`rejoined`): none
+    // or more, docs/backlog-archive.md.)
+    assert.deepStrictEqual(count('cp {,$x}a'), { min: 0 });
+    assert.deepStrictEqual(count('cp {b,$x}a'), { min: 0 });
     // (Globs give at least one word each; quoted words exactly one.)
     assert.deepStrictEqual(count('cp {a,b}*'), { min: 2 });
     assert.deepStrictEqual(count('cp {a,"$x"}'), { min: 2, max: 2 });

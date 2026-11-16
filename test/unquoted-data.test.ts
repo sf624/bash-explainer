@@ -129,6 +129,8 @@ describe('an unquoted known value that globs, read as data (`grep -E $pattern`)'
     assert.deepStrictEqual(notes("p='a*'\ngrep ${p:-'x y'} f\n"), ["ⓘ Caveat: `${p:-'x y'}` is not quoted, so its value `a*` may not reach the command as it is: bash also reads it as a glob pattern (its `*`) before `grep` gets it, and a file name that matches it takes its place"]);
     assert.deepStrictEqual(notes("p='a* b'\ngrep $p f\n"), ['ⓘ Caveat: `$p` is not quoted, so its value `a* b` does not reach the command as it is: it is split into 2 arguments, and is a glob pattern too (a file name that matches takes its place). To pass the value as it is, write `"$p"`']);
     assert.deepStrictEqual(notes("p=abc\nsed -n /$p/p f\n"), []);
+    // (A value read by its fields, an option and a script: the script reaches sed as it is.)
+    assert.deepStrictEqual(notes("x='-e s/a/b/'\nsed $x f\n"), []);
     // (A value the model does not know: a pattern meant, often.)
     assert.deepStrictEqual(notes('x=1\ngrep $1 f\n'), []);
     // (A file name has its own note: `cat $p` is not data.)

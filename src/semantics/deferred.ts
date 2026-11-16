@@ -7,7 +7,7 @@
 // (`wordIn`), as the walk's do.
 import type { ArgRole, ArgvParse } from '../argv/interpret';
 import type { CommandSpec, OperandSpec } from '../argv/spec';
-import { argWordFor } from '../argv/words';
+import { argWordAsWritten } from '../argv/words';
 import type { Shell } from '../dialect';
 import { descendants, type SyntaxNode, wordBraces } from '../syntax/tree';
 import { builtinRead, DECLARATIONS, effectKey, namesByWords } from './effects';
@@ -136,7 +136,7 @@ const naming = (r: ArgRole): boolean => r.role === 'operand' && [r.spec, ...(r.e
 function inert(parseWith: (more: number) => ArgvParse, spec: CommandSpec, j: number, word: SyntaxNode, shell: Shell | undefined): boolean {
   const parse = parseWith(0);
   const at = parse.roles.find((r) => r.word === j)?.role;
-  const one = !argWordFor(shell)(word).count;
+  const one = !argWordAsWritten(shell)(word).count;
   if (at?.role === 'value') return !at.spec?.sets && at.spec?.type !== 'function' && one;
   if (at?.role !== 'operand') return false;
   if (!/^[^-+]/.test(literalStart(word, shell) ?? '') && !parse.roles.some((r) => r.word < j && (r.role.role === 'operand' || r.role.role === 'end-of-options'))) return false;

@@ -1,11 +1,13 @@
 // The words of a command as the argument interpreter (src/argv/interpret.ts) takes them: their value after
 // quote removal when it is known, the start that is known otherwise, and how many words they become.
 import { parseExpansion, type ParsedExpansion } from '../expansion';
-import { bracesWork, type Shell } from '../shellfeatures';
+import type { Shell } from '../shellfeatures';
 import { guardedApart } from '../examples/regexguard';
 import { globToRegex } from '../examples/shellwords';
-import { braceAlternatives, rejoined } from '../semantics/brace';
+import { rejoined } from '../semantics/brace';
+import { type Char, patternOfChars } from '../semantics/chars';
 import { givesElements } from '../semantics/elements';
+import { textAsWritten, type WordView, wordViewAsWritten } from '../semantics/wordview';
 import { staticWordValue } from '../staticword';
 import { descendants, nameText, type SyntaxNode } from '../syntax/tree';
 import type { ArgWord } from './interpret';
@@ -74,79 +76,15 @@ export function attachedWritten(a: SyntaxNode, i: number): { from: number; to: n
 }
 
 const UNQUOTED_EXPANSION = new Set(['simple_expansion', 'expansion', 'command_substitution', 'arithmetic_expansion']);
-/** The parts of plain text, where a glob character is one. */
-const PLAIN = new Set(['word', 'number']);
-/** A glob character in plain text (`*.txt`; not `\*`, and not in quotes: `'*'` is a part of its own). */
-const GLOB = /(^|[^\\])[*?[]/;
-
-type Count = { min: number; max?: number };
-
-/** What the parts of one word of a brace expansion are (the whole word, where its braces do not expand). */
-function partsOf(w: readonly (SyntaxNode | string)[]): { split: boolean; text: boolean; glob: boolean } {
-  const out = { split: false, text: false, glob: false };
-  const visit = (p: SyntaxNode | string): void => {
-    if (typeof p === 'string') {
-      out.text ||= p !== '';
-      out.glob ||= GLOB.test(p);
-    } else if (UNQUOTED_EXPANSION.has(p.type)) out.split = true;
-    // (Only in double quotes: `'"$@"'` is text. `"${@:2}"`, `"${a[@]/x/y}"` and `"pre$@post"` too: src/semantics/elements.ts.)
-    else if (p.type === 'string' && givesElements(p)) {
-      out.split = true;
-      out.text ||= p.namedChildren.some((e) => e.type === 'string_content');
-    } else if (p.type === 'brace_expression' || p.type === 'concatenation') {
-      // (The braces and commas of braces that do not expand are text; the parts between them are parts of the word.)
-      out.text = true;
-      p.namedChildren.forEach(visit);
-    } else {
-      out.text = true;
-      out.glob ||= PLAIN.has(p.type) && GLOB.test(p.text);
-    }
-  };
-  w.forEach(visit);
-  return out;
-}
 
 /**
  * Whether one word of a brace expansion holds what may make other than one word of it: an unquoted expansion, `"$@"`
- * or `"${a[@]}"`, or a `$` that the braces leave before text bash then reads otherwise (`rejoined`: `{,$x}a` is `$xa`).
+ * or `"${a[@]}"` (only in double quotes: `'"$@"'` is text; src/semantics/elements.ts), or a `$` that the braces leave
+ * before text bash then reads otherwise (`rejoined`: `{,$x}a` is `$xa`).
  */
-export const splitsIn = (w: readonly (SyntaxNode | string)[]): boolean => rejoined(w) || partsOf(w).split;
-
-/**
- * How many words one word of a brace expansion gives (the whole word, where its braces do not expand): with what may
- * split it (`splitsIn`) any number, none or more when nothing else in it is text (`$x`, `"$@"`, `"$@$x"`), one or more
- * otherwise (text in it makes one word of the first element or of nothing: `"pre$@post"` is `prepost`, as an empty
- * string does, `"$@"""`), but none or more where the braces leave a `$` before text; a glob at least one; anything else
- * one. A part of braces that do not expand is text with its parts in it (`set +B; x='p q'; cp {a,$x}` is `{a,p` and `q}`).
- */
-function wordCount(w: readonly (SyntaxNode | string)[]): Count {
-  const { split, text, glob } = partsOf(w);
-  if (rejoined(w)) return { min: 0 };
-  if (split) return { min: text ? 1 : 0 };
-  return glob ? { min: 1 } : { min: 1, max: 1 };
-}
-
-/** The count of words side by side: the sum of each. */
-const sum = (counts: Count[]): Count => {
-  const max = counts.every((c) => c.max !== undefined) ? counts.reduce((a, c) => a + c.max!, 0) : undefined;
-  return { min: counts.reduce((a, c) => a + c.min, 0), ...(max !== undefined ? { max } : {}) };
-};
-
-/**
- * How many words a word gives, when that is not one: the sum of what each word of its brace expansion gives
- * (`wordCount`), where `braces` says the step applies (the model's brace step, src/semantics/argwords.ts; without the
- * model, where the `shell` has it, whatever `set +B` says), with its quoted parts (`'%s,'{a..c}` is three words; `'a'{,}`
- * two, `{,}` none); an unquoted expansion an unknown number (`{a,$x}` two or more; `"$@"` none or more).
- */
-export function countOf(n: SyntaxNode, shell?: Shell, braces: boolean | 'unknown' = bracesWork(n, shell)): ArgWord['count'] {
-  const whole = wordCount(n.type === 'concatenation' ? n.namedChildren : [n]);
-  const words = braces === false ? undefined : braceAlternatives([n]);
-  // (Too many words to list: `{1..100000}`.)
-  const count = words === null ? { min: 1 } : !words ? whole : sum(words.map(wordCount));
-  // (With `set -o braceexpand` not known: the word itself, or its words.)
-  const either = braces === 'unknown' && words ? (count.min === whole.min && count.max === whole.max ? count : { min: Math.min(count.min, whole.min) }) : count;
-  return either.min === 1 && either.max === 1 ? undefined : either;
-}
+export const splitsIn = (w: readonly (SyntaxNode | string)[]): boolean => rejoined(w) || w.some(splits);
+// (The words of braces come with their parts in a row, `braceAlternatives`: no part holds another.)
+const splits = (p: SyntaxNode | string): boolean => typeof p !== 'string' && (UNQUOTED_EXPANSION.has(p.type) || (p.type === 'string' && givesElements(p)));
 
 /** The parameter of a word that is one unquoted expansion of it and nothing else (`ArgWord.param`: `$a`, `${a}`, `$@`). */
 function loneParameter(n: SyntaxNode): string | undefined {
@@ -199,15 +137,11 @@ function assignsOf(n: SyntaxNode): string[] | undefined {
 const WORD_LIMIT = 1e6;
 
 /**
- * The pattern one word of a brace expansion globs with, its expansions standing for any text (`*`): `-*$x` is `-**`.
- * Whether it may match `-` or `--`, which a command reads otherwise than an option (`-*` with the file `--`).
+ * Whether the characters `chars` of one word of a brace expansion, a pattern, may match `-` or `--`, which a command
+ * reads otherwise than an option (`-*` with the file `--`), each hole standing for any text (`-*$x` is `-**`).
  */
-function mayGiveDashes(w: readonly (SyntaxNode | string)[], shell?: Shell): boolean {
-  const pattern = w.map((p) => {
-    if (typeof p === 'string' || PLAIN.has(p.type)) return typeof p === 'string' ? p : p.text;
-    const v = staticWordValue(p, false, shell);
-    return v === undefined ? '*' : v.replace(/[*?[\\]/g, '\\$&');
-  }).join('');
+function mayGiveDashes(chars: readonly Char[]): boolean {
+  const pattern = patternOfChars(chars.map((c) => (c.hole ? { c: '*', quoted: false, split: false } : c)));
   // (No more than a pattern's length costs here: its limit is its own, as it is kept with the model's words.)
   return guardedApart(WORD_LIMIT, () => {
     const re = globToRegex(pattern, 'file');
@@ -216,45 +150,90 @@ function mayGiveDashes(w: readonly (SyntaxNode | string)[], shell?: Shell): bool
   }, () => false);
 }
 
+/** The text of the characters of a word before its first hole, split character or pattern character: what its first field starts with. */
+function ownStart(chars: readonly Char[]): string {
+  let out = '';
+  for (const c of chars) {
+    if (c.hole || c.split || c.pattern) break;
+    out += c.c;
+  }
+  return out;
+}
+
 /**
- * The words a word's words come in (`ArgWord.parts`; one of them: `ArgWord.prefixEach`), where it has a known start: for
- * each word of its brace expansion (where `braces` says the step applies, and the words are not too many to list), the
- * words of its first field, which keep the start (one; where it globs, `fewest` or more), then, where it may split, the
- * words splitting adds after them (none or more, of unknown text). `dashes` where a word that globs has a start of `-` or
- * `--` and its pattern may match `-` or `--` (`-*`, not `-?x` nor `-[av]*`). Undefined otherwise, and for one word
- * whose first field is one word (`bin/$n`), which needs no parts: its first word keeps the start, the others do not.
+ * The words a word's words come in (`ArgWord.parts`; one of them: `ArgWord.prefixEach`), where it has a known start
+ * (`prefix`): for each word of its brace expansion (`WordView.words`, where they are known), the words of its first
+ * field, which keep that word's own start (one; where it is a pattern, `fewest` or more), then, where it may split, the
+ * words splitting adds after them (none or more, of unknown text); a word with no start of its own that may split, any
+ * words. `dashes` where a word that is a pattern has a start of `-` or `--` and may match `-` or `--` (`-*`, not `-?x`
+ * nor `-[av]*`). Undefined otherwise, and for one word whose first field is one word (`bin/$n`), which needs no parts:
+ * its first word keeps the start, the others do not.
  */
-function startParts(n: SyntaxNode, prefix: string, braces: boolean | 'unknown', fewest: number, shell?: Shell): ArgWord[] | 'dashes' | undefined {
-  if (!prefix) return undefined;
-  const alternatives = braces === false ? undefined : braceAlternatives([n]);
-  if (alternatives === null || (alternatives && braces === 'unknown')) return undefined;
-  const words = alternatives ?? [n.type === 'concatenation' ? n.namedChildren : [n]];
-  if ((prefix === '-' || prefix === '--') && words.some((w) => partsOf(w).glob && mayGiveDashes(w, shell))) return 'dashes';
+function startParts(v: WordView, prefix: string, fewest: number): ArgWord[] | 'dashes' | undefined {
+  if (!prefix || !v.words.length || v.words.some((x) => !x.chars)) return undefined;
+  const words = v.words.map((x) => {
+    const chars = x.chars!;
+    const splits = chars.some((c) => c.split || c.hole?.kind === 'elements');
+    // (A pattern of its own characters, or, where it does not split, of a part not known: `IFS=; cp a$y d`.)
+    return { chars, start: ownStart(chars), glob: chars.some((c) => c.pattern) || (!splits && x.globs !== false), splits };
+  });
+  if (words.some((x) => (x.start === '-' || x.start === '--') && x.glob && mayGiveDashes(x.chars))) return 'dashes';
   // (No parts for one word whose first field is one word: `bin/$n`.)
-  if (words.length === 1 && !partsOf(words[0]).glob) return undefined;
-  return words.flatMap((w): ArgWord[] => {
-    const head: ArgWord = { prefix, ...(partsOf(w).glob ? { prefixEach: true as const, count: { min: fewest } } : {}) };
-    return splitsIn(w) ? [head, { count: { min: 0 } }] : [head];
+  if (words.length === 1 && !words[0].glob) return undefined;
+  return words.flatMap((x): ArgWord[] => {
+    if (!x.start && x.splits) return [{ count: { min: 0 } }];
+    const head: ArgWord = { prefix: x.start, ...(x.glob ? { prefixEach: true as const, count: { min: fewest } } : {}) };
+    return x.splits ? [head, { count: { min: 0 } }] : [head];
   });
 }
 
 /**
- * The words of the command line as the interpreter reads them, in a script for `shell` (bash when absent); `count` how
- * many words each gives, where the caller knows more than `countOf` (the model's fields, src/semantics/argwords.ts).
+ * The text every word a word gives starts with (`ArgWord.prefix`). Of several words of its brace expansion, the start
+ * their own characters share, before the first part not known in each (`project/{src,test}` is `project/`; `{a,$x}`
+ * none). Of one, the start of its first field (`WordView.start`); where it may give none, which the view leaves without
+ * a start but whose field domain is known, its own characters before the first part not known (`-*`, `-v$x` under
+ * nullglob: its first field may then still be a later one, where a pattern of a value matches nothing, `x='*z b'` gives
+ * only `b`, taken as rare). None where the domain is not known (`a1b$((IFS=1))` gives `a` and `b`).
  */
-export const argWordFor = (shell?: Shell, braces?: (n: SyntaxNode) => boolean | 'unknown', count = (n: SyntaxNode) => countOf(n, shell, braces?.(n))) => (n: SyntaxNode): ArgWord => {
-  const value = staticWordValue(n, false, shell);
-  const words = count(n);
+function startOf(v: WordView): string {
+  if (v.words.length > 1) {
+    const starts = v.words.map((x) => (x.chars ? ownStart(x.chars) : ''));
+    let k = 0;
+    while (k < starts[0].length && starts.every((t) => t[k] === starts[0][k])) k++;
+    return starts[0].slice(0, k);
+  }
+  return v.start ?? (v.shapes && v.words[0]?.chars ? ownStart(v.words[0].chars) : '');
+}
+
+/** How many words a word gives (`ArgWord.count`), from its view: none where that is one. */
+export const viewCount = (v: WordView): ArgWord['count'] => (v.count.min === 1 && v.count.max === 1 ? undefined : { ...v.count });
+
+/**
+ * The words of the command line as the interpreter reads them, each from its view (`view`: the finished model's, the
+ * walk's, or as written, `argWordAsWritten`): its value where it is plain, else the start of its first field, how many
+ * words it gives, and which of them keep a start (`startParts`). A word that is text as written (`textAsWritten`) is read
+ * at once; one outside a word of the model (the tree's option of a keyword, `time -p`) is its text.
+ */
+export const argWordFor = (view: (n: SyntaxNode) => WordView | undefined) => (n: SyntaxNode): ArgWord => {
+  const text = textAsWritten(n);
+  if (text !== undefined) return { value: text };
+  const v = view(n);
+  if (!v) return { value: n.text };
+  const value = v.value;
+  const words = viewCount(v);
   const param = loneParameter(n);
   const assigns = assignsOf(n);
-  const prefix = value === undefined ? prefixOf(n, shell) : undefined;
+  const prefix = value === undefined ? startOf(v) : undefined;
   // (Which of its words keep its known start: all of one part, `-v*`; or some of several, `-v*$x`.)
-  // (A glob gives none only where the glob options say so, `nullglob`: the model's count.)
-  const parts = words && prefix !== undefined ? startParts(n, prefix, braces?.(n) ?? bracesWork(n, shell), Math.min(words.min, 1), shell) : undefined;
-  // (One part: each of its words keeps the start, the words of a glob.)
-  const kept = parts === 'dashes' ? { dashes: true as const } : parts?.length === 1 ? { prefixEach: true as const } : parts ? { parts } : {};
+  // (A glob gives none only where the glob options say so, `nullglob`: the view's count.)
+  const parts = words && prefix !== undefined ? startParts(v, prefix, Math.min(words.min, 1)) : undefined;
+  // (One part: each of its words keeps the start, the words of a glob; or, of no start of its own, none of them: no parts.)
+  const kept = parts === 'dashes' ? { dashes: true as const } : parts?.length === 1 ? (parts[0].prefixEach ? { prefixEach: true as const } : {}) : parts ? { parts } : {};
   return { ...(value !== undefined ? { value } : { prefix }), ...kept, ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
 };
 
+/** The words of the command line as the interpreter reads them before or without a model, in a script for `shell` (bash when absent): from the view as written. */
+export const argWordAsWritten = (shell?: Shell): ((n: SyntaxNode) => ArgWord) => argWordFor((n) => wordViewAsWritten(n, shell));
+
 /** A word of the command line as the interpreter reads it in bash. */
-export const argWord = argWordFor();
+export const argWord = argWordAsWritten();
