@@ -204,15 +204,17 @@ describe('a command line its tool refuses', () => {
     assert.strictEqual(analyzers.en.explainLine(parser.parse('cut() { :; }\ncut -d ab -f1 f'), 1).facts?.find((f) => f.id === ID), undefined);
   });
 
-  it('runs no example where the tool refuses the line unless a later word is `--help`, and says it after `--`', () => {
+  it('runs no example where a late check refuses the line unless a later word is `--help`; says it after `--`, and before a later word', () => {
     // (`cut -f 0 "$f"`: whatever `$f` is, cut refuses the line or prints its help: no output to show, and nothing said.)
-    for (const line of ['cut -f 0 "$f"', 'cut -d ab -f1 "$f"', 'head -n x "$f"', "printf 'a\\n' | cut -f 0 $f"]) {
+    for (const line of ['cut -f 0 "$f"', 'cut -f 3-1 "$@"', "printf 'a\\n' | cut -f 0 $f"]) {
       assert.strictEqual(note(line), undefined, line);
       assert.deepStrictEqual((explain(line).examples ?? []).filter((e) => e.kind !== 'glob' && e.kind !== 'printf'), [], line);
     }
     assert.deepStrictEqual(real(['cut -f 0 "$f"', 'cut -f 0 "$h"', 'cut -f 0 -- "$f"'], { f: 'f', h: '--help' }).map((r) => r.status), [1, 0, 1]);
-    // (After `--`, a word is an operand: cut refuses the line whatever it is.)
-    assert.ok(note('cut -f 0 -- "$f"'));
+    // (After `--`, a word is an operand: cut refuses the line whatever it is. A check made as the option is read comes before
+    // any later word: `--help` after it changes nothing.)
+    for (const line of ['cut -f 0 -- "$f"', 'cut -d ab -f1 "$f"', 'head -n x "$f"', 'grep -E -F "$x" f', 'sort -k 0 "$@"']) assert.ok(note(line), line);
+    assert.deepStrictEqual(real(['cut -d ab -f1 --help', 'head -n x --help', 'grep -E -F --help', 'sort -k 0 --help']).map((r) => r.status), [1, 1, 2, 2]);
   });
 
   it('leaves out what the tool refuses with a message of its own, not stated', () => {

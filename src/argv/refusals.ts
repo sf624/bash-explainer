@@ -46,11 +46,12 @@ export interface RefusalInput {
  *
  * A word that may be anything (its text not known, or it may give no word or several: `"$o"`, `$o`, `"$@"`, `*.txt`)
  * may be an option, `--` or `-e`, unless it comes after `--` (an operand then) or is an option's value: before the word at
- * fault, it keeps the refusal unknown (`grep "$o" -E -F` runs with `o=--`); after it, the tool refuses the line unless the word
- * is an option that prints and exits (`--help`), and the refusal is `unlessInforms`: no example runs it, but the line says
- * nothing (`cut -f 0 "$f"`). A value checked once the options are read (cut's lists) is read so too, by the place of its
- * word; that a mode is given, and the operands, hold only where no word may be anything. An option the spec does not know,
- * or one that prints and exits, before the word at fault (anywhere, for a late check), keeps the refusal unknown, or gone.
+ * fault, it keeps the refusal unknown (`grep "$o" -E -F` runs with `o=--`); after it, it changes nothing for a check made as
+ * the option is read, which comes first (`grep -E -F "$x"`, `cut -d ab -f1 "$f"`). A value checked once the options are read
+ * (cut's lists) is refused after it unless the word is an option that prints and exits (`--help`): the refusal is then
+ * `unlessInforms`, and no example runs it, but the line says nothing (`cut -f 0 "$f"`). That a mode is given, and the
+ * operands, hold only where no word may be anything. An option the spec does not know, or one that prints and exits,
+ * before the word at fault (anywhere, for a late check), keeps the refusal unknown, or gone.
  */
 export function refusalOf({ spec, roles, words, until }: RefusalInput): Refusal | undefined {
   if (until) return { kind: 'until', at: until.at, until: { why: until.why, option: until.option, ...(until.word === undefined ? {} : { word: until.word }), ...(until.wordAt === undefined ? {} : { wordAt: until.wordAt }) } };
@@ -91,9 +92,10 @@ export function refusalOf({ spec, roles, words, until }: RefusalInput): Refusal 
     else late ??= r;
   };
   for (const { word, role } of roles) visit(word, role);
-  // (A word after the one at fault that may be an option is `--help` at most: nothing runs, but the line says nothing.)
-  if (found) return openAt === undefined ? found : { ...found, unlessInforms: true };
+  // (The tool reports it as it reads the option, before any word after it: `grep -E -F --help` is refused.)
+  if (found) return found;
   if (informs) return undefined;
+  // (A later word that may be an option is `--help` at most: nothing runs, but the line says nothing.)
   if (late) return openAt === undefined ? late : { ...late, unlessInforms: true };
   if (openAt !== undefined) return undefined;
   if (spec.needsMode && !roles.some(({ role }) => selects(role))) {
