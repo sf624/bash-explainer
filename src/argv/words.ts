@@ -138,26 +138,17 @@ const WORD_LIMIT = 1e6;
 
 /**
  * Whether the characters `chars` of one word of a brace expansion, a pattern, may match `-` or `--`, which a command
- * reads otherwise than an option (`-*` with the file `--`), each hole standing for any text (`-*$x` is `-**`).
+ * reads otherwise than an option (`-*` with the file `--`). A hole is read as empty: after a start of `-` or `--`, a
+ * pattern matches one of them with the hole as any text only where it does with the hole empty.
  */
 function mayGiveDashes(chars: readonly Char[]): boolean {
-  const pattern = patternOfChars(chars.map((c) => (c.hole ? { c: '*', quoted: false, split: false } : c)));
+  const pattern = patternOfChars(chars);
   // (No more than a pattern's length costs here: its limit is its own, as it is kept with the model's words.)
   return guardedApart(WORD_LIMIT, () => {
     const re = globToRegex(pattern, 'file');
     return !re || re.test('-') || re.test('--');
     // (Refused only as too long to read: such a word gives no `-`.)
   }, () => false);
-}
-
-/** The text of the characters of a word before its first hole, split character or pattern character: what its first field starts with. */
-function ownStart(chars: readonly Char[]): string {
-  let out = '';
-  for (const c of chars) {
-    if (c.hole || c.split || c.pattern) break;
-    out += c.c;
-  }
-  return out;
 }
 
 /**
@@ -170,12 +161,13 @@ function ownStart(chars: readonly Char[]): string {
  * its first word keeps the start, the others do not.
  */
 function startParts(v: WordView, prefix: string, fewest: number): ArgWord[] | 'dashes' | undefined {
-  if (!prefix || !v.words.length || v.words.some((x) => !x.chars)) return undefined;
+  if (!prefix || !v.words.length) return undefined;
   const words = v.words.map((x) => {
-    const chars = x.chars!;
-    const splits = chars.some((c) => c.split || c.hole?.kind === 'elements');
+    // (A word whose characters are not known, of braces not read, `--file={,$x}a`: its own start, then any words.)
+    const chars = x.chars ?? [];
+    const splits = !x.chars || chars.some((c) => c.split || c.hole?.kind === 'elements');
     // (A pattern of its own characters, or, where it does not split, of a part not known: `IFS=; cp a$y d`.)
-    return { chars, start: ownStart(chars), glob: chars.some((c) => c.pattern) || (!splits && x.globs !== false), splits };
+    return { chars, start: x.lead ?? '', glob: chars.some((c) => c.pattern) || (!splits && x.globs !== false), splits };
   });
   if (words.some((x) => (x.start === '-' || x.start === '--') && x.glob && mayGiveDashes(x.chars))) return 'dashes';
   // (No parts for one word whose first field is one word: `bin/$n`.)
@@ -188,21 +180,24 @@ function startParts(v: WordView, prefix: string, fewest: number): ArgWord[] | 'd
 }
 
 /**
- * The text every word a word gives starts with (`ArgWord.prefix`). Of several words of its brace expansion, the start
- * their own characters share, before the first part not known in each (`project/{src,test}` is `project/`; `{a,$x}`
- * none). Of one, the start of its first field (`WordView.start`); where it may give none, which the view leaves without
- * a start but whose field domain is known, its own characters before the first part not known (`-*`, `-v$x` under
- * nullglob: its first field may then still be a later one, where a pattern of a value matches nothing, `x='*z b'` gives
- * only `b`, taken as rare). None where the domain is not known (`a1b$((IFS=1))` gives `a` and `b`).
+ * The text every word a word gives starts with (`ArgWord.prefix`): of one field, its start (`WordView.start`, with the
+ * values the model knows: `"$x"` with `x=-v`); else the word's own text before its first part not known, which its brace
+ * words share (`WordView.lead`: `--file=$f`, `-v$x` under nullglob, `project/{src,test}` is `project/`, `{a,$x}` none),
+ * not the start of a first field that a value gives (`opts='-n -e x*'; grep $opts f`: the other fields are not known).
  */
-function startOf(v: WordView): string {
-  if (v.words.length > 1) {
-    const starts = v.words.map((x) => (x.chars ? ownStart(x.chars) : ''));
-    let k = 0;
-    while (k < starts[0].length && starts.every((t) => t[k] === starts[0][k])) k++;
-    return starts[0].slice(0, k);
-  }
-  return v.start ?? (v.shapes && v.words[0]?.chars ? ownStart(v.words[0].chars) : '');
+const startOf = (v: WordView): string => (v.count.min === 1 && v.count.max === 1 ? v.start : undefined) ?? v.lead ?? '';
+
+/**
+ * How many words the interpreter takes a word to give: its count (`viewCount`), but one at least, no more, where a known
+ * value splits it into more fields than it has words of braces, not all known (`opts='-n -e err.*'; grep $opts log`): their texts are not passed on,
+ * and words of no known text would be read as operands, though `-n` and `-e` are options. Reading each such field as a
+ * word of its own is step 5b (docs/design/word-source.md, 3.4).
+ */
+function readCount(v: WordView): ArgWord['count'] {
+  const count = viewCount(v);
+  // (More fields than words of braces, of a known value split: `{a,$x}` with `x='*'` is two words, of known texts.)
+  const splitValue = v.words.some((x) => !x.fields && x.chars?.some((c) => c.split && !c.hole));
+  return count && splitValue && count.min > Math.max(v.words.length, 1) ? { min: 1 } : count;
 }
 
 /** How many words a word gives (`ArgWord.count`), from its view: none where that is one. */
@@ -220,7 +215,7 @@ export const argWordFor = (view: (n: SyntaxNode) => WordView | undefined) => (n:
   const v = view(n);
   if (!v) return { value: n.text };
   const value = v.value;
-  const words = viewCount(v);
+  const words = readCount(v);
   const param = loneParameter(n);
   const assigns = assignsOf(n);
   const prefix = value === undefined ? startOf(v) : undefined;

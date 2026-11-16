@@ -172,6 +172,30 @@ export function plainPattern(pattern: string): string | undefined {
 /** A piece of the text of a word: quoted (no split or glob), or unquoted from the source or from an expansion (split); `hole`: a part not known (fieldshape.ts), with no text. */
 export interface Piece { text: string; quoted: boolean; expanded: boolean; hole?: Hole }
 
+/** The characters that may begin a pattern where the characters are not marked (`Char.pattern`): a glob or an extended glob. */
+const UNMARKED_PATTERN = new Set(['*', '?', '[', '@', '!', '+', '(']);
+
+/**
+ * The text of the word's own characters, before its first expansion, hole or pattern character: of the pieces
+ * `pieces`, the characters `chars` that `ownChars` made of them (one for a hole and for an empty quoted piece, one for
+ * each character of a text). It is the start of every field of the word, whatever the parts after it give, since bash
+ * splits no text of the word's own; `marked`: whether the characters of a pattern are marked, else an unquoted glob
+ * character ends it too (`-v*` with an IFS not known).
+ */
+export function leadOf(pieces: readonly Piece[], chars: readonly Char[], marked: boolean): string {
+  let out = '';
+  let at = 0;
+  for (const p of pieces) {
+    if (p.hole || p.expanded) break;
+    for (let k = p.quoted && !p.text ? 1 : [...p.text].length; k > 0; k--, at++) {
+      const c = chars[at];
+      if (c.pattern || (!marked && !c.quoted && UNMARKED_PATTERN.has(c.c))) return out;
+      out += c.c;
+    }
+  }
+  return out;
+}
+
 /** The glob characters, whose quoting changes what a pattern matches (and `:`, `.`, `=` after a `[`, `IN_BRACKET`). */
 export const GLOB_CHARS = /[*?[\]+@!()|^-]/;
 /** The characters whose quoting changes a pattern only after a `[`: they open and close a class (`[[:alpha:]]`), a collating symbol or an equivalence class. */

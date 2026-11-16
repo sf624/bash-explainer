@@ -2,6 +2,8 @@
 // argument interpreter (src/argv/interpret.ts) before the walk was replaced by it. Each row says what the
 // word is now; the comment says how the real tool reads it.
 import * as assert from 'assert';
+import * as os from 'os';
+import { spawnSync } from 'child_process';
 import { Analyzer, Kind, Token } from '../src/analyzer';
 import { countIn } from '../src/semantics/argwords';
 import { shellState } from '../src/semantics/state';
@@ -123,6 +125,23 @@ describe('an operand that becomes several words', () => {
     assert.strictEqual(tokenOf("cp {'*',a}x d", 'd').explanation, 'destination directory');
   });
 
+  it('a word whose every word has one role is read with that role, with no hedge', () => {
+    // (bash 5.2: every name `"$d"/*.c` and `"$d"/*.h` give is a source, and `out/` the directory, `d` known or not.)
+    for (const line of ['cp "$d"/*.{c,h} out/', 'd=src; cp "$d"/*.{c,h} out/']) {
+      assert.deepStrictEqual([tokenOf(line, '"$d"/*.{c,h}').explanation, tokenOf(line, 'out/').explanation], ['source', 'destination directory'], line);
+    }
+  });
+
+  it('a known value of options and a pattern: its words are not read as options before their count is known', () => {
+    // (bash 5.2 in an empty directory gives `-n`, `-e`, `err.*`; `-e`, `s/a*/b/`; `-e`, `a*`. What the interpreter says of
+    // such fields, each a word of its own, is step 5b of docs/design/word-source.md: until then, the hedge of main.)
+    const out = spawnSync('bash', ['--norc', '-c', "f() { printf '<%s>' \"$@\"; echo; }; opts='-n -e err.*'; f $opts; x='-e s/a*/b/'; f $x; p='-e a*'; f $p"], { cwd: os.tmpdir(), encoding: 'utf8' }).stdout;
+    assert.strictEqual(out, '<-n><-e><err.*>\n<-e><s/a*/b/>\n<-e><a*>\n');
+    assert.match(tokenOf("opts='-n -e err.*'; grep $opts log", '$opts').explanation, /^search pattern \(regex\); when `\$opts` expands to several words/);
+    assert.match(tokenOf("x='-e s/a*/b/'; sed $x f", '$x').explanation, /; when `\$x` expands to several words/);
+    assert.match(tokenOf("p='-e a*'; grep $p f", '$p').explanation, /; when `\$p` expands to several words/);
+  });
+
   it('counts the words of braces only where brace expansion is on (`set +B`)', () => {
     // (bash runs `cp {a,b} d`: a source and the destination.)
     assert.strictEqual(tokenOf('set +B; cp {a,b} d', 'd').explanation, 'destination (the new name, or an existing directory)');
@@ -180,8 +199,8 @@ describe('an operand that becomes several words', () => {
     assert.deepStrictEqual(count('x=-r; cp {a,$x}'), { min: 2, max: 2 });
     // (`{,$x}a` is `a` and `$xa`, the variable `xa`: one or more, but the view does not read such words (`rejoined`): none
     // or more, docs/backlog-archive.md.)
-    assert.deepStrictEqual(count('cp {,$x}a'), { min: 0 });
-    assert.deepStrictEqual(count('cp {b,$x}a'), { min: 0 });
+    assert.deepStrictEqual(count('cp {,$x}a'), { min: 1 });
+    assert.deepStrictEqual(count('cp {b,$x}a'), { min: 1 });
     // (Globs give at least one word each; quoted words exactly one.)
     assert.deepStrictEqual(count('cp {a,b}*'), { min: 2 });
     assert.deepStrictEqual(count('cp {a,"$x"}'), { min: 2, max: 2 });

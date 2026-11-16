@@ -11,7 +11,7 @@ import { type ArgRole, type ArgWord, interpret, type RoleAt } from '../src/argv/
 import { roleKey, wordReadings, type WordReadings } from '../src/argv/profiles';
 import { allRoles, readingsOf, SHAPE_CAP, specsReached, wordsBound, type ReadingsTable } from '../src/argv/readings';
 import type { CommandSpec } from '../src/argv/spec';
-import { argWord, argWordFor } from '../src/argv/words';
+import { argWord, argWordAsWritten, argWordFor } from '../src/argv/words';
 import { argWordIn, fieldsIn } from '../src/semantics/argwords';
 import { shellState } from '../src/semantics/state';
 import { lookupCommand } from '../src/dict/aliases';
@@ -389,56 +389,117 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     });
   });
 
-  it('the words read the view of each word: its value, start, count and parts, in the model and as written (bash 5.2)', () => {
-    // (`model`: what `argWordIn` gives the last word of the last command; `written`: `argWord`, before any model. `bash`:
-    // the words bash gives it, run in an empty directory.)
-    type Row = { line: string; model?: Partial<ArgWord>; written?: Partial<ArgWord>; bash: number };
+  it('the words read the view of each word: its value, start, count and parts, in the model and as written (bash 5.2, dash)', () => {
+    // (`model`: what `argWordIn` gives the last word of the last command `f`; `written`: `argWordAsWritten`, before any
+    // model. Each row runs in bash, and a row of `sh` in dash too, in an empty directory: the fields each gives must lie
+    // in the count we say, start with the start we say (all of them where each keeps it), be the value or the fields we
+    // say where we say one; as written, where the row gives what it is, of a line whose words depend on nothing it sets.)
+    type Row = { line: string; model?: Partial<ArgWord>; written?: Partial<ArgWord>; sh?: true; dash?: false };
     const rows: Row[] = [
       // (A value read as arithmetic is a number: one word where the IFS holds no digit; as written, at least one.)
-      { line: 'n=5; f $((n-1))', model: { count: undefined }, bash: 1 },
-      { line: 'f $((OPTIND - 1))', model: { count: undefined }, written: { count: { min: 1 } }, bash: 1 },
-      { line: 'f $#', written: { count: undefined }, bash: 1 },
-      { line: 'i=日本語; f $(( ${#i} > 3 ))', model: { count: undefined }, bash: 1 },
+      { line: 'n=5; f $((n-1))', model: { count: undefined } },
+      { line: 'f $((OPTIND - 1))', model: { count: undefined }, written: { count: { min: 1 } } },
+      { line: 'f $#', written: { count: undefined } },
+      { line: 'i=日本語; f $(( ${#i} > 3 ))', model: { count: undefined } },
+      // (Arithmetic that assigns a variable the word reads after it: not its value before, `12`.)
+      { line: 'y=1; f $((y++))$y', model: { count: { min: 1 } } },
+      { line: 'y=1; f $((y--))$y', model: { count: { min: 1 } } },
       // (`set -f`: a pattern is text; a substitution that may print something is not known.)
-      { line: 'set -f; f -v*', model: { value: '-v*' }, written: { prefix: '-v', prefixEach: true }, bash: 1 },
-      { line: 'set -f; f 日本語*.txt', model: { value: '日本語*.txt' }, written: { prefix: '日本語', prefixEach: true, count: { min: 1 } }, bash: 1 },
-      { line: ':() { printf x; }; f $(:)-v', model: { prefix: '', count: { min: 1 } }, written: { prefix: '', count: { min: 1 } }, bash: 1 },
+      { line: 'set -f; f -v*', model: { value: '-v*' }, written: { prefix: '-v', prefixEach: true } },
+      { line: 'set -f; f 日本語*.txt', model: { value: '日本語*.txt' }, written: { prefix: '日本語', prefixEach: true, count: { min: 1 } } },
+      { line: ':() { printf x; }; f $(:)-v', model: { prefix: '', count: { min: 1 } }, written: { prefix: '', count: { min: 1 } } },
       // (No word splitting: each word a pattern of `$x` gives keeps the start.)
-      { line: 'IFS=; f -v$x', model: { prefix: '-v', prefixEach: true, count: { min: 1 } }, bash: 1 },
-      { line: "IFS=; x='a b'; f -v$x", model: { prefix: '-va b', count: undefined }, bash: 1 },
+      { line: 'IFS=; f -v$x', model: { prefix: '-v', prefixEach: true, count: { min: 1 } } },
+      { line: "IFS=; x='a b'; f -v$x", model: { prefix: '-va b', count: undefined } },
       // (nullglob: a pattern may give none, and the words it gives start with `-`.)
-      { line: 'shopt -s nullglob; f -*', model: { prefix: '-', dashes: true, count: { min: 0 } }, bash: 0 },
-      { line: 'shopt -s nullglob; f -v$x', model: { prefix: '-v', count: { min: 0 } }, bash: 1 },
+      { line: 'shopt -s nullglob; f -*', model: { prefix: '-', dashes: true, count: { min: 0 } } },
+      { line: 'shopt -s nullglob; f -v$x', model: { prefix: '-v', count: { min: 0 } } },
       // (Arithmetic that assigns IFS splits the word's own text, F95: `a` and `b`.)
-      { line: 'f a1b$((IFS=1))', model: { prefix: '', count: { min: 0 } }, bash: 2 },
-      // (A known value split and globbed: `a*` (as it is, where no file matches) and `b`; only the first keeps the start.)
-      { line: "p='a* b'; f $p", model: { prefix: 'a', prefixEach: undefined, parts: undefined, count: { min: 2 } }, bash: 2 },
+      { line: 'f a1b$((IFS=1))', model: { prefix: '', count: { min: 0 } }, written: { prefix: '' } },
+      // (A known value split and globbed: none of its words is known to keep a start, and their texts are not passed on:
+      // one word at least, as words of no known text would be read as operands, and `-n` and `-e` are options.)
+      { line: "p='a* b'; f $p", model: { prefix: '', prefixEach: undefined, parts: undefined, count: { min: 1 } } },
+      { line: "opts='-n -e err.*'; f $opts", model: { prefix: '', count: { min: 1 } } },
+      { line: "x='-e s/a*/b/'; f $x", model: { prefix: '', count: { min: 1 } } },
+      { line: "p='-e a*'; f $p", model: { prefix: '', count: { min: 1 } } },
+      // (An indirection: its words start with the word's own text, `--file=p` and `q`.)
+      { line: "a='p q'; x=a; f --file=${!x}", model: { prefix: '--file=' } },
+      { line: 'a=v; x=a; f --file="${!x}"', model: { prefix: '--file=' } },
+      { line: 'a=5; x=a; f -n"${!x}"', model: { prefix: '-n' } },
+      { line: 'a=2; x=a; f -f${!x}', model: { prefix: '-f' } },
+      // (Braces bash reads again, `--file=a` and `--file=$xa`: two words at least, of the word's own start.)
+      { line: 'f --file={,$x}a', model: { prefix: '--file=', count: { min: 2 } }, written: { prefix: '--file=', count: { min: 2 } } },
+      { line: 'f -n{,$x}a', model: { prefix: '-n', count: { min: 2 } }, written: { prefix: '-n', count: { min: 2 } } },
+      { line: 'f {,$x}a', model: { count: { min: 1 } } },
+      // (Braces on some paths only: one word or its words of braces, of the start they share.)
+      { line: 'if c; then set +B; fi; f -v{a,b}', model: { prefix: '-v', count: { min: 1, max: 2 } } },
+      { line: 'if c; then set +B; fi; f -v{a,b}$x', model: { prefix: '-v', count: { min: 1 } } },
       // (Text outside ASCII.)
-      { line: "x='日本語 です'; f $x", model: { prefix: '日本語', count: { min: 2, max: 2 } }, bash: 2 },
-      { line: 'f "日本語 $y"', model: { prefix: '日本語 ', count: undefined }, written: { prefix: '日本語 ', count: undefined }, bash: 1 },
-      { line: "f $'日本語\\n'", model: { value: '日本語\n' }, written: { value: '日本語\n' }, bash: 1 },
-      { line: 'f 日本語{1,2}', model: { prefix: '日本語', parts: [{ prefix: '日本語1' }, { prefix: '日本語2' }], count: { min: 2, max: 2 } }, bash: 2 },
+      { line: "x='日本語 です'; f $x", model: { prefix: '', count: { min: 2, max: 2 } } },
+      { line: 'f "日本語 $y"', model: { prefix: '日本語 ', count: undefined }, written: { prefix: '日本語 ', count: undefined } },
+      { line: "f $'日本語\\n'", model: { value: '日本語\n' }, written: { value: '日本語\n' } },
+      { line: 'f 日本語{1,2}', model: { prefix: '日本語', parts: [{ prefix: '日本語1' }, { prefix: '日本語2' }], count: { min: 2, max: 2 } } },
+      // (In a script for sh, which may be bash or dash: the word's own text before a part a sh may lack is the start in both.
+      // dash gives `-d$\t`, bash a tab; dash fails on `${arr[@]}`.)
+      { line: "f -d$'\\t'", model: { prefix: '-d' }, written: { prefix: '-d' }, sh: true },
+      { line: "f --file=$'日本語\\n'", model: { prefix: '--file=' }, written: { prefix: '--file=' }, sh: true },
+      { line: 'f --file=${arr[@]}', model: { prefix: '--file=' }, written: { prefix: '--file=' }, sh: true, dash: false },
+      { line: 'f -v"${x[@]:1}"', model: { prefix: '-v' }, written: { prefix: '-v' }, sh: true, dash: false },
     ];
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-words-'));
-    try {
-      const out = spawnSync('bash', ['--norc', '-c', rows.map(({ line }) => `(f() { echo $#; }; ${line})`).join('\n')], { cwd: dir, encoding: 'utf8', input: '' }).stdout;
-      assert.deepStrictEqual(out.trim().split('\n').map(Number), rows.map((r) => r.bash));
-    } finally {
-      fs.rmSync(dir, { recursive: true });
-    }
+    /** The fields each line gives its `f` in `shell`, run in an empty directory. */
+    const run = (shell: string, lines: readonly string[]): string[][] => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-words-'));
+      try {
+        const script = lines.map((line) => `(f() { [ $# -eq 0 ] || printf '%s\\037' "$@"; printf '\\036'; }; ${line})`).join('\n');
+        const out = spawnSync(shell, ['-c', script], { cwd: dir, encoding: 'utf8', input: '' }).stdout;
+        return out.split('\x1e').slice(0, -1).map((r) => (r ? r.split('\x1f').slice(0, -1) : []));
+      } finally {
+        fs.rmSync(dir, { recursive: true });
+      }
+    };
+    const bash = run('bash', rows.map((r) => r.line));
+    assert.strictEqual(bash.length, rows.length);
+    const dashRows = rows.filter((r) => r.sh && r.dash !== false);
+    const dash = spawnSync('dash', ['-c', 'true']).status === 0 ? run('dash', dashRows.map((r) => r.line)) : [];
     const pick = (w: ArgWord, want: Partial<ArgWord>): Partial<ArgWord> => Object.fromEntries(Object.keys(want).map((k) => [k, w[k as keyof ArgWord]]));
-    for (const { line, model, written } of rows) {
+    /** Whether the fields `got` fit the word `w` as we read it. */
+    const fits = (w: ArgWord, got: readonly string[]): boolean => {
+      const count = w.count ?? { min: 1, max: 1 };
+      if (got.length < count.min || (count.max !== undefined && got.length > count.max)) return false;
+      if (w.value !== undefined && JSON.stringify(got) !== JSON.stringify([w.value])) return false;
+      const known = w.fields?.();
+      if (known && JSON.stringify(got) !== JSON.stringify(known)) return false;
+      return !got.length || (w.prefixEach ? got : got.slice(0, 1)).every((x) => x.startsWith(w.prefix ?? ''));
+    };
+    const wrong: string[] = [];
+    const check = (ok: boolean, what: string): void => { if (!ok) wrong.push(what); };
+    rows.forEach(({ line, model, written, sh }, i) => {
       const tree = parser.parse(line);
       const word = descendants(tree.root, ['command']).filter((c) => field(c, 'name')?.text === 'f').at(-1)!.namedChildren.at(-1)!;
-      if (model) assert.deepStrictEqual(pick(argWordIn(shellState(tree, 'bash'))(word), model), model, line);
-      if (written) assert.deepStrictEqual(pick(argWord(word), written), written, `${line} (as written)`);
-    }
+      const shell = sh ? 'sh' : 'bash';
+      const inModel = argWordIn(shellState(tree, shell))(word);
+      const asWritten = argWordAsWritten(shell)(word);
+      const runs = [bash[i], ...(sh && rows[i].dash !== false && dash.length ? [dash[dashRows.indexOf(rows[i])]] : [])];
+      for (const got of runs) {
+        check(fits(inModel, got), `${line}: ${JSON.stringify({ ...inModel, fields: inModel.fields?.() })}, the shell gives ${JSON.stringify(got)}`);
+        // (As written is the reading of a script that sets nothing: held to the shell where the row says what it is.)
+        if (written) check(fits(asWritten, got), `${line} (as written): ${JSON.stringify(asWritten)}, the shell gives ${JSON.stringify(got)}`);
+      }
+      if (model) check(JSON.stringify(pick(inModel, model)) === JSON.stringify(model), `${line}: ${JSON.stringify(pick(inModel, model))}`);
+      if (written) check(JSON.stringify(pick(asWritten, written)) === JSON.stringify(written), `${line} (as written): ${JSON.stringify(pick(asWritten, written))}`);
+    });
+    assert.deepStrictEqual(wrong, [], wrong.join('\n'));
     // (A word outside a word of the model is read as its text.)
     assert.deepStrictEqual(argWordFor(() => undefined)(descendants(parser.parse('f "a"').root, ['command'])[0].namedChildren[1]), { value: '"a"' });
-    // (An array or a subscript given to a declaration builtin is one word, which the builtin reads itself.)
-    const tree = parser.parse('declare -a b=(1 2) c[$i]=日本語');
+  });
+
+  it('an array or a subscript given to a declaration builtin is one word, which the builtin reads itself (bash 5.2)', () => {
+    // (Braces in an array stay in it: `e` holds `1` and `2`, not only `2`, as two words `e=(1)` `e=(2)` would leave.)
+    const out = spawnSync('bash', ['--norc', '-c', "i=3; declare -a b=(1 2) c[$i]=日本語 e=({1,2}); declare -p b c e"], { encoding: 'utf8' }).stdout;
+    assert.strictEqual(out, 'declare -a b=([0]="1" [1]="2")\ndeclare -a c=([3]="日本語")\ndeclare -a e=([0]="1" [1]="2")\n');
+    const tree = parser.parse('declare -a b=(1 2) c[$i]=日本語 e=({1,2})');
     const model = shellState(tree, 'bash');
-    assert.deepStrictEqual(descendants(tree.root, ['command'])[0].namedChildren.slice(2).map((w) => argWordIn(model)(w).count), [undefined, undefined]);
+    assert.deepStrictEqual(descendants(tree.root, ['command'])[0].namedChildren.slice(2).map((w) => argWordIn(model)(w).count), [undefined, undefined, undefined]);
   });
 
   it('a glob keeps its known start on every word it gives, as bash globs it (GNU cp and grep)', function () {

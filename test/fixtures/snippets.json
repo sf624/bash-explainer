@@ -947,7 +947,7 @@
  "declare -A m; echo ${#m[@]}",
  "declare -a \\\n  x",
  "declare -a a=$(:)'(x)'{,}",
- "declare -a b=(1 2) c[$i]=日本語",
+ "declare -a b=(1 2) c[$i]=日本語 e=({1,2})",
  "declare -i >f x=1 >g",
  "declare -i n",
  "declare -ix +r a",

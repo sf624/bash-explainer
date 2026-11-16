@@ -156,6 +156,8 @@ const expansionsOf = (w: WordMeaning): (readonly [SyntaxNode, { name: string } |
  * variable: `$((i++))`), and only one that names IFS may change the IFS (`$((n-1))` assigns nothing; `$((IFS=1))` does).
  */
 interface SelfAssigned { names: Set<string>; any: boolean; ifs: 'no' | 'integer' | 'any' }
+/** Whether the word `w` may change the IFS as it expands, taking a value read as arithmetic to be a number (`selfAssigned` with `numbers`): `${IFS=:}`, `$((IFS=1))`. */
+export const changesIfs = (w: WordMeaning): boolean => selfAssigned(w, true).ifs !== 'no';
 /** An assignment of arithmetic's own: `=` (not `==`, `!=`, `<=`, `>=`), an operator ending in `=` (`+=`, `<<=`), `++` or `--`. */
 const ASSIGNS = /<<=|>>=|(?:^|[^=!<>])=(?!=)|\+\+|--/;
 function selfAssigned(w: WordMeaning, numbers = false): SelfAssigned {
@@ -190,7 +192,8 @@ function selfAssigned(w: WordMeaning, numbers = false): SelfAssigned {
     if (p.op === '@' && !p.prefix && p.parts!.find((x) => x.role === 'transform')!.text === 'P') anything('any');
     // (`${!x*}` and `${!x@}` list names, `${!a[@]}` keys: no indirection.)
     const lists = p.subscript === undefined ? p.op === '*' || p.op === '@' : /^[@*]$/.test(p.subscript);
-    if ((p.prefix === '!' && !lists) || nameref) anything('integer');
+    // (With `numbers`, the subscript of the name the value holds is a number too: no assignment.)
+    if (((p.prefix === '!' && !lists) || nameref) && !numbers) anything('integer');
     if (p.op === '=' || p.op === ':=') {
       if (nameref) anything('any');
       // (The word of an integer's is arithmetic: with `numbers`, read as `arith` reads one.)
