@@ -82,6 +82,7 @@ const ROWS: readonly Row[] = [
   { id: 'bats-tags-invalid', file: 't.bats', text: '# bats test_tags=a,,b\n@test "t" {\n  true\n}\n', line: 1, works: 'ok 1 t', ways: ['bats'] },
   // ---- the pitfalls of the catalog
   { id: 'find-action-refused', text: '#!/bin/bash\nfind . -name script.sh -exec echo it-works {}\n', line: 2, works: 'it-works' },
+  { id: 'command-refused', text: "#!/bin/bash\ncut -d '\\t' -f2 /dev/null && echo it-works\n", line: 2, works: 'it-works' },
   { id: 'assign-readonly', text: '#!/bin/bash\nreadonly r=1\nr=2 && echo it-works\n', line: 3, works: 'it-works' },
   { id: 'restricted-refused', text: "#!/bin/bash\nbash -r -c 'cd / && echo it-works'\n", line: 2, works: 'it-works' },
   { id: 'exit-refused', text: '#!/bin/bash\nexit x\n', line: 2, error: /numeric argument required/ },
@@ -190,7 +191,7 @@ const HEADED_FOR_ERROR: readonly string[] = [
   'pipeline-subshell-variable', 'redirect-by-your-shell', 'shebang-refused', 'shebang-bom', 'bats-tags-invalid', 'bats-test-line-dropped',
   'bats-negation-ignored', 'bats-run-in-pipeline-stage', 'bats-run-in-pipeline', 'bats-setup-suite-in-test-file', 'regex-backslash-dropped',
   'python-string-without-shell', 'nounset-unbound', 'postfix-increment-status', 'postfix-decrement-status',
-  'assign-readonly', 'restricted-refused', 'exit-refused',
+  'assign-readonly', 'restricted-refused', 'exit-refused', 'command-refused',
   'bracket-no-space', 'assignment-with-spaces', 'brace-no-space', 'brace-close-no-separator', 'redirect-in-bracket', 'and-or-in-bracket',
   'bracket-close-in-word', 'unsupported', 'crlf',
 ];

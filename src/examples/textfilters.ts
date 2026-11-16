@@ -58,12 +58,10 @@ export function parseOptions(cmd: string, words: (string | undefined)[], support
     out.opts.push([key, r.value ? words[word]!.slice(r.value.attached) : '']);
   };
   const skipped = new Set<number>();
-  // (A line the tool refuses, `grep -E -F` or `cut -d ab`, runs nothing.)
-  if (parse.refused || parse.refusedValue) throw new Unsupported('refused');
   for (const { word, role } of parse.roles) {
     switch (role.role) {
       case 'operand':
-        // (`basename a b c`: the tool refuses a word past the operands it takes, and runs nothing.)
+        // (`basename a b "$x"`: a word past the operands the tool takes, which it refuses where it is one word.)
         if (role.spec?.extra) throw new Unsupported('extra operand');
         out.operands.push(words[word]);
         break;

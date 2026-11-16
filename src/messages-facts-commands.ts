@@ -4,6 +4,7 @@ import type { Head } from './messages-levels';
 import { inTrap, LOCAL_SOURCED, noShebang } from './messages-common';
 import { syntaxErrorHead, syntaxErrorText, type SyntaxErrorWhat } from './messages-syntax';
 import { ends, type PosixExitParams, posixExitText, type Stops } from './messages-posix';
+import { refusedHead, type RefusedParams, refusedRefs, refusedText } from './messages-refused';
 import type { Rewrite } from './rewrite';
 
 // The catalog's facts on commands that fail or do not run as written: syntax errors, `[` and `test`, functions defined
@@ -179,6 +180,13 @@ export const COMMAND_MESSAGES = {
     `GNU の tr はバイト単位で働く: UTF-8 では ${trBytesJa(chars)}、ほかの文字のバイトも変わることがある。ASCII 以外の文字には、UTF-8 のロケールで \`sed\` を使う: \`sed 'y/ａｂ/ab/'\``,
     `GNU tr works on bytes: in UTF-8 ${trBytesEn(chars)}, and bytes of other characters may change too. For characters beyond ASCII, use \`sed\` in a UTF-8 locale: \`sed 'y/ａｂ/ab/'\``],
     () => ['tr はバイト単位で働くので、ASCII 以外の文字は集合の複数の要素になる。', 'tr works on bytes, so a character beyond ASCII is several members of the set.']),
+
+  // ---------------------------------------------------------------- command lines a tool refuses
+  // (A usage error, every time the command runs: the tool prints its message and exits before it reads anything. What is
+  // refused and what the tool prints are the spec's (src/argv/spec.ts, `Refused`), read by the parse (`ArgvParse.refused`,
+  // src/argv/refusals.ts); test/refused-lines.test.ts runs each case with the real tool. An error where every implementation
+  // refuses the line; a warning where only GNU's does (`gnu`). It cites the tool's manual node, or 3.7.5: the status.)
+  'command-refused': { ...pitfall<RefusedParams>(['3.7.5'], refusedText, refusedHead, undefined, ({ gnu }) => (gnu ? 'warning' : 'error')), refsOf: refusedRefs },
 } satisfies Catalog;
 
 /** `` `い` は3バイトなので集合の3つの要素になり ``: the characters of a set, their bytes in UTF-8, and what tr makes of them. */

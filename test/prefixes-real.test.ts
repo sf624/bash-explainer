@@ -179,7 +179,9 @@ describe('lines with long options, against the GNU tools', () => {
       const r = spawnSync('bash', ['--norc', '-c', line], { cwd: DIR, env: ENV, encoding: 'utf8', input: 'a\n' });
       assert.strictEqual(r.status, refused ? 2 : 0, line);
       assert.strictEqual(/conflicting matchers specified/.test(r.stderr), refused, line);
-      assert.strictEqual(read(line).filter((l) => l.includes('conflicting matchers specified')).length, refused ? 1 : 0, line);
+      // (The line's note says it once, not a row (#852): a warning, as only GNU grep refuses it.)
+      assert.strictEqual(explain(line).notes.filter((l) => l.startsWith('⚠ Pitfall:') && l.includes('conflicting matchers specified')).length, refused ? 1 : 0, line);
+      assert.strictEqual(read(line).filter((l) => l.includes('conflicting matchers specified')).length, 0, line);
       // A refused line has no example, and its pattern is read in no flavour (not as a fixed string or a regex).
       const piped = `echo a | ${line}`;
       assert.strictEqual(explain(piped).examples.length === 0, refused, piped);
@@ -199,7 +201,9 @@ describe('lines with long options, against the GNU tools', () => {
       assert.strictEqual(/You may not specify more than one/.test(r.stderr), refused, line);
       if (refused) assert.strictEqual(r.status, 2, line);
       else assert.strictEqual(r.status, 0, line);
-      assert.strictEqual(read(line).filter((l) => l.includes('You may not specify more than one')).length, refused ? 1 : 0, line);
+      // (The line's note says it, with the level error, once; not a row: #852.)
+      assert.strictEqual(explain(line).notes.filter((l) => l.startsWith('ⓧ Error:') && l.includes('You may not specify more than one')).length, refused ? 1 : 0, line);
+      assert.strictEqual(read(line).filter((l) => l.includes('You may not specify more than one')).length, 0, line);
     });
   }
   (has('stty') ? it : it.skip)('stty --sa is --save, --fil is --file', () => {

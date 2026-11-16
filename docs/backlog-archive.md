@@ -1428,3 +1428,20 @@ Checked with GNU coreutils 9.4, gawk, mawk, util-linux rev and bash 5.2, in `C` 
 - **A known value of options and a pattern.** `opts='-n -e err.*'; grep $opts log` says `$opts` is the search pattern, "when `$opts` expands to several words, this is the role of the first word `$opts` gives, and each of the others is file to search"; also `x='-e s/a*/b/'; sed $x f` ("sed script") and `p='-e a*'; grep $p f`. bash gives `-n`, `-e`, `err.*`: two options and the value of `-e`. Same on main; step 5b, item 5, of word-source.md reads each field as a word of its own.
 - **Braces in a sh script.** Under `#!/bin/sh`, `cp "$d"/*.{c,h} out/` says what `out/` is where `"$d"/*.{c,h}` expands to nothing. dash 0.5.12 gives the pattern `src/*.{c,h}` (one word where it matches nothing), bash at least two. The view does not read the word for every sh (`readsAsBash`), and its own text starts with a quote, so it has no lead.
 - **Braces in a declaration's subscript.** `declare d[{1,2}]=x` is read as one word; bash expands the braces and declares `d[1]` and `d[2]`. The tree reads the subscript as text. Same on main.
+
+## Command lines a tool refuses (found fixing #852, 2026-11-16)
+
+Checked with GNU coreutils 9.4, GNU grep, GNU tar, GNU findutils and bash 5.2 in the C locale. #852 made a refusal one fact of the parse (`ArgvParse.refused`, said as `command-refused`), stated by the spec; these refusals are not stated, or are said where they do not hold. Kind: `bug` (an explanation that misses an error, or says one), each rare or needing more than a statement of the spec.
+
+- **cut's list items it cannot read.** `cut -f x` ("invalid field value 'x'"), `cut -f 1,,2` (an empty item: "fields are numbered from 1"): no note. (A 0 and a decreasing range, `cut -f 0`, `cut -f 3-1`, `cut -f -0`, are said.)
+- **cut's options that need `-f`.** `cut -c1 -d, f` ("an input delimiter may be specified only when operating on fields") and `cut -c1 -s f` ("suppressing non-delimited lines makes sense only when operating on fields"), status 1: the example shows the characters.
+- **sort's other faults of a key.** `sort -k x` and `sort -k '　0'` with a full-width space ("invalid number at field start"), `sort -k -0`: no note.
+- **head and tail with a suffix they do not know.** `head -n 5x` ("invalid number of lines: '5x'"): the suffixes are many (`1k`, `2MiB`), and only a count with no digit is said.
+- **An option without its value.** `head -n` at the end ("option requires an argument -- 'n'", status 1): the role is `missing`, and the readings count it refused, but the line says nothing.
+- **Too few operands.** `basename` ("missing operand"), `cp a` ("missing destination file operand after 'a'"): only tr's lone set is stated.
+- **tar without a mode.** `tar f x` ("You must specify one of the '-Acdtrux', '--delete' or '--test-label' options", status 2): `needsMode` would say it (tar's `--help`, `--usage` and `--version` are `informs` now).
+- **find's late path.** `find . -name a b` ("paths must precede expression: `b'", status 1): the row says it; the expression's parse does not know `(` and `!` as operators, so it cannot tell a path (`knownOnly` is left out of the refusal).
+- **Refusals stated only on a row.** An option bash or bats' `run` does not have (`unknownOption`), procps ps's `--`, sudo's `-a` and `-c` on Linux (BSD builds take them): no line note.
+- **`--help` and `--version` after the fault.** GNU grep reads them only after its option loop: `grep --help -E -F` and `grep -E --version -F` are refused (status 2), and we say nothing, since `informs` stops the reading. `uniq a b c --version` and `basename a b c --help` are refused too ("extra operand"): a check made once the options are read is not said after an `informs` option. Misses, not false errors.
+- **A local program of a known name.** `./cut -f 0 f` is taken for GNU cut, and the line says that cut refuses it: the name resolution does not say that a relative path is not the dictionary's program.
+- **A tool run by its path.** `/usr/bin/cut -d ab` prints `/usr/bin/cut: the delimiter must be a single character`; the note says `cut: …`.

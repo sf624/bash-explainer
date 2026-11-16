@@ -2,6 +2,7 @@
 // Readers of a command's words (the examples, the dialect check) ask these instead of reading the words again,
 // so that a value is never taken for an option (`grep -e -v`), nor an option's letter for another (`sed -ie`).
 import type { ArgRole, ArgvParse, RoleAt, ValueRole } from './interpret';
+import type { Refusal } from './refusals';
 import { OPTION_ROLES } from './regroup';
 import type { Shell } from '../dialect';
 import type { EmbeddedLang } from '../embedded/types';
@@ -27,6 +28,19 @@ export interface GivenValue { word: number; at?: number; role: ValueRole }
 export function readsFields(parse: ArgvParse): boolean {
   return parse.roles.some(({ role }) => (role.role === 'fields' ? role.roles.some((r) => r.role.role !== 'operand')
     : (role.role === 'subcommand' || role.role === 'command') && !!role.parse && readsFields(role.parse)));
+}
+
+/**
+ * The refusal of the parse, or of a subcommand or a command it runs (`ArgvParse.refused`, src/argv/refusals.ts): the tool
+ * refuses the line, so it does nothing, and no example runs it (`sudo cut -d ab`). Undefined where none refuses it.
+ */
+export function refusedIn(parse: ArgvParse): Refusal | undefined {
+  if (parse.refused) return parse.refused;
+  for (const { role } of parse.roles) {
+    const inner = (role.role === 'subcommand' || role.role === 'command') && role.parse ? refusedIn(role.parse) : undefined;
+    if (inner) return inner;
+  }
+  return undefined;
 }
 
 /**

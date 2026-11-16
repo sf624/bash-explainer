@@ -473,7 +473,7 @@ describe('the readings of the cases, in Japanese (docs/japanese-style.md)', () =
     return allTokens(new Analyzer('ja').explainLine(parser.parse(line), 0).items).find((t) => t.span.start.character === col && t.label === word)?.explanation;
   };
   it('says a sum, two atoms, two conditions, a profile by place and a folded text as the English does', () => {
-    const extra = '余分なオペランド（コマンドは受け付けず、`extra operand` と表示して何もせずに終了ステータス 1 で終わる）';
+    const extra = '余分なオペランド（コマンドは受け付けない）';
     assert.deepStrictEqual([
       said('cp -t $d $a b', 'b'), said('cut -d $a -f $b f', 'f'), said('jq --arg $n $v .', '.'), said('grep -e $p -- -v f', '-v'),
       said('echo $a -n x', '-n'), said('jq --arg $n v $f', '$f'), said('grep -m $n -c $x f', 'f'), said('seq $a x $b', 'x'),

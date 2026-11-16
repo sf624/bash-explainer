@@ -11,6 +11,7 @@ import * as path from 'path';
 import { lookupCommand } from '../src/analyzer';
 import { interpret, type OperandRole } from '../src/argv/interpret';
 import { Analyzer } from '../src/analyzer';
+import type { Refusal } from '../src/argv/refusals';
 import type { OperandSpec } from '../src/argv/spec';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
 import type { Token } from '../src/analyzer-types';
@@ -33,13 +34,16 @@ const usableTool = (tool: string): boolean => {
 };
 
 /** The words of `line` and the roles the interpreter gives them. */
-function read(line: string): { tool: string; words: string[]; roles: (OperandRole | undefined)[] } {
+function read(line: string): { tool: string; words: string[]; roles: (OperandRole | undefined)[]; refused?: Refusal } {
   const { name, words, texts } = argWords(line);
   const parse = interpret(lookupCommand(name)!, words, { name, lookup: lookupCommand });
   const roles: (OperandRole | undefined)[] = texts.map(() => undefined);
   for (const { word, role } of parse.roles) if (role.role === 'operand') roles[word] = role;
-  return { tool: name, words: texts, roles };
+  return { tool: name, words: texts, roles, ...(parse.refused ? { refused: parse.refused } : {}) };
 }
+
+/** The first line the tool prints for a refusal of operands, as the parse says it (`ArgvParse.refused`). */
+const printed = (tool: string, r: Refusal | undefined): string | undefined => (r?.kind === 'operand' ? (r.bare ? r.says : `${tool}: ${r.says}`) : undefined);
 
 const extraOf = (spec: OperandSpec | undefined) => spec?.extra;
 
@@ -95,10 +99,10 @@ describe('extra operands, compared with the real tools', () => {
       }
       const says = extraOf(roles[at[0]]!.spec)!;
       assert.strictEqual(r.status, says.status, `${line}: ${r.err}`);
-      assert.ok(r.err.includes(says.says.replace(/ …$/, '')), `${line}: ${r.err}`);
-      // (coreutils and diffutils name the first word they refuse.)
-      const named = /extra operand [‘']([^’']*)[’']/.exec(r.err);
-      if (named) assert.strictEqual(named[1], words[at[0]], line);
+      // (The line's refusal is of the first such word, and quotes what the tool prints first.)
+      const { refused } = read(line);
+      assert.strictEqual(refused?.at, at[0], line);
+      assert.strictEqual(r.err.split('\n')[0], printed(tool, refused), line);
     });
   }
 
@@ -138,10 +142,10 @@ describe('extra operands, compared with the real tools', () => {
           continue;
         }
         assert.strictEqual(r.status, first.extra!.status, `${line}: ${r.err}`);
-        const said = [...first.text.en.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-        assert.strictEqual(lines.length, said.length, `${line}: ${r.err}`);
-        said.forEach((m, k) => assert.ok(lines[k].includes(m), `${line}: ${lines[k]} does not say ${m}`));
-        assert.ok(first.text.en.includes('doing nothing'), line);
+        // (What the line's refusal says tr prints: its first line, and the second where it has one.)
+        const refused = read(line).refused;
+        const said = [printed('tr', refused), ...(refused?.kind === 'operand' && refused.also ? [refused.also] : [])];
+        assert.deepStrictEqual(lines, said, `${line}: ${r.err}`);
       }
     });
   }

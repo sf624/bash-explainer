@@ -156,7 +156,7 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
   it('gives up on what it does not run', () => {
     const fails: [() => unknown, string][] = [
       [() => runSort(['-t', 'ab'], []), '-t'], [() => runSort(['--key'], []), 'missing'], [() => runSort(['-k'], []), 'missing'], [() => runSort(['--nope'], []), '--nope'],
-      [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), 'refused'], [() => runCut(['-d', '', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
+      [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', '', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
       [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['[=é=]', 'x'], ['x']), 'equivalence class'], [() => expandSet('\\400'), 'octal escape'], [() => runTr(['-tc', '[:digit:]', 'x'], ['x']), 'class'], [() => runTr(['[:lower:]', '[:upper:][x*]'], ['x']), 'misaligned'],
        [() => runTr(['-d', 'a', '-s', 'b'], ['x']), 'extra operand'], [() => runTr(['a', 'b', '-d'], ['x']), 'extra operand'], [() => runTr(['-c', '[:digit:]', 'xy'], ['x']), 'class'],
       [() => runTr(['a', '[=b=]'], ['x']), 'class in set2'], [() => runTr(['a', '[:digit:]'], ['x']), 'class in set2'], [() => runTr(['-c', '0-9', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-C', 'a-z', '[:upper:]'], ['x']), 'ends with a class'],
@@ -242,7 +242,8 @@ describe('tr, cut -c and -b, head -c and tail -c work on bytes beyond ASCII, as 
       assert.deepStrictEqual(u, c, 'the same in C and C.UTF-8');
       const ours = () => filterOf(cmd)!(args, lines);
       if (c.status !== 0) {
-        assert.throws(ours, Unsupported);
+        // (A line the tool refuses runs in no example, and is not given to the runner: the parse says so, `ArgvParse.refused`.)
+        if (!parseWords(cmd, args).refused) assert.throws(ours, Unsupported);
         return;
       }
       let text: string | undefined;
@@ -298,34 +299,19 @@ describe('a line of tr or cut with text beyond ASCII says what GNU tr and cut do
     // (The value of a variable read as a set says it too.)
     assert.deepStrictEqual((explain("s='あ'; tr \"$s\" x").facts ?? []).filter((f) => f.id === 'tr-multibyte-set').length, 1);
   });
-  it('says cut refuses a delimiter of more than one byte, and shows no output', () => {
+  it('reads a line cut refuses for its delimiter as refused, and shows no output (test/refused-lines.test.ts has the note)', () => {
     for (const line of ["echo 'a,b' | cut -dé -f1", 'cut -d ab -f1 f', 'cut --delimiter=、 -f1 f']) {
       const r = explain(line);
       assert.deepStrictEqual(r.examples, [], line);
-      const value = allTokens(r.items).find((t) => /the delimiter must be a single character/.test(t.explanation));
-      assert.ok(value, line);
+      assert.ok(r.notes.some((n) => n.includes('`cut: the delimiter must be a single character`')), line);
     }
-    assert.match(allTokens(explain('cut -dé -f1', 'ja').items).map((t) => t.explanation).join('\n'), /cut は1バイトより長い区切り文字を受け付けない/);
     assert.notStrictEqual(run('cut', ['-dé', '-f1'], { input: 'a,b\n' }).status, 0);
-    // (A delimiter whose text is not known is not refused.)
-    for (const words of [['-d', undefined, '-f1'], ['-d', '\t', '-f1']]) assert.ok(!parseWords('cut', words).refusedValue, String(words));
-    assert.ok(!parseWords('cut', [undefined, '-f1']).refusedValue);
-    assert.deepStrictEqual([parseWords('cut', ['-dé', '-f1']).refusedValue, parseWords('cut', ['-dé', '-f1']).refused], [true, undefined]);
-  });
-  it('says why cut refuses the delimiter: several characters, one of several bytes, or `\\t` that is no tab', () => {
-    const why = (line: string, lang: 'en' | 'ja' = 'en') => allTokens(explain(line, lang).items).find((t) => t.valueFor === '-d')!.explanation;
-    const base = 'cut refuses a delimiter of more than one byte: it says `the delimiter must be a single character`, and exits with status 1, doing nothing. ';
-    const baseJa = 'cut は1バイトより長い区切り文字を受け付けない: `the delimiter must be a single character` と表示し、何もせずに終了ステータス 1 で終わる。';
-    assert.strictEqual(why('cut -d ab -f1 f'), 'Value for `-d`. ' + base + '`ab` is 2 characters');
-    assert.strictEqual(why('cut -d ab -f1 f', 'ja'), '`-d` オプションの値。' + baseJa + '`ab` は2文字');
-    assert.strictEqual(why('cut -dé -f1 f'), 'Value for `-d`. ' + base + '`é` is one character, but 2 bytes in UTF-8');
-    assert.strictEqual(why('cut -dé -f1 f', 'ja'), '`-d` の値。' + baseJa + '`é` は1文字だが、UTF-8 では2バイトになる');
-    assert.strictEqual(why("cut -d '\\t' -f2 f"), 'Value for `-d`. ' + base + "cut does not read `\\t` as a tab: it is a backslash and `t`. Tab is the default delimiter: leave out `-d`, or write `-d $'\\t'`");
-    assert.strictEqual(why("cut -d '\\t' -f2 f", 'ja'), '`-d` オプションの値。' + baseJa + "cut は `\\t` をタブとして読まない（バックスラッシュと `t` の2文字）。タブは既定の区切り文字なので、`-d` を書かないか、`-d $'\\t'` と書く");
+    // (A delimiter whose text is not known is not refused, nor one byte.)
+    for (const words of [['-d', undefined, '-f1'], ['-d', '\t', '-f1']]) assert.strictEqual(parseWords('cut', words).refused, undefined, String(words));
+    assert.strictEqual(parseWords('cut', [undefined, '-f1']).refused, undefined);
+    assert.deepStrictEqual([parseWords('cut', ['-dé', '-f1']).refused?.kind, parseWords('cut', ['-dé', '-f1']).refused?.at], ['value', 0]);
     // (What the hint says, with GNU cut: `-d '\t'` is refused, and both ways out take the field after a tab.)
     assert.deepStrictEqual(["cut -d '\\t' -f2", "cut -d $'\\t' -f2", 'cut -f2'].map((c) => runBash(`printf 'a\\tb\\n' | ${c}`)).map((r) => [r.status, r.stdout]), [[1, ''], [0, 'b\n'], [0, 'b\n']]);
-    // (The other words of a refused line read as they do: `-f1` is a field list.)
-    assert.ok(allTokens(explain('cut -dé -f1 f').items).some((t) => t.explanation === 'field 1'));
   });
   it('says the bytes a tr set holds beyond ASCII, as GNU tr reads them', () => {
     const rows = (line: string, lang: 'en' | 'ja' = 'en') => allTokens(explain(line, lang).items).filter((t) => t.kind === 'pattern').map((t) => `\`${t.label}\`: ${t.explanation.replace(/^`[^`]*`: /, '')}`);

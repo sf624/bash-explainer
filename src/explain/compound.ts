@@ -2,7 +2,7 @@
 // and its branches, function definitions, `coproc`, groups and subshells, pipelines and lists, with the keywords and
 // operators between their parts; a keyword missing for want of a `;` before it (`if a then`); and comments, with the
 // shebang and the directives. Their parts are explained through the walk (`cx.sub`), on the line explained only.
-import type { ExampleKind, ExplainOptions, Kind, Token } from '../analyzer-types';
+import type { Example, ExampleKind, ExplainOptions, Kind, Pos, Token } from '../analyzer-types';
 import { interpret } from '../argv/interpret';
 import { keywords, listOps } from '../dict/syntax';
 import { DIRECTIVE } from '../directives';
@@ -14,7 +14,7 @@ import { coprocName, field, fields, isShebang, nameText, strayKeyword, type Synt
 import { detectShell, SHELL_NAMES } from '../dialect';
 import { shebangOptionTokens } from './argv-options';
 import type { Explainer } from './context';
-import { caseExample, pipelineExample } from './examples';
+import { caseExample, pipelineExample, refusedStage } from './examples';
 import { listOperatorToken } from './lists';
 import { has, intersects, same, skeletal, sortTokens, summaryOf } from './nodes';
 import { specFor } from './reads';
@@ -356,14 +356,25 @@ export function missingKeyword(cx: Explainer, n: SyntaxNode, t: Token): Token {
  */
 const BASH_WORD_EXAMPLES: ReadonlySet<ExampleKind> = new Set(['expansion', 'glob']);
 
+/** Whether example `e` is of a stage of pipeline `n` after one its tool refuses (`refusedStage`). */
+function afterRefusedStage(cx: Explainer, n: SyntaxNode, e: Example): boolean {
+  const at = refusedStage(cx, n);
+  const next = at === undefined ? undefined : n.namedChildren[at + 1];
+  return !!next && !!e.anchor && !beforePos(e.anchor.start, spanOf(next).start);
+}
+
+const beforePos = (a: Pos, b: Pos): boolean => a.line < b.line || (a.line === b.line && a.character < b.character);
+
 export function pipeline(cx: Explainer, n: SyntaxNode): Token {
   // One example for the whole pipeline replaces the examples of what its stages do. Those of what bash makes of a word
   // of a stage stay beside it, as bash's reading of the line, which the run of the commands does not show (CLAUDE.md,
   // "Explanations"): `BASH_WORD_EXAMPLES`.
+  // (A stage its tool refuses prints nothing: the examples of the stages after it, which make up what they read, are gone.)
+  const keeps = (e: Example): boolean => !!e.kind && BASH_WORD_EXAMPLES.has(e.kind);
   const children = cx.examplesReplaced(() => ordered(cx, n), () => {
     const whole = pipelineExample(cx, n);
     return whole && { ...whole, anchor: spanOf(n), kind: 'pipeline' };
-  }, (e) => !!e.kind && BASH_WORD_EXAMPLES.has(e.kind));
+  }, keeps, (e) => !keeps(e) && afterRefusedStage(cx, n, e));
   const cmds = children.filter((c) => c.kind !== 'operator' && c.kind !== 'keyword');
   const t = cx.tok(n, 'operator', cx.text('pipeline'), children);
   t.summary = cmds.map(summaryOf).join(' | ');

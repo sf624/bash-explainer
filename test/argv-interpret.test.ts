@@ -907,7 +907,7 @@ describe('argv interpreter: the fields of a word the model knows (bug 7 of oracl
   it('gives a refusal and the operands no pattern fits in the numbers of the line', () => {
     // (`z=; find . -name $z a -exec rm {}`: find misses the end of `-exec`, at the `-exec` of the line.)
     const find = interpret(lookup('find')!.expressionSpec!, [{ value: '-name' }, known(), { value: 'a' }, { value: '-exec' }, { value: 'rm' }, { value: '{}' }], { name: 'find', lookup });
-    assert.deepStrictEqual([find.refusal?.why, find.refusal?.at], ['missing', 3]);
+    assert.deepStrictEqual([find.refused?.kind === 'until' && find.refused.until.why, find.refused?.at], ['missing', 3]);
     const one: CommandSpec = { summary: t('one'), operands: [{ pattern: [item('A')] }] };
     assert.deepStrictEqual(interpret(one, [known('a', 'b'), { value: 'c' }]).unmatched, [0, 1]);
   });

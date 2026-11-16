@@ -115,8 +115,8 @@ export function regroup(parse: ArgvParse, groups: Group[], certain: (word: numbe
     roles.sort((a, b) => a.word - b.word);
     // (Where the expression starts: at the words before it that give none, `z=; find . $z -name x`, which are its words.)
     const expression = q.expression === undefined ? {} : { expression: startOf(q.expression) };
-    const refusal = q.refusal ? { refusal: { ...q.refusal, at: back(q.refusal.at) } } : {};
-    return { ...q, roles, end: end(q.end), unmatched: [...new Set(q.unmatched.filter((j) => groupOf(j) < 0 || groups[groupOf(j)].words).map(back))], ...expression, ...refusal };
+    const refused = q.refused?.at === undefined ? {} : { refused: { ...q.refused, at: back(q.refused.at) } };
+    return { ...q, roles, end: end(q.end), unmatched: [...new Set(q.unmatched.filter((j) => groupOf(j) < 0 || groups[groupOf(j)].words).map(back))], ...expression, ...refused };
   };
   const inGroup = (role: ArgRole, g: number, hoist: RoleAt[]): ArgRole => withParse(role, (q) => {
     const { from, n } = groups[g];

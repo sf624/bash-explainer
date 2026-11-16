@@ -141,12 +141,12 @@ describe('pipeline examples agree with bash', () => {
     ];
     for (const stages of none.filter((x) => x.length > 1)) assert.strictEqual(pipelineExample(stages.map(st), false), undefined, JSON.stringify(stages));
   });
-  it('declines what the tools refuse', () => {
+  it('is not asked for what the tools refuse: the explanation shows no pipeline then (`ArgvParse.refused`)', () => {
     // GNU grep: "conflicting matchers specified" (status 2).
     const refused = [['grep', '-E', '-F', 'a'], ['grep', '-G', '--perl', 'a']];
     for (const words of refused) {
-      const stages = [['seq', '3'], words].map(([cmd, ...w]): Stage => ({ cmd, words: w, text: [cmd, ...w].join(' ') }));
-      assert.strictEqual(pipelineExample(stages, false), undefined, words.join(' '));
+      assert.strictEqual(interpret(lookupCommand('grep')!, words.slice(1).map((value) => ({ value }))).refused?.kind, 'modes', words.join(' '));
+      assert.deepStrictEqual(explain(`seq 3 | ${words.join(' ')}`).examples.filter((e) => e.kind === 'pipeline'), [], words.join(' '));
       assert.notStrictEqual(run('/usr/bin/grep', words.slice(1), { input: '1\n' }).status, 0, words.join(' '));
     }
   });

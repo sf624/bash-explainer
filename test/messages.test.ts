@@ -48,7 +48,8 @@ describe('the message catalog', () => {
     const trap = { sure: true, line: 3, action: 'c' };
     const stops = (['script', 'subshell', 'exit-trap', 'test', 'unknown'] as const).flatMap((s) => [{}, { exit: trap }, { err: trap }, { later: { line: 4, action: 'c' } }]
       .map((t) => ({ what: [{ kind: 'command', name: 'x' }], stops: s, ...t })));
-    const cases: Record<string, readonly unknown[]> = { 'find-action-refused': find, 'errexit-stops-here': stops };
+    const refused = [{ program: 'cut', kind: 'needs', options: ['-f', '-c'], says: 'x', status: 1, ref: 'coreutils-cut-invocation' }, { program: 'seq', kind: 'operand', word: '4', says: 'x', status: 1 }];
+    const cases: Record<string, readonly unknown[]> = { 'find-action-refused': find, 'errexit-stops-here': stops, 'command-refused': refused };
     const choosing = Object.entries(MESSAGES).filter(([, e]) => 'refsOf' in e);
     assert.deepStrictEqual(choosing.map(([id]) => id).sort(), Object.keys(cases).sort());
     for (const [id, e] of choosing) {
@@ -56,7 +57,9 @@ describe('the message catalog', () => {
       for (const p of cases[id]) {
         const refs = refsOf(p);
         const where = `${id} ${JSON.stringify(p)}: ${refs.join(', ')}`;
-        assert.ok(refs.length >= 1 && refs.every((r) => e.refs.includes(r) && SECTIONS.has(r)), where);
+        // (Some of `refs`, sections of the manual; or the node of another document on the tool the params name: `command-refused`
+        // cites a tool's node of the coreutils manual, from its spec, `Refused.ref`.)
+        assert.ok(refs.length >= 1 && refs.every((r) => (e.refs.includes(r) && SECTIONS.has(r)) || (!!reference(r) && !SECTIONS.has(r))), where);
         assert.deepStrictEqual(fact('en', id as FactId, p as never).refs, refs, where);
       }
     }
@@ -99,7 +102,7 @@ describe('the message catalog', () => {
       assert.strictEqual(e.level ?? (e.kind === 'pitfall' ? 'warning' : 'note'), want, id);
     }
     // The ones whose level depends on the case: an unquoted path given to `rm`, `mv` or `cp`; an unset read that stops a shell.
-    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['postfix-increment-status', 'postfix-decrement-status', 'local-outside-function', 'alias-not-expanded-in-script', 'distro-alias-in-script', 'extglob-in-same-block', 'extglob-not-in-new-shell', 'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-new-shell-export', 'function-shadowed-by-program', 'pipeline-subshell-variable', 'unquoted-variable-as-path', 'nounset-unbound', 'redirect-by-your-shell']);
+    assert.deepStrictEqual(Object.entries(MESSAGES).filter(([, e]) => typeof (e as { level?: unknown }).level === 'function').map(([id]) => id), ['postfix-increment-status', 'postfix-decrement-status', 'local-outside-function', 'command-refused', 'alias-not-expanded-in-script', 'distro-alias-in-script', 'extglob-in-same-block', 'extglob-not-in-new-shell', 'variable-not-in-remote-shell', 'variable-not-passed-by-wrapper', 'variable-not-exported', 'function-not-in-new-shell-export', 'function-shadowed-by-program', 'pipeline-subshell-variable', 'unquoted-variable-as-path', 'nounset-unbound', 'redirect-by-your-shell']);
     // `local` in a file with no shebang, which a function may source, or in a trap's action; an alias after code not
     // read, which may turn expand_aliases on; a name that may come from the environment, exported.
     assert.strictEqual(fact('en', 'local-outside-function', { stops: false }).level, 'error');

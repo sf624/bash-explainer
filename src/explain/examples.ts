@@ -43,7 +43,7 @@ import type { TestShape } from '../testexpr';
 import { type Explainer, memoKey } from './context';
 import { intersects, onLine, same } from './nodes';
 import { echoMayReadEscapes, given, givenText, globOff, ifsAt, NO_SPEC, nocasematchAt, optionValues, resolve, shoptAt, type ShoptName, specFor, wordAt } from './reads';
-import { has, operands, readsFields, regexWords, values } from '../argv/query';
+import { has, operands, readsFields, refusedIn, regexWords, values } from '../argv/query';
 import { impliedOptions } from '../dict/aliases';
 import { wordFields } from '../semantics/words';
 import { receivedFields, writtenPlain } from '../semantics/fieldshape';
@@ -191,6 +191,8 @@ type Shown = { kind: Layout; environment?: ReadonlyMap<string, string> } | { run
 
 /** The stages of pipelines read so far on the line (`pipelineStage`). */
 const PIPELINE_STAGES = memoKey<PipelineStage | undefined>('pipeline stages');
+/** The stages of a pipeline whose tool refuses the line (`refusedIn`), found by `pipelineStage`. */
+const REFUSED_STAGES = memoKey<true>('refused stages');
 
 /**
  * How an example names a stage of a pipeline: the text of the command without the redirections after its words
@@ -416,6 +418,12 @@ function pipelineStages(cx: Explainer, n: SyntaxNode, count = n.namedChildren.le
   return { stages: read.map((st) => st.stage), files: read.map((st) => st.file), readsFile: !!read[0]?.readsFile, src: read[0]?.source, runs: new Set(read.filter((st) => st.runs).map((st) => st.stage)), ...(read[0]?.layout ? { layout: read[0].layout } : {}), values: read.flatMap((st) => st.values) };
 }
 
+/** The first stage of pipeline `n` its tool refuses (`ArgvParse.refused`): it prints nothing, which no example of a later stage makes up. */
+export function refusedStage(cx: Explainer, n: SyntaxNode): number | undefined {
+  const i = n.namedChildren.findIndex((cmd, k) => (pipelineStage(cx, n, cmd, k), cx.memo(REFUSED_STAGES).has(cmd)));
+  return i < 0 ? undefined : i;
+}
+
 /**
  * Stage `i` of pipeline `n`, read once per line (`PIPELINE_STAGES`): the stdin of each stage is what the stages before it
  * print, so reading every prefix again would take exponential time in the number of stages.
@@ -447,6 +455,8 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     const program = named.path ?? named.value;
     const spec = specFor(cx, program);
     const parse = interpret(spec ?? NO_SPEC, args.map(viewedIn(cx.state)), { name: program, lookup: (x) => specFor(cx, x) });
+    // (A stage its tool refuses does nothing: `cut -d ab | sort` shows no run.)
+    if (refusedIn(parse)) return void cx.memo(REFUSED_STAGES).set(cmd, true);
     // (A word whose value the script leaves to the environment runs with a value made up for it: `$USER` is `alice`.
     // grep reads such a pattern as a regular expression, which matches inside a longer word: a sample line shows it.)
     const values: MadeUpValue[] = [];
@@ -481,8 +491,8 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
 
 /** The example of a run of the command, when its spec has one (`CommandSpec.example`: printf, xargs, sort…). */
 export function commandExampleFor(cx: Explainer, n: SyntaxNode, spec: CommandSpec | undefined, args: SyntaxNode[], parse: ArgvParse): void {
-  // (`x='-n 3'; head $x f`: the example would read `$x` as written.)
-  if (!spec?.example || readsFields(parse)) return;
+  // (`x='-n 3'; head $x f`: the example would read `$x` as written. `cut -d ab`: the tool refuses the line, and does nothing.)
+  if (!spec?.example || readsFields(parse) || refusedIn(parse)) return;
   if (spec.example === 'read') {
     guardedRun(cx, 'textFilters', () => readExample(cx, n, args, parse, spec));
     return;

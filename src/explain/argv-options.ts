@@ -179,12 +179,10 @@ export function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disabl
 }
 
 /**
- * What the program makes of a value as it reads it: that it refuses it (`ValueSpec.refuses`: `cut -d ab`); or, for a
- * value whose words the program reads in its place (`env -S'-i bash -e'`), the words and what each is, or why the
- * program refuses it.
+ * What the program makes of a value as it reads it, for a value whose words the program reads in its place (`env -S'-i bash
+ * -e'`): the words and what each is, or why the program refuses it.
  */
 function valueReadNote(cx: Explainer, v: ValueRole): string {
-  if (v.invalid) return cx.sep() + cx.t(v.invalid);
   const program = cx.command!.cmd.split(' ')[0].split('/').pop()!;
   if (v.refused) {
     const at = v.refused.at;

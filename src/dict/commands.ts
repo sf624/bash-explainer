@@ -15,7 +15,7 @@ import { admin } from './admin';
 import { netadmin, SSH_CONFIG_OPTION } from './netadmin';
 import { monitor } from './monitor';
 import { macos } from './macos';
-import { args, ASSIGNMENTS, byCount, cmd, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, DOAS_SETS, SUDO_KEEPS, SSH_MAY_SEND, SSH_SETS, CONTAINER_SETS, SUDO_OWN, SUDO_SETS, wordTable, wraps, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
+import { args, ASSIGNMENTS, byCount, cmd, countRefused, refusing, sortKeyRefused, tabRefused, DIFF_EXTRA_OPERAND, EXTRA_OPERAND, extraOperand, countOption, dashed, lastIsDestination, letters, operand, optionOf, OptSpec, persistent, pos, runs, GNU_INFO, DOAS_KEEPS, DOAS_SETS, SUDO_KEEPS, SSH_MAY_SEND, SSH_SETS, CONTAINER_SETS, SUDO_OWN, SUDO_SETS, wordTable, wraps, LS_ENV, LS_LONG_ENV, LS_HUMAN_ENV, DF_HUMAN_ENV, PS_ENV, PS_BSD_ENV, PS_FULL_ENV } from './types';
 
 const files = pos('対象のファイル', 'target file');
 /** find's `-newerXY` primaries: X is one of a c B m, Y one of those or t. */
@@ -381,7 +381,7 @@ export const core: Record<string, CommandSpec> = {
   ], {
     parser: 'getopt_long', exits: [{ status: 1, text: tx('一致する行がなかった', 'no line matched'), when: ({ options }) => !options.has('-v') }, { status: 1, text: tx('すべての行が一致した', 'every line matched'), when: ({ options }) => options.has('-v') }],
     modes: [{ name: 'bre', default: true }, { name: 'ere' }, { name: 'fixed' }, { name: 'pcre' }],
-    conflictingModes: tx('`-E`・`-F`・`-G`・`-P` のうち別のものと一緒に指定すると、grep は「conflicting matchers specified」と言って何もしない（終了ステータス 2）', 'With another of `-E`, `-F`, `-G`, `-P`, grep refuses the line: "conflicting matchers specified" (exit status 2)'),
+    conflictingModes: { says: 'conflicting matchers specified', status: 2, gnu: true },
     eachFile: 'apart', positional: [pos('検索パターン（正規表現）', 'search pattern (regex)'), pos('検索対象のファイル（省略時は標準入力）', 'file to search (default: stdin)')], positionalLang: ['regex'], positionalIo: [undefined, 'input'] }),
   sed: cmd('ストリームエディタ: 入力を1行ずつスクリプトで編集して出力する（置換は `s/前/後/g`）', 'Stream editor: edit input line by line (substitute with `s/old/new/g`)', [
     ['-u|--unbuffered', '入力と出力のバッファリングを最小にする', 'minimal input and output buffering'],
@@ -509,8 +509,8 @@ export const core: Record<string, CommandSpec> = {
     ['-n|--numeric-sort', '数値として並べる', 'compare as numbers'],
     ['-r|--reverse', '逆順（降順）にする', 'reverse order'],
     ['-u|--unique', '重複行を1つにまとめる', 'output only unique lines'],
-    ['-k|--key', '並べ替えのキーとなる列（例: `-k2,2`）', 'sort key field (e.g. `-k2,2`)', 'arg lang:sortkey'],
-    ['-t|--field-separator', '列の区切り文字', 'field separator', 'arg'],
+    refusing(['-k|--key', '並べ替えのキーとなる列（例: `-k2,2`）', 'sort key field (e.g. `-k2,2`)', 'arg lang:sortkey'], sortKeyRefused),
+    refusing(['-t|--field-separator', '列の区切り文字', 'field separator', 'arg'], tabRefused('sort', 2, 'coreutils-sort-invocation')),
     ['-h|--human-numeric-sort', '`2K`, `1G` のような単位付き数値で並べる', 'compare human-readable numbers (2K, 1G)'],
     ['-f|--ignore-case', '大文字・小文字を区別しない', 'ignore case'],
     ['-V|--version-sort', 'バージョン番号順に並べる', 'natural version sort'],
@@ -559,8 +559,8 @@ export const core: Record<string, CommandSpec> = {
     ['-q|--quiet|--silent', '複数ファイルでもファイル名の見出しを付けない', 'never print file name headers'],
     ['-v|--verbose', '常にファイル名の見出しを付ける', 'always print file name headers'],
     ['-z|--zero-terminated', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline'],
-    ['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'],
-    ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
+    refusing(['-n|--lines', '表示する行数（`-n -5` は最後の5行以外）', 'number of lines (`-n -5`: all but the last 5)', 'arg'], countRefused('lines', 'coreutils-head-invocation')),
+    refusing(['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'], countRefused('bytes', 'coreutils-head-invocation')),
     ...GNU_INFO,
   ], { example: 'head', eachFile: 'headers', parser: 'getopt_long', positional: [files], positionalIo: ['input'], patternOptions: [LINE_COUNT] }),
   tail: cmd('ファイルの末尾部分を表示する（既定は10行）', 'Print the last part of files (default 10 lines)', [
@@ -570,8 +570,8 @@ export const core: Record<string, CommandSpec> = {
     ['--pid', '指定した PID のプロセスが終わったら `-f` をやめる', 'stop `-f` when the given PID exits', 'arg'],
     ['--retry', 'ファイルが開けるまで繰り返す', 'keep trying to open the file'],
     ['-z|--zero-terminated', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline'],
-    ['-n|--lines', '表示する行数（`+N` で N 行目以降）', 'number of lines (`+N`: from line N)', 'arg'],
-    ['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'],
+    refusing(['-n|--lines', '表示する行数（`+N` で N 行目以降）', 'number of lines (`+N`: from line N)', 'arg'], countRefused('lines', 'coreutils-tail-invocation')),
+    refusing(['-c|--bytes', '表示するバイト数', 'number of bytes', 'arg'], countRefused('bytes', 'coreutils-tail-invocation')),
     ['-f', '追記を監視し続けて表示する（ログ監視）', 'keep following appended data (log watching)'],
     ['--follow', '追記を監視し続けて表示する（`=name` ならファイル名で追う）', 'keep following appended data (`=name` follows by name)', 'attached'],
     ['-F', 'ファイルが作り直されても追い続ける', 'follow by name, retrying'],
@@ -864,7 +864,7 @@ export const core: Record<string, CommandSpec> = {
     ['--warning', '警告の制御（キーワードで選ぶ）', 'warning control (selected by keyword)', 'arg'],
     ['-o', '作るときは `--old-archive`、展開するときは `--no-same-owner` と同じ', 'when creating, same as `--old-archive`; when extracting, same as `--no-same-owner`'],
     ['--restrict', '危険になりうる一部のオプションを使えなくする', 'disable some potentially harmful options'],
-    ['--usage', '短い使い方を表示する', 'give a short usage message'],
+    ['--usage', '短い使い方を表示する', 'give a short usage message', 'informs'],
     ...GNU_INFO,
   ], { oldStyle: {},
     modes: [{ name: 'create' }, { name: 'extract' }, { name: 'list' }, { name: 'append' }, { name: 'update' }, { name: 'catenate' }, { name: 'diff' }, { name: 'delete' }, { name: 'test-label' }],
@@ -875,7 +875,7 @@ export const core: Record<string, CommandSpec> = {
       { when: { mode: 'catenate' }, pattern: [{ name: 'ARCHIVE', text: pos('メンバーを `-f` のアーカイブに追加する元のアーカイブ', 'archives whose members are appended'), repeat: '*' as const }] },
       ...['extract', 'list', 'diff', 'delete'].map((mode) => ({ when: { mode }, pattern: [{ name: 'MEMBER', text: mode === 'delete' ? pos('削除するアーカイブ内の名前', 'names in the archive to delete') : pos('対象にするアーカイブ内の名前（ないときはすべて）', 'names in the archive to act on (all when none)'), repeat: '*' as const }] })),
     ],
-    conflictingModes: tx('`-A`・`-c`・`-d`・`-r`・`-t`・`-u`・`-x`・`--delete`・`--test-label` のうち別のものと一緒に指定すると、tar は「You may not specify more than one」と言って何もしない（終了ステータス 2）', 'With another of `-A`, `-c`, `-d`, `-r`, `-t`, `-u`, `-x`, `--delete`, `--test-label`, tar refuses the line: "You may not specify more than one" (exit status 2)'), parser: 'getopt_long' }),
+    conflictingModes: { says: "You may not specify more than one '-Acdtrux', '--delete' or  '--test-label' option", status: 2 }, parser: 'getopt_long' }),
   gzip: cmd('ファイルを gzip 圧縮する（元ファイルは .gz に置き換わる）', 'Compress files with gzip', [
     ['-f|--force', '強制的に圧縮・展開する', 'force'],
     ['-l|--list', '圧縮ファイルの情報（圧縮率）を表示', 'list compressed file information'],
@@ -1554,7 +1554,7 @@ export const core: Record<string, CommandSpec> = {
     ['-c|--count', '一致した数だけ表示', 'print the number of matches'],
     ['-d|--delimiter', '出力の区切り文字', 'output delimiter', 'arg'],
     ['-f', 'コマンドライン全体で照合', 'match the full command line'],
-  ], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')], atMost: { count: 1, extra: extraOperand('only one pattern can be provided', 2) } }),
+  ], { positional: [pos('プロセス名のパターン（正規表現）', 'process name pattern (regular expression)')], atMost: { count: 1, extra: extraOperand('only one pattern can be provided', 2, { impl: 'procps' }) } }),
   pkill: cmd('名前に一致するプロセスにシグナルを送る', 'Signal processes by name', [
     ...signalOpts(),
     ...pgrepCommon(),

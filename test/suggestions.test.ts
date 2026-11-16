@@ -31,6 +31,7 @@ type Param = { kind: Exclude<Kind, 'none'>; via: string };
 const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'exit-modulo': 'none',
   'exit-refused': 'none',
+  'command-refused': { kind: 'scenario', via: 'why' },
   'errexit-off-in-substitution': 'none',
   'errexit-set-called-where-ignored': 'none',
   'errexit-set-maybe-called-where-ignored': 'none',
@@ -380,7 +381,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 19, scenario: 26, prose: 27, none: 106 });
+      { mechanical: 19, scenario: 27, prose: 27, none: 106 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

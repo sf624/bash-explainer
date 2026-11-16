@@ -1,6 +1,6 @@
 import type { CommandSpec } from '../argv/spec';
 import { tx } from '../i18n';
-import { byCount, cmd, COMMAND_TEXT, EXTRA_OPERAND, GNU_INFO, operand, pos, runs, WHO_ENV, wraps } from './types';
+import { byCount, cmd, COMMAND_TEXT, EXTRA_OPERAND, GNU_INFO, operand, pos, refusing, runs, tabRefused, WHO_ENV, wraps } from './types';
 
 // External commands that major distributions install by default (util-linux, coreutils, procps,
 // iproute / net-tools, systemd, openssh, acl, attr, libcap…), with the options scripts use most.
@@ -119,7 +119,7 @@ export const distro: Record<string, CommandSpec> = {
   join: cmd('共通のキー欄で 2 つのソート済みファイルの行を結合する', 'Join lines of two sorted files on a common field', [
     ['-1', '1 つ目のファイルのキー欄の番号', 'key field of file 1', 'arg'],
     ['-2', '2 つ目のファイルのキー欄の番号', 'key field of file 2', 'arg'],
-    ['-t', '欄の区切り文字', 'field separator', 'arg'],
+    refusing(['-t', '欄の区切り文字', 'field separator', 'arg'], tabRefused('join', 1, 'coreutils-join-invocation')),
     ['-a', '対応のない行も出力する（ファイル番号 1 または 2）', 'also print unpairable lines of file 1 or 2', 'arg'],
     ['-v', '対応のない行だけ出力する（ファイル番号 1 または 2）', 'print only unpairable lines of file 1 or 2', 'arg'],
     ['-o', '出力する欄の書式（`1.1,2.2`…）', 'output field list (`1.1,2.2`…)', 'arg'],
