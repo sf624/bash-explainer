@@ -204,6 +204,11 @@ describe('the view of a word (wordview.ts)', () => {
     }
   });
 
+  it('braces on some paths only: the text before them is the start of every field, but where they are too many to list', () => {
+    assert.deepStrictEqual([view('if c; then set +B; fi; show -v{a,b}').lead, view('if c; then set +B; fi; show -v{a,b}').count], ['-v', { min: 1, max: 2 }]);
+    assert.deepStrictEqual([view('if c; then set +B; fi; show -v{1..100000}').lead, view('if c; then set +B; fi; show -v{1..100000}').count], [undefined, { min: 0 }]);
+  });
+
   it('a redirection target that gives two words: bash fails', () => {
     assert.deepStrictEqual(view('show > {a,b}').count, { min: 0, max: 0 });
     assert.deepStrictEqual(written('show > {a,b}').count, { min: 0 });

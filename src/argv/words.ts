@@ -155,8 +155,7 @@ function mayGiveDashes(chars: readonly Char[]): boolean {
  * The words a word's words come in (`ArgWord.parts`; one of them: `ArgWord.prefixEach`), where it has a known start
  * (`prefix`): for each word of its brace expansion (`WordView.words`, where they are known), the words of its first
  * field, which keep that word's own start (one; where it is a pattern, `fewest` or more), then, where it may split, the
- * words splitting adds after them (none or more, of unknown text); a word with no start of its own that may split, any
- * words. `dashes` where a word that is a pattern has a start of `-` or `--` and may match `-` or `--` (`-*`, not `-?x`
+ * words splitting adds after them (none or more, of unknown text). Each starts with `prefix`, which they share. `dashes` where a word that is a pattern has a start of `-` or `--` and may match `-` or `--` (`-*`, not `-?x`
  * nor `-[av]*`). Undefined otherwise, and for one word whose first field is one word (`bin/$n`), which needs no parts:
  * its first word keeps the start, the others do not.
  */
@@ -167,13 +166,12 @@ function startParts(v: WordView, prefix: string, fewest: number): ArgWord[] | 'd
     const chars = x.chars ?? [];
     const splits = !x.chars || chars.some((c) => c.split || c.hole?.kind === 'elements');
     // (A pattern of its own characters, or, where it does not split, of a part not known: `IFS=; cp a$y d`.)
-    return { chars, start: x.lead ?? '', glob: chars.some((c) => c.pattern) || (!splits && x.globs !== false), splits };
+    return { chars, start: x.lead, glob: chars.some((c) => c.pattern) || (!splits && x.globs !== false), splits };
   });
   if (words.some((x) => (x.start === '-' || x.start === '--') && x.glob && mayGiveDashes(x.chars))) return 'dashes';
   // (No parts for one word whose first field is one word: `bin/$n`.)
   if (words.length === 1 && !words[0].glob) return undefined;
   return words.flatMap((x): ArgWord[] => {
-    if (!x.start && x.splits) return [{ count: { min: 0 } }];
     const head: ArgWord = { prefix: x.start, ...(x.glob ? { prefixEach: true as const, count: { min: fewest } } : {}) };
     return x.splits ? [head, { count: { min: 0 } }] : [head];
   });
@@ -222,8 +220,8 @@ export const argWordFor = (view: (n: SyntaxNode) => WordView | undefined) => (n:
   // (Which of its words keep its known start: all of one part, `-v*`; or some of several, `-v*$x`.)
   // (A glob gives none only where the glob options say so, `nullglob`: the view's count.)
   const parts = words && prefix !== undefined ? startParts(v, prefix, Math.min(words.min, 1)) : undefined;
-  // (One part: each of its words keeps the start, the words of a glob; or, of no start of its own, none of them: no parts.)
-  const kept = parts === 'dashes' ? { dashes: true as const } : parts?.length === 1 ? (parts[0].prefixEach ? { prefixEach: true as const } : {}) : parts ? { parts } : {};
+  // (One part: each of its words keeps the start, the words of a glob.)
+  const kept = parts === 'dashes' ? { dashes: true as const } : parts?.length === 1 ? { prefixEach: true as const } : parts ? { parts } : {};
   return { ...(value !== undefined ? { value } : { prefix }), ...kept, ...(words ? { count: words } : {}), ...(param ? { param } : {}), ...(assigns ? { assigns } : {}) };
 };
 

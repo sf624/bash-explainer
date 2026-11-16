@@ -2,7 +2,9 @@
 // argument interpreter (src/argv/interpret.ts) before the walk was replaced by it. Each row says what the
 // word is now; the comment says how the real tool reads it.
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { Analyzer, Kind, Token } from '../src/analyzer';
 import { countIn } from '../src/semantics/argwords';
@@ -135,7 +137,9 @@ describe('an operand that becomes several words', () => {
   it('a known value of options and a pattern: its words are not read as options before their count is known', () => {
     // (bash 5.2 in an empty directory gives `-n`, `-e`, `err.*`; `-e`, `s/a*/b/`; `-e`, `a*`. What the interpreter says of
     // such fields, each a word of its own, is step 5b of docs/design/word-source.md: until then, the hedge of main.)
-    const out = spawnSync('bash', ['--norc', '-c', "f() { printf '<%s>' \"$@\"; echo; }; opts='-n -e err.*'; f $opts; x='-e s/a*/b/'; f $x; p='-e a*'; f $p"], { cwd: os.tmpdir(), encoding: 'utf8' }).stdout;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-fields-'));
+    const out = spawnSync('bash', ['--norc', '-c', "f() { printf '<%s>' \"$@\"; echo; }; opts='-n -e err.*'; f $opts; x='-e s/a*/b/'; f $x; p='-e a*'; f $p"], { cwd: dir, encoding: 'utf8' }).stdout;
+    fs.rmSync(dir, { recursive: true });
     assert.strictEqual(out, '<-n><-e><err.*>\n<-e><s/a*/b/>\n<-e><a*>\n');
     assert.match(tokenOf("opts='-n -e err.*'; grep $opts log", '$opts').explanation, /^search pattern \(regex\); when `\$opts` expands to several words/);
     assert.match(tokenOf("x='-e s/a*/b/'; sed $x f", '$x').explanation, /; when `\$x` expands to several words/);

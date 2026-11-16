@@ -31,8 +31,8 @@ export interface ViewWord {
   fields?: string[];
   /** Some field of it is a pattern that pathname expansion expands here (a hole for which `holeGlobs` holds: may be). */
   globs: Applies;
-  /** Its own text before its first expansion, hole or pattern character (`leadOf`): the start of each of its fields; none where its characters are not known. */
-  lead?: string;
+  /** Its own text before its first expansion, hole or pattern character (`leadOf`): the start of each of its fields; '' where its characters are not known. */
+  lead: string;
 }
 
 /**
@@ -255,12 +255,12 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   // otherwise, their characters, read as bash reads them, tell no start or end.)
   // (Their start is their own text before the first part not known, `lead`, which another shell reads as bash does too.)
   const lead = leadIn(w, words, got);
-  const quoted = !exact && (w.rule.fields !== 'one-or-error' || words.length === 1) && quotedWords(words) ? (readsAsBash(w) && !misread(w) ? (w.ifs.kind === 'default' ? quotedEnds(words) : undefined) : { count: { min: words.length, max: words.length }, start: lead ?? '', end: '' }) : undefined;
+  const quoted = !exact && (w.rule.fields !== 'one-or-error' || words.length === 1) && quotedWords(words) ? (readsAsBash(w) && !misread(w) ? (w.ifs.kind === 'default' ? quotedEnds(words) : undefined) : { count: { min: words.length, max: words.length }, start: lead!, end: '' }) : undefined;
   const domain = exact || quoted || (!known && w.rule.fields === 'one-or-error') ? undefined : shapes?.();
   // (Words of braces not read, `{,$x}a`: one field at least of each that has text of its own, unless nullglob may remove
   // it; with braces on some paths only, one where the word has text of its own, as one word or as words of braces.)
   const fewest = w.glob.nullglob !== 'off' ? 0 : got === 'misread' ? words.filter((x) => x.lead).length : got === 'option' && lead ? 1 : 0;
-  const ends = exact ? exactEnds(exact) : quoted ?? (domain ? fromShapes(domain) : { count: { min: fewest }, ...(fewest ? { start: lead ?? '', end: '' } : {}) });
+  const ends = exact ? exactEnds(exact) : quoted ?? (domain ? fromShapes(domain) : { count: { min: fewest }, ...(fewest ? { start: lead!, end: '' } : {}) });
   return { meaning: w, ...(plain ? { value: w.value } : {}), ...(unmatched !== undefined ? { unmatched } : {}), plain, words, ...ends, ...(lead !== undefined ? { lead } : {}), globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
 }
 
@@ -268,19 +268,19 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
  * The text every field of the word `w` starts with, where it gives one (`WordView.lead`): the own text before the first
  * part not known that its words share (`ViewWord.lead`; of words of braces not read, `{,$x}a`, `rejoinedWords`), or,
  * where braces apply on some paths only, the text as written before the first brace or other part that its words of
- * braces share (`braceAlternatives`). None where the word may change the IFS itself, which may split its own text (`a1b$((IFS=1))`).
+ * braces share (`braceAlternatives`). '' where the word may change the IFS itself, which may split its own text (`a1b$((IFS=1))`).
  */
 function leadIn(w: WordMeaning, words: readonly ViewWord[], got: ViewWord[] | string): string | undefined {
-  if (changesIfs(w)) return undefined;
+  if (changesIfs(w)) return '';
   const leads = words.length ? words.map((x) => x.lead) : got === 'option' ? (braceAlternatives(w.nodes) ?? []).map(writtenLead) : [];
-  return leads.length && leads.every((x) => x !== undefined) ? shared(leads as string[]) : undefined;
+  return leads.length ? shared(leads) : undefined;
 }
 
 /**
  * The words of braces whose words bash reads otherwise than their parts say (`rejoined`: `{,$x}a` gives `a` and `$xa`):
  * each with its text as written before its first part (`writtenLead`), and no characters, which are not known.
  */
-const rejoinedWords = (w: WordMeaning): ViewWord[] => (braceAlternatives(w.nodes, false, w.version) ?? []).map((a) => ({ written: a.map((p) => (typeof p === 'string' ? p : p.text)).join(''), globs: 'unknown', lead: writtenLead(a) }));
+const rejoinedWords = (w: WordMeaning): ViewWord[] => braceAlternatives(w.nodes, false, w.version)!.map((a) => ({ written: a.map((p) => (typeof p === 'string' ? p : p.text)).join(''), globs: 'unknown', lead: writtenLead(a) }));
 
 /** The text a word of braces has before its first part, where that is text with no quote, escape, expansion or pattern in it. */
 const writtenLead = (parts: readonly (SyntaxNode | string)[]): string => {
@@ -360,7 +360,7 @@ const exactEnds = (fields: readonly string[]): Pick<WordView, 'count' | 'start' 
  */
 function declarationView(w: WordMeaning, head: string, inner: WordView | undefined, known?: Fields): WordView {
   const headChars = (): Char[] => [...head].map((c) => ({ c, quoted: false, split: false }));
-  if (!inner) return { meaning: w, value: head, unmatched: head, plain: true, words: [{ written: head, chars: headChars(), fields: [head], globs: false }], ...exactEnds([head]), globs: false, unknown: [] };
+  if (!inner) return { meaning: w, value: head, unmatched: head, plain: true, words: [{ written: head, chars: headChars(), fields: [head], globs: false, lead: head }], ...exactEnds([head]), globs: false, unknown: [] };
   const words = inner.words.map((x) => ({ ...x, written: head + x.written, ...(x.chars ? { chars: [...headChars(), ...x.chars] } : {}), ...(x.fields ? { fields: x.fields.map((f) => head + f) } : {}) }));
   const exact = known ? (known.error ? [] : known.fields) : undefined;
   const ends = exact ? exactEnds(exact) : { count: inner.count, ...(inner.start !== undefined ? { start: head + inner.start, end: inner.end } : {}) };
