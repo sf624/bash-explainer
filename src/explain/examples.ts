@@ -8,9 +8,8 @@ import type { Example, ExampleKind, ExampleSection } from '../analyzer-types';
 import type { ArgvParse } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { CommandSpec, Layout, LayoutAlt } from '../argv/spec';
-import { argWordFor } from '../argv/words';
 import { writesElsewhere } from '../semantics/redirects';
-import { bracesIn } from '../semantics/argwords';
+import { viewedIn } from '../semantics/argwords';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { visible } from '../ctlchars';
 import { awkInvocation, type AwkRunOptions } from '../examples/awk';
@@ -447,7 +446,7 @@ function pipelineStage(cx: Explainer, n: SyntaxNode, cmd: SyntaxNode, i: number)
     // (The program of the path it runs: `hash -p /usr/bin/tac sort` makes `sort` run tac.)
     const program = named.path ?? named.value;
     const spec = specFor(cx, program);
-    const parse = interpret(spec ?? NO_SPEC, args.map(argWordFor(cx.state.shell, bracesIn(cx.state))), { name: program, lookup: (x) => specFor(cx, x) });
+    const parse = interpret(spec ?? NO_SPEC, args.map(viewedIn(cx.state)), { name: program, lookup: (x) => specFor(cx, x) });
     // (A word whose value the script leaves to the environment runs with a value made up for it: `$USER` is `alice`.
     // grep reads such a pattern as a regular expression, which matches inside a longer word: a sample line shows it.)
     const values: MadeUpValue[] = [];

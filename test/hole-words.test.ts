@@ -760,7 +760,7 @@ describe('words with an expansion read with the expansion as a hole', function (
         const out = run('bash', ['-c', `count() { echo $#; }; set -- p q r; a=(x y); ab=1; ${FORMS.map((f) => `count ${f}`).join('; ')}; a=(); count "\${a[*]}"; a=(x); count "\${!a[*]:-y}"; set --; count "$*"`], { check: true }).stdout.toString();
         assert.strictEqual(out, '1\n'.repeat(FORMS.length + 3));
       });
-      for (const form of [...FORMS, '"${!a[*]:-y}"']) {
+      for (const form of FORMS) {
         it(`${form} in a regex is a value`, () => {
           assert.ok(allTokens(`grep "^${form.slice(1, -1)}\\.log" f`).some((t) => t.origin === 'embedded' && t.label === (form.includes('x$') ? form.slice(2, -2) : form.slice(1, -1)) && /read as a regex/.test(t.explanation)), form);
         });
@@ -769,7 +769,10 @@ describe('words with an expansion read with the expansion as a hole', function (
         assert.match(said('sed "$*"'), /depends on the value of `\$\*`/);
       });
       it('and what gives one word per element stays unread', () => {
-        for (const line of ['grep "^$@" f', 'grep "^${a[@]}" f', 'grep "^${a[@]:-y}" f', 'grep "^${!a@}" f']) assert.deepStrictEqual(shape(line), [], line);
+        // (An indirection with an operator too: `"${!a[*]:-y}"` gives the elements of `b` where `a=('b[@]')`.)
+        const out = run('bash', ['-c', `count() { echo $#; }; a=('b[@]'); b=(1 2); count "\${!a[*]:-y}"`], { check: true }).stdout.toString();
+        assert.strictEqual(out, '2\n');
+        for (const line of ['grep "^$@" f', 'grep "^${a[@]}" f', 'grep "^${a[@]:-y}" f', 'grep "^${!a@}" f', 'grep "^${!a[*]:-y}" f']) assert.deepStrictEqual(shape(line), [], line);
       });
     });
 

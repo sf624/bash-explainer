@@ -1,12 +1,11 @@
 import { interpret, type ArgRole, type ArgvParse } from './argv/interpret';
 import { downloadsTo, givenOptions, has, readsScriptFromStdin, regexWords } from './argv/query';
 import type { CommandSpec, OptionSpec } from './argv/spec';
-import { argWordFor } from './argv/words';
 import type { Shell } from './dialect';
 import { canonicalName, impliedOptions, lookupCommand } from './dict/aliases';
 import { Lang } from './i18n';
 import type { ReadKnown } from './semantics/scriptstops';
-import { argWordIn, bracesIn } from './semantics/argwords';
+import { argWordIn, viewedIn } from './semantics/argwords';
 import { type ExecEnv, readAs, runsString, slotEnvs } from './semantics/env';
 import { commandName as staticName, plainName } from './semantics/effects';
 import { isFunction, resolveName, resolveRun } from './semantics/names';
@@ -811,7 +810,7 @@ export function pitfallFindings(root: SyntaxNode, lang: Lang, from: number, to: 
       // (`kill -s INT $$`, `kill 0`: the signal again, to the shell itself or its process group.)
       if (spec.ends === 'shell' || (commandName(c) === 'kill' && a.some((w) => /\$\$|\$\{\$\}|\$\{?BASHPID\b|^-?0$/.test(w.text)))) return true;
       // `exec cmd`: the command replaces the shell (`exec 2>&1` alone does not).
-      if (interpret(spec, a.map(argWordFor(model.shell, bracesIn(model))), { lookup: lookupCommand }).roles.some(({ role }) => role.role === 'command' && role.slot.replacesShell)) return true;
+      if (interpret(spec, a.map(viewedIn(model)), { lookup: lookupCommand }).roles.some(({ role }) => role.role === 'command' && role.slot.replacesShell)) return true;
     }
     return unknown ? undefined : false;
   };

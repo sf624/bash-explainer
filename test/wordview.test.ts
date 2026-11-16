@@ -124,12 +124,12 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(brief(viewAt('export FOO=bar', 'FOO=bar')), { value: 'FOO=bar', plain: true, count: { min: 1, max: 1 }, start: 'FOO=bar', end: 'FOO=bar', globs: false, unknown: [], words: [['FOO=bar', 'FOO=bar', ['FOO=bar']]] });
     assert.deepStrictEqual(brief(viewAt('x="a b"; export y="$x"', 'y="$x"')), { plain: false, count: { min: 1, max: 1 }, start: 'y=a b', end: 'y=a b', globs: false, unknown: [], words: [['y="$x"', 'y=a b', ['y=a b']]] });
     assert.deepStrictEqual(brief(viewAt('export w=', 'w=')), { value: 'w=', plain: true, count: { min: 1, max: 1 }, start: 'w=', end: 'w=', globs: false, unknown: [], words: [['w=', 'w=', ['w=']]] });
-    assert.deepStrictEqual(brief(viewAt('export z="$x"', 'z="$x"', 'as written')), { plain: false, count: { min: 0 }, globs: false, unknown: ['value'], words: [['z="$x"', 'z=<>', null]] });
+    assert.deepStrictEqual(brief(viewAt('export z="$x"', 'z="$x"', 'as written')), { plain: false, count: { min: 1, max: 1 }, start: 'z=', end: '', globs: false, unknown: ['value'], words: [['z="$x"', 'z=<>', null]] });
     assert.deepStrictEqual(brief(viewAt('export FOO=bar', 'FOO=bar', 'as written')), { value: 'FOO=bar', plain: true, count: { min: 1, max: 1 }, start: 'FOO=bar', end: 'bar', globs: false, unknown: [], words: [['FOO=bar', 'FOO=bar', ['FOO=bar']]] });
     // (A value bash fails on: no field, and no characters.)
     assert.deepStrictEqual(brief(viewAt('x=; export a=${x:?}', 'a=${x:?}')), { plain: false, count: { min: 0, max: 0 }, globs: 'unknown', unknown: [], words: [['a=${x:?}', undefined, null]] });
     // (One the builtin reads itself, an array, or a subscript of the name.)
-    assert.deepStrictEqual(brief(viewAt('declare -a b=(1 2)', 'b=(1 2)')), { plain: false, count: { min: 0 }, globs: 'unknown', unknown: ['misread'], words: [] });
+    assert.deepStrictEqual(brief(viewAt('declare -a b=(1 2)', 'b=(1 2)')), { plain: false, count: { min: 1, max: 1 }, globs: 'unknown', unknown: ['misread'], words: [] });
   });
 
   it('a pattern: its fields with the files of the environment, else what the field domain says', () => {
@@ -188,6 +188,14 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual(view("IFS=$'\\x01'; y=ab; show $y").globs, false);
   });
 
+  it('a shell that may read the word otherwise: quoted words give one field each, of no known start (zsh)', () => {
+    // (zsh reads `$a[1]` as an element of `a`: one word, `"$a[1].b"`, which bash reads as `$a` then `[1].b`.)
+    assert.deepStrictEqual([view('show "$a[1].b"', 0, { shell: 'zsh' }).count, view('show "$a[1].b"', 0, { shell: 'zsh' }).start], [{ min: 1, max: 1 }, '']);
+    assert.deepStrictEqual(view('show {x,"$a[1]"}', 0, { shell: 'zsh' }).count, { min: 2, max: 2 });
+    // (Not unquoted, nor `"$@"`.)
+    assert.deepStrictEqual([view('show $a[1]', 0, { shell: 'zsh' }).count, view('show "$@$a[1]"', 0, { shell: 'zsh' }).count], [{ min: 0 }, { min: 0 }]);
+  });
+
   it('a redirection target that gives two words: bash fails', () => {
     assert.deepStrictEqual(view('show > {a,b}').count, { min: 0, max: 0 });
     assert.deepStrictEqual(written('show > {a,b}').count, { min: 0 });
@@ -195,8 +203,8 @@ describe('the view of a word (wordview.ts)', () => {
   });
 
   it('as written: no value is known, a command substitution neither', () => {
-    assert.deepStrictEqual(brief(written(':() { printf x; }; show $(:)echo')), { plain: false, count: { min: 0 }, globs: 'unknown', unknown: ['value'], words: [['$(:)echo', '<>echo', null]] });
-    assert.deepStrictEqual(brief(written('x=1; set -f; show $x *.txt', 1)), { plain: false, count: { min: 0 }, globs: true, unknown: [], words: [['*.txt', '[*].txt', null]] });
+    assert.deepStrictEqual(brief(written(':() { printf x; }; show $(:)echo')), { plain: false, count: { min: 1 }, start: '', end: 'echo', globs: 'unknown', unknown: ['value'], words: [['$(:)echo', '<>echo', null]] });
+    assert.deepStrictEqual(brief(written('x=1; set -f; show $x *.txt', 1)), { plain: false, count: { min: 1 }, start: '', end: '.txt', globs: true, unknown: [], words: [['*.txt', '[*].txt', null]] });
     assert.deepStrictEqual(written('show a$((1+2))').value, undefined);
     assert.deepStrictEqual(brief(written('show a$((1+2))')), { plain: false, count: { min: 1, max: 1 }, start: 'a3', end: 'a3', globs: false, unknown: [], words: [['a$((1+2))', 'a3', ['a3']]] });
   });

@@ -17,7 +17,7 @@
 import type { ArgRole, ArgvParse, ArgWord, CommandRole, RoleAt, ValueRole } from '../argv/interpret';
 import { interpret } from '../argv/interpret';
 import type { BuiltinCall, CommandSlot, CommandSpec } from '../argv/spec';
-import { argWordFor } from '../argv/words';
+import { argWordAsWritten } from '../argv/words';
 import { restrictedByName, shellFromName } from '../dialect';
 import type { Shell } from '../dialect';
 import { asBash, isBash } from '../shellfeatures';
@@ -678,7 +678,7 @@ export function slotEnvs(env: ExecEnv, parse: ArgvParse, spec: CommandSpec, node
       }
     }
   };
-  visit(env, parse, spec, items(parse.roles, { args: nodes.map(argWordFor(shell)), node: (i) => nodes[i], text: (i) => nodes[i].text }));
+  visit(env, parse, spec, items(parse.roles, { args: nodes.map(argWordAsWritten(shell)), node: (i) => nodes[i], text: (i) => nodes[i].text }));
   return out;
 }
 

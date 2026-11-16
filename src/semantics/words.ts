@@ -602,7 +602,8 @@ class Evaluator {
   private inner(n: SyntaxNode, from: number, to: number, escapes: RegExp): Piece[] | undefined {
     const out: Piece[] = [{ text: '', quoted: true, expanded: false }];
     let at = from;
-    const elements = (): boolean => n.namedChildren.some((c) => this.pieces(c, true)?.some((x) => x.hole?.kind === 'elements'));
+    const seen: { any?: boolean; before: boolean } = { before: false };
+    const elements = (): boolean => (seen.any ??= n.namedChildren.some((c) => this.pieces(c, true)?.some((x) => x.hole?.kind === 'elements')));
     // (The text is taken as one piece: a backslash before a newline may end one string_content and the newline start the next.)
     const flush = (end: number): void => {
       if (end > at) out.push({ text: decodedSlice(n, at - n.startIndex, end - n.startIndex).replace(escapes, (_, c: string) => (c === '\n' ? '' : c)), quoted: true, expanded: false });
@@ -614,16 +615,17 @@ class Evaluator {
       // and one element drops the `1`; but not a variable alone, `"$@$x"`. Before it, `$(( ))` and a parameter made
       // from an integer, F84, F97: `"$#$@"` with `IFS=1` and one element is an empty field and the element. With a
       // hook, such a part is a hole not quoted.)
-      const split = this.hole && (out.some((x) => x.hole?.kind === 'elements') ? !/^\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})$/.test(c.text)
+      const split: boolean = !!this.hole && (seen.before ? !/^\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*\})$/.test(c.text)
         : (c.type === 'arithmetic_expansion' || integerParameter(c) !== undefined) && elements());
-      const p = split ? this.hole!(c, false) : this.pieces(c, true);
+      const p: Piece[] | undefined = split ? this.hole!(c, false) : this.pieces(c, true);
       if (!p) return undefined;
       pushAll(out, p);
+      seen.before ||= p.some((x) => x.hole?.kind === 'elements');
       at = c.endIndex;
     }
     flush(to);
     // (`"$@"` with no element gives no field, nor do the quotes around it and the parts in them that are empty: `"$@$x"`.)
-    return out.some((p) => p.hole?.kind === 'elements') ? out.filter((p) => p.text || p.hole) : out;
+    return seen.before ? out.filter((p) => p.text || p.hole) : out;
   }
 
   /** `$x`, `${x}` and the forms of `${…}` whose value follows from a known value. */
@@ -763,13 +765,12 @@ export function braceWords(n: SyntaxNode, model: StateModel, hole: (part?: Synta
 }
 
 /**
- * The pieces of each word of the brace expansion of the word of `n` (`braces` as `wordAlternatives`'s `applies`), with
+ * The pieces of each word of the brace expansion of the word `w` (`braces` as `wordAlternatives`'s `applies`), with
  * the values of `source`, and `hole` for each part whose value is not known there (`HoleOf`; also a whole quoted string
  * whose value is not known, `$'\u00e9'`). A word's pieces are undefined where bash fails on it (`${x:?}` with `x`
  * unset). Undefined where the words are not known here (`{,$x}a`). For fieldshape.ts.
  */
-export function holedWords(n: SyntaxNode, model: StateModel, source: ValueSource, hole: HoleOf, braces: boolean): { w: WordMeaning; words: (Piece[] | undefined)[] } | undefined {
-  const w = wordMeaning(n, model)!;
+export function holedWords(w: WordMeaning, source: ValueSource, hole: HoleOf, braces: boolean): { w: WordMeaning; words: (Piece[] | undefined)[] } | undefined {
   const alternatives = wordAlternatives(w, braces);
   const ev = new Evaluator(w, source, w.state, hole);
   return alternatives && { w, words: alternatives.map((nodes) => attempt(() => piecesOf(w, nodes, ev, (quoted, part, tilde) => hole(part ?? tilde!, quoted)))) };

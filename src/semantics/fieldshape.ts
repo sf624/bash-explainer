@@ -15,6 +15,7 @@ import { severalFields } from './globwords';
 import { attribute, option } from './shellstate';
 import type { StateModel } from './state';
 import { changedByBash } from './vars';
+import { integerDefault } from './nofield';
 import { integerParameter } from './wordsites';
 import { directoryTilde, type Fields, holedWords, modelValues, patternOfChars, type Piece, type StepKind, type ValueSource, wordFields, wordMeaning, type WordMeaning } from './words';
 import { declaredWord } from './wordcontexts';
@@ -107,6 +108,8 @@ function kindOf(part: SyntaxNode, quoted: boolean, w: WordMeaning): Pick<Hole, '
     // (`$#`, `$?`, `$$` and a length are digits, also behind an operator that keeps a value that is set; `$!` may be empty.)
     const digits = integerParameter(part);
     if (digits) return { kind: 'digits', empty: digits === 'maybe-empty' };
+    // (`${n:=w}` of an integer is a number: `declare -i n; ${n:=b=5}` gives `5`.)
+    if (integerDefault(part, w.state)) return { kind: 'integer', empty: false };
     if (severalFields(part, w.state, quoted)) return { kind: 'elements', empty: true };
   }
   if (part.type === 'arithmetic_expansion') return { kind: 'integer', empty: false };
@@ -148,10 +151,14 @@ const expansionsOf = (w: WordMeaning): (readonly [SyntaxNode, { name: string } |
  * indirection or a nameref: any; of a variable with `-i`, `w` is arithmetic), or arithmetic: `$(( ))`, a subscript, an
  * offset or a length (`${z:x=1}$x`, F87). Arithmetic that reads a name or an expansion may assign any variable: a value
  * read is an expression in its turn (`y='IFS=1'; $((y))`), and so is the subscript of an indirection's or a nameref's
- * target (`y='a[IFS=1]'; ${!y}`, F89). `${x@P}` runs the arithmetic in the value of `x` (F89).
+ * target (`y='a[IFS=1]'; ${!y}`, F89). `${x@P}` runs the arithmetic in the value of `x` (F89). With `numbers`, a
+ * value read as arithmetic is taken to be a number: only arithmetic with an assignment of its own assigns (any
+ * variable: `$((i++))`), and only one that names IFS may change the IFS (`$((n-1))` assigns nothing; `$((IFS=1))` does).
  */
 interface SelfAssigned { names: Set<string>; any: boolean; ifs: 'no' | 'integer' | 'any' }
-function selfAssigned(w: WordMeaning): SelfAssigned {
+/** An assignment of arithmetic's own: `=` (not `==`, `!=`, `<=`, `>=`), an operator ending in `=` (`+=`, `<<=`), `++` or `--`. */
+const ASSIGNS = /<<=|>>=|(?:^|[^=!<>])=(?!=)|\+\+|--/;
+function selfAssigned(w: WordMeaning, numbers = false): SelfAssigned {
   const out: SelfAssigned = { names: new Set(), any: false, ifs: 'no' };
   const integer = (): void => { if (out.ifs === 'no') out.ifs = 'integer'; };
   const anything = (ifs: 'integer' | 'any'): void => {
@@ -160,7 +167,14 @@ function selfAssigned(w: WordMeaning): SelfAssigned {
     else integer();
   };
   // (Arithmetic with no letter, `_` or expansion names no variable: `$((-1))`.)
-  const arith = (text: string): void => { if (/[A-Za-z_$`]/.test(text)) anything('integer'); };
+  const arith = (text: string): void => {
+    if (!numbers) {
+      if (/[A-Za-z_$`]/.test(text)) anything('integer');
+    } else if (ASSIGNS.test(text)) {
+      out.any = true;
+      if (/\bIFS\b/.test(text)) integer();
+    }
+  };
   for (const a of w.nodes.flatMap((n) => descendants(n, ['arithmetic_expansion']))) arith(a.text.replace(/^\$\(\(|\)\)$|^\$\[|\]$/g, ''));
   for (const [e, q] of expansionsOf(w)) {
     // (An expansion not parsed here, `${!x@Q}`, may be an indirection; with `=`, `${!y=1}`, or `@P`, may assign anything.)
@@ -179,7 +193,11 @@ function selfAssigned(w: WordMeaning): SelfAssigned {
     if ((p.prefix === '!' && !lists) || nameref) anything('integer');
     if (p.op === '=' || p.op === ':=') {
       if (nameref) anything('any');
-      else if (attribute(w.state, q.name, 'i') !== 'off') anything('integer');
+      // (The word of an integer's is arithmetic: with `numbers`, read as `arith` reads one.)
+      else if (attribute(w.state, q.name, 'i') !== 'off') {
+        if (numbers) arith(e.text);
+        else anything('integer');
+      }
       out.names.add(q.name);
       if (q.name === 'IFS') out.ifs = 'any';
     }
@@ -424,7 +442,9 @@ function shapeOfWord(w: WordMeaning, pieces: readonly Piece[], glob: boolean, sp
     if (isSep(a)) segments.push([]);
     else segments[segments.length - 1].push(a);
   }
-  const stays = (seg: Atom[]): boolean => seg.some(content) && !(g.applies && g.nullglob && mayBePattern(seg));
+  // (So does one with a number in it that is split: its characters are never blanks of IFS, so splitting leaves a field,
+  // empty where it is all separators: `<>` of `$((1))` with IFS `1`.)
+  const stays = (seg: Atom[]): boolean => seg.some((a) => content(a) || (isHole(a) && !a.hole.empty && (a.hole.kind === 'digits' || a.hole.kind === 'integer'))) && !(g.applies && g.nullglob && mayBePattern(seg));
   const end = (seg: Atom[], from: 'start' | 'end'): Atom[] => {
     const list = from === 'start' ? seg : [...seg].reverse();
     const k = list.findIndex((a) => isHole(a) && a.splits);
@@ -529,15 +549,21 @@ export function readsAsBash(w: WordMeaning): boolean {
  * The fields the word that holds `n` may give where it runs, as bash 5.2 expands it (trust-fields.md, 2.3): with the
  * values `values` lists (each tuple of them, up to TUPLES), and every other parameter a hole; with no `values`, every
  * part is a hole (shape first, 2.1). `glob: false`: before pathname expansion, each field with its `pattern`.
+ * `numbers`: a value read as arithmetic is taken to be a number (`selfAssigned`), as the explanations take it.
  * Undefined outside a word, for a word another shell reads otherwise (`readsAsBash`), where the words of its brace expansion are not known (`{,$x}a`),
  * and for the words the word model reads otherwise than bash (`misread`; an IFS with a control character),
  * or that may assign IFS other than by arithmetic (`${IFS=:}$x`, F88).
  */
-export function wordShapes(n: SyntaxNode, model: StateModel, values?: Values, opts: { glob?: boolean } = {}): WordShapes | undefined {
+export function wordShapes(n: SyntaxNode, model: StateModel, values?: Values, opts: { glob?: boolean; numbers?: boolean } = {}): WordShapes | undefined {
   const w = wordMeaning(n, model);
-  if (!w || !readsAsBash(w) || misread(w)) return undefined;
+  return w && shapesOf(w, values, opts);
+}
+
+/** `wordShapes` of the word `w`, where it runs in the model or in the walk (the view of a word, src/semantics/wordview.ts). */
+export function shapesOf(w: WordMeaning, values?: Values, opts: { glob?: boolean; numbers?: boolean } = {}): WordShapes | undefined {
+  if (!readsAsBash(w) || misread(w)) return undefined;
   // (A word that may assign IFS other than by arithmetic, `${IFS=:}$x`, is not known here: it splits by the new IFS, F88.)
-  const self = selfAssigned(w);
+  const self = selfAssigned(w, opts.numbers);
   if (self.ifs === 'any') return undefined;
   const brace = w.steps[0].applies;
   const cases: Shape[][] = [];
@@ -552,7 +578,7 @@ export function wordShapes(n: SyntaxNode, model: StateModel, values?: Values, op
   const bang = emptyBang(nested);
   for (const braces of brace === 'unknown' ? [false, true] : [brace]) {
     for (const source of readings(w, values, self)) {
-      const got = holedWords(n, model, source, (part, quoted) => [{ text: '', quoted, expanded: !quoted, hole: holeOf(part, quoted, w) }], braces);
+      const got = holedWords(w, source, (part, quoted) => [{ text: '', quoted, expanded: !quoted, hole: holeOf(part, quoted, w) }], braces);
       if (!got) return undefined;
       if (got.words.some((p) => !p)) {
         mayFail = true;
@@ -755,7 +781,7 @@ export function receivedWords(n: SyntaxNode, model: StateModel): ReceivedField[]
   const brace = w.steps[0].applies;
   if (brace === 'unknown') return undefined;
   const of = new Map<Hole, SyntaxNode | string>();
-  const got = holedWords(n, model, modelValues(w, model), (part, quoted) => {
+  const got = holedWords(w, modelValues(w, model), (part, quoted) => {
     const hole = holeOf(part, quoted, w);
     of.set(hole, part);
     return [{ text: '', quoted, expanded: !quoted, hole }];

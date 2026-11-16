@@ -1,20 +1,13 @@
-// The words of a command line for the argument interpreter (src/argv/interpret.ts), with the fields the semantic model
-// knows for each (`ArgWord.fields`), and whether it may give none (`count.min` 0, `mayGiveNoField`), where the caller has
-// the model.
+// The words of a command line for the argument interpreter (src/argv/interpret.ts), read from the view of each word in
+// the finished model (src/semantics/wordview.ts), with the fields the semantic model knows for each (`ArgWord.fields`),
+// where the caller has the model.
 import type { ArgWord } from '../argv/interpret';
 import { untilWord } from '../argv/until';
-import { argWordFor, countOf } from '../argv/words';
-import { bracesWork } from '../shellfeatures';
+import { argWordFor, viewCount } from '../argv/words';
 import type { SyntaxNode } from '../syntax/tree';
-import { givesOneNumber, mayGiveNoField } from './nofield';
 import { attribute, refTarget, type ShellState, type StateModel } from './state';
-import { wordFields, wordMeaning } from './words';
-
-/**
- * Whether brace expansion applies to the word of `n` where it runs (`set +B`; the model's brace step); where the model
- * reads no word (the `-p` of `time -p`, the tree's option of the keyword), where the shell has it.
- */
-export const bracesIn = (model: StateModel) => (n: SyntaxNode): boolean | 'unknown' => wordMeaning(n, model)?.steps[0].applies ?? bracesWork(n, model.shell);
+import { wordView } from './wordview';
+import { wordFields } from './words';
 
 const known = new WeakMap<StateModel, WeakMap<SyntaxNode, { fields?: readonly string[] }>>();
 /** The fields of the word of `n` where the model knows them (`wordFields`), computed once for each word of a model. */
@@ -27,33 +20,27 @@ export function fieldsIn(n: SyntaxNode, model: StateModel): readonly string[] | 
 }
 
 /**
- * How many words the word of `n` gives (`countOf`), with brace expansion as the `model` says; where that is not one
- * known number, the number of its fields where the model knows them (`x=p; cp {a,$x} d`: two; `y=a; cp $y c`: one;
- * `z=; cp $z c`: none), or one for a number the IFS does not split (`givesOneNumber`: `cp $# d`, `declare -i n; ${n:=b=5}`).
+ * How many words the word of `n` gives where it runs in the `model` (`WordView.count`; none where that is one): its
+ * fields where the model knows them (`x=p; cp {a,$x} d`: two; `y=a; cp $y c`: one; `z=; cp $z c`: none), else what
+ * the field domain says (`cp $# d`: one; `cp *.txt d`: one or more, none with nullglob).
  */
 export function countIn(n: SyntaxNode, model: StateModel): ArgWord['count'] {
-  const count = countOf(n, model.shell, bracesIn(model)(n));
-  if (!count || count.min === count.max) return count;
-  if (givesOneNumber(n, model)) return undefined;
-  const fields = fieldsIn(n, model);
-  return !fields ? count : fields.length === 1 ? undefined : { min: fields.length, max: fields.length };
+  const v = wordView(n, model);
+  return v && viewCount(v);
 }
 
+/** The words of the command line as the interpreter reads them, from the view of each in the `model` alone: no fields, and what they assign as written. */
+export const viewedIn = (model: StateModel): ((n: SyntaxNode) => ArgWord) => argWordFor((n) => wordView(n, model));
+
 /**
- * The words of the command line as the interpreter reads them, with brace expansion as the `model` says (`set +B`),
- * each with its fields where the model knows them, which the interpreter reads in its place (`interpret`), and none as
- * the fewest it gives only where the model says it may give none (`x=1; cp $x b`: one at least; with nullglob,
- * `*.txt` none). (A word with no count is one word.) What a word may assign, and the parameter whose words it gives,
- * are those the attributes in effect say (`attributed`).
+ * The words of the command line as the interpreter reads them, from the view of each in the `model` (`set +B`, `set -f`,
+ * the IFS, nullglob), each with its fields where the model knows them, which the interpreter reads in its place
+ * (`interpret`). (A word with no count is one word.) What a word may assign, and the parameter whose words it gives, are
+ * those the attributes in effect say (`attributed`).
  */
 export const argWordIn = (model: StateModel) => {
-  const plain = argWordFor(model.shell, bracesIn(model), (n) => countIn(n, model));
-  return (n: SyntaxNode): ArgWord => {
-    const w = plain(n);
-    // (A word with a count is one of a command's words, which the model reads: an argument, or its name after a wrapper.)
-    if (w.count) w.count = { ...w.count, min: mayGiveNoField(n, model) ? 0 : Math.max(w.count.min, 1) };
-    return { ...attributed(w, model.at(n).run), fields: () => fieldsIn(n, model) };
-  };
+  const plain = viewedIn(model);
+  return (n: SyntaxNode): ArgWord => ({ ...attributed(plain(n), model.at(n).run), fields: () => fieldsIn(n, model) });
 };
 
 /**

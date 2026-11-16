@@ -31,3 +31,13 @@ The model of the script (the variables a loop sets, the names a command runs, th
 - **A declaration's value with braces under `set +B`.** After `set +B; export x={a,b}` (or `declare`, `readonly`, `typeset`), `[ "$x" = plain ] && echo same` gets the note that `$x` is `{a,b}` there, so the test always fails. Before, that value was not known.
 - **`printf -v` with an empty substitution.** `printf -v $(:)x %s hi` shows its example (the value stored in `x`), as for `printf -v x %s hi`.
 - **`$(:)` where `:` is a function.** After `:() { printf x; }`, the line `$(:)echo hi` no longer says it prints its arguments: it says that it runs the expanded value as a command. Before, it was explained as `echo`. (Its texts still say the name becomes `echo`; bash runs `xecho`.)
+
+### How many words a word gives
+
+The roles of a command's words (which word is an option, a value, an operand) are read from the view of each word, which says how many words bash makes of it with the options and the IFS in effect.
+
+- **Arithmetic with text.** `cut -c $((n+1))- f` no longer says that the word may give several words, the others being files: a number has no blank of IFS, so it gives one word. (`$((n-1))` alone was one word before too.)
+- **`set -f`.** After `set -f`, `cp -* d` and `grep -* f` read `-*` as the option the command gets, as for `-Q`. Before, the row read it as a pattern that `set -f` leaves as written.
+- **No word splitting.** After `IFS=`, `grep --file=$f f` reads every word `--file=$f` may give as the option `--file`: a pattern of `$f` gives names that start with `--file=`. Before, the others were said to be files to search.
+- **A command substitution that may print something.** After `:() { printf x; }`, `command $(:)ls -v` no longer says `$(:)ls` runs ls ("List directory contents"), nor that `-v` is ls's `-v`: bash runs `xls`.
+- **An indirection in quotes.** `grep "${!x}" f` says what the other words are where `"${!x}"` gives several or none: with `x='a[@]'`, it gives the elements of `a`.

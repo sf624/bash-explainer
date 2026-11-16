@@ -5,7 +5,7 @@ import { fieldLine, interpret, type ArgRole, type ArgvParse, valuesOf } from '..
 import { lineIndex } from '../argv/regroup';
 import type { CommandSpec, ValueSpec, VariableSet } from '../argv/spec';
 import { declaresNames } from '../argv/query';
-import { argWordFor } from '../argv/words';
+import { argWordAsWritten } from '../argv/words';
 import type { Shell } from '../dialect';
 import { ALIAS_NAME, builtins } from '../dict/builtins';
 import { featureIn } from '../shellfeatures';
@@ -132,7 +132,7 @@ export function aliasOf(a: SyntaxNode, v = valueAsWritten(a)): { name: string; v
 
 /** The words of a builtin read with its spec (or `spec`: a function of the host, bats' `run`). */
 export function builtinParse(name: string, args: readonly SyntaxNode[], shell: Shell | undefined, spec = builtins[name]): ArgvParse {
-  return interpret(spec, args.map(argWordFor(shell)), { name });
+  return interpret(spec, args.map(argWordAsWritten(shell)), { name });
 }
 
 /**
@@ -157,7 +157,7 @@ export interface BuiltinRead {
  * a word would have there).
  */
 export function builtinRead(name: string, args: readonly SyntaxNode[], shell: Shell | undefined, spec = builtins[name], fieldsOf?: (n: SyntaxNode) => readonly string[] | undefined, more = 0): BuiltinRead {
-  const plain = argWordFor(shell);
+  const plain = argWordAsWritten(shell);
   // (A word of two words or more whose texts are not known stays one word here, as `args` has it: `interpret` reads its words.)
   const { line, groups, own } = fieldLine(args.map((a) => (fieldsOf ? { ...plain(a), fields: () => fieldsOf(a) } : plain(a))), 'none');
   const back = lineIndex(groups);

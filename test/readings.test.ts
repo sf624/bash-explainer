@@ -156,9 +156,17 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     for (const kept of ['${b:=x}', '"$(a=1)"', '${b[@]}', '${#b[*]}', 'x=y', '"${b:-x}"', '${!x*}', '${!x@}', '${!b[@]}', '${!b[*]}', '${x@Q}', '`a=1`', '<(a=1)']) {
       assert.deepStrictEqual(vars(`cp $a ${kept} $a d`).filter((w) => w.length > 1), [[0, 2]], kept);
     }
-    // (`$( )` and backquotes set `$?`, `<( )` and `>( )` set `$!`: with digits in IFS, `$?` may give another count.)
-    for (const [param, cut] of [['$?', '"$(true)"'], ['$?', '"`true`"'], ['$!', '<(:)'], ['$!', '>(:)']]) {
+    // (`$( )` and backquotes set `$?`, `<( )` and `>( )` set `$!`: with digits in IFS, `$?` may give another count. `$?`
+    // gives one word with the IFS as the shell starts, as written; one not known is the script's: in the model.)
+    for (const [param, cut] of [['$!', '<(:)'], ['$!', '>(:)']]) {
       assert.deepStrictEqual(vars(`cp ${param} ${cut} ${param} d`), [[0], [2]], `${param} ${cut}`);
+    }
+    assert.deepStrictEqual(vars('cp $? "$(true)" $? d'), []);
+    for (const cut of ['"$(true)"', '"`true`"']) {
+      const tree = parser.parse(`read -r IFS; cp $? ${cut} $? d`);
+      const c = descendants(tree.root, ['command']).find((x) => field(x, 'name')?.text === 'cp')!;
+      const words = c.namedChildren.slice(1).map(argWordIn(shellState(tree, 'bash')));
+      assert.deepStrictEqual(readingsOf(lookupCommand('cp')!, words, ctxOf('cp')).variables.map((v) => v.words), [[0], [2]], cut);
     }
     assert.deepStrictEqual(vars('cp $! "$(true)" $! d'), [[0, 2]]);
     // (Not a parameter bash changes as it runs, nor two words of other counts.)
@@ -381,6 +389,58 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
     });
   });
 
+  it('the words read the view of each word: its value, start, count and parts, in the model and as written (bash 5.2)', () => {
+    // (`model`: what `argWordIn` gives the last word of the last command; `written`: `argWord`, before any model. `bash`:
+    // the words bash gives it, run in an empty directory.)
+    type Row = { line: string; model?: Partial<ArgWord>; written?: Partial<ArgWord>; bash: number };
+    const rows: Row[] = [
+      // (A value read as arithmetic is a number: one word where the IFS holds no digit; as written, at least one.)
+      { line: 'n=5; f $((n-1))', model: { count: undefined }, bash: 1 },
+      { line: 'f $((OPTIND - 1))', model: { count: undefined }, written: { count: { min: 1 } }, bash: 1 },
+      { line: 'f $#', written: { count: undefined }, bash: 1 },
+      { line: 'i=日本語; f $(( ${#i} > 3 ))', model: { count: undefined }, bash: 1 },
+      // (`set -f`: a pattern is text; a substitution that may print something is not known.)
+      { line: 'set -f; f -v*', model: { value: '-v*' }, written: { prefix: '-v', prefixEach: true }, bash: 1 },
+      { line: 'set -f; f 日本語*.txt', model: { value: '日本語*.txt' }, written: { prefix: '日本語', prefixEach: true, count: { min: 1 } }, bash: 1 },
+      { line: ':() { printf x; }; f $(:)-v', model: { prefix: '', count: { min: 1 } }, written: { prefix: '', count: { min: 1 } }, bash: 1 },
+      // (No word splitting: each word a pattern of `$x` gives keeps the start.)
+      { line: 'IFS=; f -v$x', model: { prefix: '-v', prefixEach: true, count: { min: 1 } }, bash: 1 },
+      { line: "IFS=; x='a b'; f -v$x", model: { prefix: '-va b', count: undefined }, bash: 1 },
+      // (nullglob: a pattern may give none, and the words it gives start with `-`.)
+      { line: 'shopt -s nullglob; f -*', model: { prefix: '-', dashes: true, count: { min: 0 } }, bash: 0 },
+      { line: 'shopt -s nullglob; f -v$x', model: { prefix: '-v', count: { min: 0 } }, bash: 1 },
+      // (Arithmetic that assigns IFS splits the word's own text, F95: `a` and `b`.)
+      { line: 'f a1b$((IFS=1))', model: { prefix: '', count: { min: 0 } }, bash: 2 },
+      // (A known value split and globbed: `a*` (as it is, where no file matches) and `b`; only the first keeps the start.)
+      { line: "p='a* b'; f $p", model: { prefix: 'a', prefixEach: undefined, parts: undefined, count: { min: 2 } }, bash: 2 },
+      // (Text outside ASCII.)
+      { line: "x='日本語 です'; f $x", model: { prefix: '日本語', count: { min: 2, max: 2 } }, bash: 2 },
+      { line: 'f "日本語 $y"', model: { prefix: '日本語 ', count: undefined }, written: { prefix: '日本語 ', count: undefined }, bash: 1 },
+      { line: "f $'日本語\\n'", model: { value: '日本語\n' }, written: { value: '日本語\n' }, bash: 1 },
+      { line: 'f 日本語{1,2}', model: { prefix: '日本語', parts: [{ prefix: '日本語1' }, { prefix: '日本語2' }], count: { min: 2, max: 2 } }, bash: 2 },
+    ];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-words-'));
+    try {
+      const out = spawnSync('bash', ['--norc', '-c', rows.map(({ line }) => `(f() { echo $#; }; ${line})`).join('\n')], { cwd: dir, encoding: 'utf8', input: '' }).stdout;
+      assert.deepStrictEqual(out.trim().split('\n').map(Number), rows.map((r) => r.bash));
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+    const pick = (w: ArgWord, want: Partial<ArgWord>): Partial<ArgWord> => Object.fromEntries(Object.keys(want).map((k) => [k, w[k as keyof ArgWord]]));
+    for (const { line, model, written } of rows) {
+      const tree = parser.parse(line);
+      const word = descendants(tree.root, ['command']).filter((c) => field(c, 'name')?.text === 'f').at(-1)!.namedChildren.at(-1)!;
+      if (model) assert.deepStrictEqual(pick(argWordIn(shellState(tree, 'bash'))(word), model), model, line);
+      if (written) assert.deepStrictEqual(pick(argWord(word), written), written, `${line} (as written)`);
+    }
+    // (A word outside a word of the model is read as its text.)
+    assert.deepStrictEqual(argWordFor(() => undefined)(descendants(parser.parse('f "a"').root, ['command'])[0].namedChildren[1]), { value: '"a"' });
+    // (An array or a subscript given to a declaration builtin is one word, which the builtin reads itself.)
+    const tree = parser.parse('declare -a b=(1 2) c[$i]=日本語');
+    const model = shellState(tree, 'bash');
+    assert.deepStrictEqual(descendants(tree.root, ['command'])[0].namedChildren.slice(2).map((w) => argWordIn(model)(w).count), [undefined, undefined]);
+  });
+
   it('a glob keeps its known start on every word it gives, as bash globs it (GNU cp and grep)', function () {
     const gnu = (tool: string): boolean => /GNU/.test(spawnSync(tool, ['--version'], { encoding: 'utf8' }).stdout ?? '');
     if (!gnu('cp') || !gnu('grep')) this.skip();
@@ -405,12 +465,16 @@ describe('readings: the table of every count (count-hedges.md, step 2)', functio
       assert.deepStrictEqual(table('cp x$a d').line.slice(0, 2), [{ prefix: 'x', count: { min: 1 } }, { value: 'd' }]);
       // (No parts where the words of the brace expansion are not known: too many to list, or the step not known to apply.)
       assert.strictEqual(argWords('cp -v{1..100000}$x d').words[0].parts, undefined);
+      const inModel = (text: string): ArgWord => {
+        const tree = parser.parse(text);
+        return argWordIn(shellState(tree, 'bash'))(descendants(tree.root, ['command']).pop()!.namedChildren[1]);
+      };
       const braced = descendants(parser.parse('cp -v{a,b}$x d').root, ['command'])[0].namedChildren[1];
-      assert.deepStrictEqual([argWordFor(undefined, () => 'unknown')(braced).parts, argWordFor()(braced).parts?.length], [undefined, 4]);
+      assert.deepStrictEqual([inModel('if c; then set +B; fi; cp -v{a,b}$x d').parts, argWord(braced).parts?.length], [undefined, 4]);
       // (Where the glob options let a glob give none, `nullglob` in the model's count, the words of its first field may be none.)
       const globbed = descendants(parser.parse('cp -v*$x d').root, ['command'])[0].namedChildren[1];
-      assert.deepStrictEqual(argWordFor(undefined, undefined, () => ({ min: 0 }))(globbed).parts?.[0].count, { min: 0 });
-      assert.deepStrictEqual(argWordFor()(globbed).parts?.[0].count, { min: 1 });
+      assert.deepStrictEqual(inModel('shopt -s nullglob; cp -v*$x d').parts?.[0].count, { min: 0 });
+      assert.deepStrictEqual(argWord(globbed).parts?.[0].count, { min: 1 });
       // (A brace word whose words may glob to `--`: `-{v,-}*`; quoted text is no pattern: `-*"?"` cannot, `-*"-"` can.)
       assert.strictEqual(argWords('cp -{v,-}* d').words[0].dashes, true);
       assert.deepStrictEqual([argWords('cp -*"?" d').words[0].dashes, argWords('cp -*"?" d').words[0].prefixEach], [undefined, true]);
