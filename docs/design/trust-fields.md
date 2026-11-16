@@ -314,6 +314,7 @@ Each is written out with the rule. "Not trusted" means the model decides nothing
 | F98 | `printf '<%s>' {1..\<newline>3}`; `shopt -s extglob; touch a; printf '<%s>' @\<newline>(a)` | `<1><2><3>`; `<a>`: a line continuation goes before brace expansion and globbing |
 | F99 | `printf '<%s>' {0..2..9223372036854775808} {1..2..18446744073709551617} {a..c..9223372036854775808} {9007199254740993..9007199254740991..2}` | the first three as they are; `<9007199254740993><9007199254740991>`: past intmax_t a sequence is not expanded, and below it bash counts exactly where a double does not |
 | F100 | With `HOME=/H`: `cat <<< x:~`, `cat <<< x=~`; `r=([0]=~ [1]=a:~); printf '<%s>' "${r[@]}"`; `unset x; a=${x:-x:~}`, the same with `declare`, `local`, `export`, `alias q=…`, `cat <<< ${x:-x:~}`; but `printf '<%s>' a=${x:-x:~}`, `r=([0]=${x:-x:~})` | `x:/H`, `x=~`; `</H><a:/H>`; `x:/H` each; `<a=x:~>`, `x:~` |
+| F101 | `IFS=1; x=1; printf '<%s>' $x`; `x=11`; `x=-1` with `IFS=-`; `x=10` with `IFS=1-`; `$((1))` with `IFS=1` | `<>`; `<><>`; `<><1>`; `<><0>`; `<>`: a value with no blank of IFS in it gives a field at least, empty where it is all separators, so a split number never vanishes (`fieldshape.ts`, `stays`; also `${n:=w}` of an integer, `integerDefault`) |
 
 F85 to F100 were checked with bash 5.2 and 5.3 (`$BASH_EXPLAINER_BASH53`); each gives the same, but F93 (and `declare -A m=([k]=~)`, `~` in bash 5.2 and `/H` in 5.3).
 

@@ -196,6 +196,14 @@ describe('the view of a word (wordview.ts)', () => {
     assert.deepStrictEqual([view('show $a[1]', 0, { shell: 'zsh' }).count, view('show "$@$a[1]"', 0, { shell: 'zsh' }).count], [{ min: 0 }, { min: 0 }]);
   });
 
+  it('as written, a view for each shell: `$\'x\'` is `x` in bash, not known in sh, whichever is asked first', () => {
+    for (const order of [['sh', 'bash'], ['bash', 'sh']] as const) {
+      const { words } = wordsOf("show $'x'");
+      const values = Object.fromEntries(order.map((sh) => [sh, wordViewAsWritten(words[0], sh)!.value]));
+      assert.deepStrictEqual(values, { bash: 'x', sh: undefined }, order.join());
+    }
+  });
+
   it('a redirection target that gives two words: bash fails', () => {
     assert.deepStrictEqual(view('show > {a,b}').count, { min: 0, max: 0 });
     assert.deepStrictEqual(written('show > {a,b}').count, { min: 0 });

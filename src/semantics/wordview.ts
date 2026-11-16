@@ -4,7 +4,8 @@
 // reads it (`viewWords`, `wordFields`) and the field domain (`wordShapes`, src/semantics/fieldshape.ts), and decides
 // nothing of its own. test/word-probes.test.ts holds it against bash.
 import type { Shell } from '../dialect';
-import { globby, holeOf, knownValues, misread, readsAsBash, type Shape, shapesOf, wordShapes, type WordShapes } from './fieldshape';
+import { changesIfs, globby, holeOf, knownValues, misread, readsAsBash, type Shape, shapesOf, wordShapes, type WordShapes } from './fieldshape';
+import { braceAlternatives } from './brace';
 import { descendants, type SyntaxNode } from '../syntax/tree';
 import { decodedText } from '../staticword';
 import { EMPTY, type ShellState } from './shellstate';
@@ -30,6 +31,8 @@ export interface ViewWord {
   fields?: string[];
   /** Some field of it is a pattern that pathname expansion expands here (a hole for which `holeGlobs` holds: may be). */
   globs: Applies;
+  /** Its own text before its first expansion, hole or pattern character (`leadOf`): the start of each of its fields; none where its characters are not known. */
+  lead?: string;
 }
 
 /**
@@ -68,6 +71,13 @@ export interface WordView {
   end?: string;
   /** Some field is a pattern that pathname expansion expands here (a pattern a context matches is `Char.pattern` with `meaning.rule.match`). */
   globs: Applies;
+  /**
+   * The text every field it gives starts with, where it gives one, whatever its parts not known give: its own text before
+   * the first of them that the words of its brace expansion share (`leadIn`; also where it may give none: `-v$x`; and in
+   * a shell that may read the rest otherwise: `-d$'\t'` under `#!/bin/sh`). The interpreter's start of a word that may
+   * give several fields (src/argv/words.ts).
+   */
+  lead?: string;
   /** The fields it may give, from the field domain, where they are not known exactly and the domain can say. */
   shapes?: WordShapes;
   unknown: readonly Unknown[];
@@ -218,17 +228,15 @@ const NO_BRACES: ShellState = { ...EMPTY, set: EMPTY.set.with('braceexpand', 'of
 function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => WordView, env?: WordEnv, known?: Fields, shapes?: () => WordShapes | undefined): WordView {
   // (An assignment given to a declaration builtin, `export A=$x`: its head as written, then the view of its value, as `wordFields` reads it.)
   const declared = declaredWord(w, w.steps[0].applies);
-  // (An array or a subscript is one word the builtin reads itself, where no braces may make several of it: `declare -a b=(1 2)`, `local c[$i]=1`; `declare d[{1,2}]=x` is two.)
-  if (declared === 'unread') {
-    const one = assignmentHead(w) === 'unread' && !w.nodes.some((x) => descendants(x, ['brace_expression']).length);
-    return { meaning: w, plain: false, words: [], count: one ? { min: 1, max: 1 } : { min: 0 }, globs: 'unknown', unknown: ['misread'] };
-  }
+  // (An array or a subscript is one word the builtin reads itself: `declare -a b=(1 2)`, `local c[$i]=1`, `declare -a e=({1,2})`.
+  // Not where braces are not known to apply, nor `declare d[{1,2}]=x`, which bash expands into two: docs/backlog-archive.md.)
+  if (declared === 'unread') return { meaning: w, plain: false, words: [], count: assignmentHead(w) === 'unread' ? { min: 1, max: 1 } : { min: 0 }, globs: 'unknown', unknown: ['misread'] };
   if (declared) return declarationView(w, declared.head, declared.value && again(declared.value), known);
   const unknown = new Set<Unknown>();
   if (misread(w) || !readsAsBash(w)) unknown.add('misread');
   const got = viewWords(w, source, holeIn(w), globby, env);
   if (typeof got === 'string') unknown.add(got);
-  const words = typeof got === 'string' ? [] : got;
+  const words = got === 'misread' ? rejoinedWords(w) : typeof got === 'string' ? [] : got;
   for (const x of words) {
     if (x.chars?.some((c) => c.hole)) unknown.add('value');
     if (x.asWritten) unknown.add(x.asWritten);
@@ -245,10 +253,49 @@ function viewOf(w: WordMeaning, source: ValueSource, again: (n: SyntaxNode) => W
   // (Nor its field domain, which knows no error of the word either.)
   // (Words whose every part is quoted give one field each, with no need of the domain; in a shell that may read them
   // otherwise, their characters, read as bash reads them, tell no start or end.)
-  const quoted = !exact && (w.rule.fields !== 'one-or-error' || words.length === 1) && quotedWords(words) ? (readsAsBash(w) && !misread(w) ? (w.ifs.kind === 'default' ? quotedEnds(words) : undefined) : { count: { min: words.length, max: words.length }, start: '', end: '' }) : undefined;
+  // (Their start is their own text before the first part not known, `lead`, which another shell reads as bash does too.)
+  const lead = leadIn(w, words, got);
+  const quoted = !exact && (w.rule.fields !== 'one-or-error' || words.length === 1) && quotedWords(words) ? (readsAsBash(w) && !misread(w) ? (w.ifs.kind === 'default' ? quotedEnds(words) : undefined) : { count: { min: words.length, max: words.length }, start: lead ?? '', end: '' }) : undefined;
   const domain = exact || quoted || (!known && w.rule.fields === 'one-or-error') ? undefined : shapes?.();
-  const ends = exact ? exactEnds(exact) : quoted ?? (domain ? fromShapes(domain) : { count: { min: 0 } });
-  return { meaning: w, ...(plain ? { value: w.value } : {}), ...(unmatched !== undefined ? { unmatched } : {}), plain, words, ...ends, globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
+  // (Words of braces not read, `{,$x}a`: one field at least of each that has text of its own, unless nullglob may remove
+  // it; with braces on some paths only, one where the word has text of its own, as one word or as words of braces.)
+  const fewest = w.glob.nullglob !== 'off' ? 0 : got === 'misread' ? words.filter((x) => x.lead).length : got === 'option' && lead ? 1 : 0;
+  const ends = exact ? exactEnds(exact) : quoted ?? (domain ? fromShapes(domain) : { count: { min: fewest }, ...(fewest ? { start: lead ?? '', end: '' } : {}) });
+  return { meaning: w, ...(plain ? { value: w.value } : {}), ...(unmatched !== undefined ? { unmatched } : {}), plain, words, ...ends, ...(lead !== undefined ? { lead } : {}), globs, ...(domain ? { shapes: domain } : {}), unknown: [...unknown] };
+}
+
+/**
+ * The text every field of the word `w` starts with, where it gives one (`WordView.lead`): the own text before the first
+ * part not known that its words share (`ViewWord.lead`; of words of braces not read, `{,$x}a`, `rejoinedWords`), or,
+ * where braces apply on some paths only, the text as written before the first brace or other part that its words of
+ * braces share (`braceAlternatives`). None where the word may change the IFS itself, which may split its own text (`a1b$((IFS=1))`).
+ */
+function leadIn(w: WordMeaning, words: readonly ViewWord[], got: ViewWord[] | string): string | undefined {
+  if (changesIfs(w)) return undefined;
+  const leads = words.length ? words.map((x) => x.lead) : got === 'option' ? (braceAlternatives(w.nodes) ?? []).map(writtenLead) : [];
+  return leads.length && leads.every((x) => x !== undefined) ? shared(leads as string[]) : undefined;
+}
+
+/**
+ * The words of braces whose words bash reads otherwise than their parts say (`rejoined`: `{,$x}a` gives `a` and `$xa`):
+ * each with its text as written before its first part (`writtenLead`), and no characters, which are not known.
+ */
+const rejoinedWords = (w: WordMeaning): ViewWord[] => (braceAlternatives(w.nodes, false, w.version) ?? []).map((a) => ({ written: a.map((p) => (typeof p === 'string' ? p : p.text)).join(''), globs: 'unknown', lead: writtenLead(a) }));
+
+/** The text a word of braces has before its first part, where that is text with no quote, escape, expansion or pattern in it. */
+const writtenLead = (parts: readonly (SyntaxNode | string)[]): string => {
+  const first = typeof parts[0] === 'string' ? parts[0] : '';
+  let k = 0;
+  while (k < first.length && !NOT_LITERAL.has(first[k])) k++;
+  return first.slice(0, k);
+};
+const NOT_LITERAL = new Set(['\\', "'", '"', '$', '`', '*', '?', '[', '~', '@', '!', '+', '(', '{']);
+
+/** The longest text that all of `texts` start with. */
+function shared(texts: readonly string[]): string {
+  let k = 0;
+  while (k < texts[0].length && texts.every((t) => t[k] === texts[0][k])) k++;
+  return texts[0].slice(0, k);
 }
 
 /** What a part not known gives in the view of the word `w`: a hole of its kind (fieldshape.ts, `holeOf`). */

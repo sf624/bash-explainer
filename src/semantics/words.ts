@@ -17,7 +17,7 @@ import { asBash, featureWorks } from '../shellfeatures';
 import { parseExpansion } from '../expansion';
 import { ansiCWordValue, bracketsAcross, decodedSlice, decodedText, elementClose, plainWords, quoteRemoved, stackTilde, staticWordValue, substitutionNames, tildeParts, tildeSpots } from '../staticword';
 import { ancestor, assignmentsOnly, descendants, field, joinedText, nameText, redirectionsOf, substitutionForm, type SyntaxNode, rootOf } from '../syntax/tree';
-import { caseConverted, type Char, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, ownChars, patternOfChars, type Piece, regexChars, sameInEveryLocale, specialChars, splitOn, substring, wildcardChars } from './chars';
+import { caseConverted, type Char, globbedByBash, IFS_ERRATIC, IFS_WHITESPACE, leadOf, ownChars, patternOfChars, type Piece, regexChars, sameInEveryLocale, specialChars, splitOn, substring, wildcardChars } from './chars';
 import { alternativesOrWhy, bracedWords, braceStep, reread, wordAlternatives, type BraceAlternative } from './brace';
 import { assignmentAfterCommand, DECLARATIONS } from './effects';
 import { resolveName } from './names';
@@ -788,10 +788,7 @@ export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, hol
   const ev = new Evaluator(w, source, w.state, hole, 'text');
   const splits = w.steps.find((s) => s.kind === 'split')!.applies !== false;
   const glob = w.steps.find((s) => s.kind === 'glob')!;
-  /**
-   * Whether the field `f` globs, its special characters marked: one whose own characters are no pattern still may be
-   * where an unquoted hole holds a glob character; and one not `sure` to be a field (the split not known) may only be.
-   */
+  // (Whether the field `f` globs, its special characters marked: also where an unquoted hole may hold a glob character; may only, where not `sure` to be a field.)
   const fieldGlobs = (f: Char[], sure: boolean): Applies => {
     const g = globsField(w, f);
     const may = g === false && glob.applies !== false && f.some((c) => c.hole && holeGlobs(c.hole)) ? 'unknown' : g;
@@ -809,7 +806,10 @@ export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, hol
     if (!pieces) return { written, globs: 'unknown' };
     const exact = charsOf(w, pieces, splits);
     // (What `ownChars` lacks to know bash's quoting of IFS characters: the IFS, POSIX mode, or a shell that may not be bash.)
-    if (!exact) return { written, chars: ownChars(pieces, splits, { context: false }), asWritten: ifsOfWord(w) === undefined ? 'ifs' : contextAllows(w, 'split').applies === 'unknown' ? 'option' : 'misread', globs: 'unknown' };
+    if (!exact) {
+      const chars = ownChars(pieces, splits, { context: false })!;
+      return { written, chars, lead: leadOf(pieces, chars, false), asWritten: ifsOfWord(w) === undefined ? 'ifs' : contextAllows(w, 'split').applies === 'unknown' ? 'option' : 'misread', globs: 'unknown' };
+    }
     matched(exact);
     const split = splitChars(w, exact, pieces);
     const each = split ? split.map((f) => fieldGlobs(f, true)) : [fieldGlobs(exact, false)];
@@ -823,7 +823,7 @@ export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, hol
       }
       return out;
     }) : undefined;
-    return { written, chars: exact, ...(fields ? { fields } : {}), globs };
+    return { written, chars: exact, lead: leadOf(pieces, exact, true), ...(fields ? { fields } : {}), globs };
   });
 }
 
