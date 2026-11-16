@@ -803,7 +803,7 @@ export function viewWords(w: WordMeaning, source: ValueSource, hole: HoleOf, hol
   return alternatives.map((nodes): ViewWord => {
     const written = nodes.map((p) => (typeof p === 'string' ? p : p.text)).join('');
     const pieces = attempt(() => piecesOf(w, nodes, ev, (quoted, part, tilde) => hole(part ?? tilde!, quoted)));
-    if (!pieces) return { written, globs: 'unknown' };
+    if (!pieces) return { written, globs: 'unknown', lead: '' };
     const exact = charsOf(w, pieces, splits);
     // (What `ownChars` lacks to know bash's quoting of IFS characters: the IFS, POSIX mode, or a shell that may not be bash.)
     if (!exact) {
