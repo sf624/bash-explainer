@@ -27,7 +27,7 @@ describe('sort keys', () => {
 describe('cut lists', () => {
   it('reads numbers and ranges', () => {
     assert.strictEqual(explainCutList('2-4,7', 'field', 'en')!.note, 'selects fields 2 to 4, field 7 (numbered from 1)');
-    assert.strictEqual(explainCutList('-10', 'char', 'en')!.note, 'selects characters 1 to 10 (numbered from 1)');
+    assert.strictEqual(explainCutList('-10', 'byte', 'en')!.note, 'selects bytes 1 to 10 (numbered from 1)');
     assert.strictEqual(explainCutList('3-', 'field', 'en')!.note, 'selects field 3 onwards (numbered from 1)');
     assert.strictEqual(explainCutList('a', 'field', 'en'), undefined);
   });

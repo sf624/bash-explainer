@@ -933,6 +933,7 @@
  "cut -d: -f1,7 /etc/passwd",
  "cut -d: -f1,7 users.txt",
  "cut -dé -f1",
+ "cut -dé -f1 f",
  "cut -f x f",
  "d",
  "dash",

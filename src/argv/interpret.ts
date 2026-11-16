@@ -144,8 +144,8 @@ export interface ValueRole {
   split?: { words: ArgWord[]; roles: RoleAt[] };
   /** Why the program refuses to split it (`env -S'"a'`: no closing quote), with the text at fault. */
   refused?: { error: EnvSplitError; at: string };
-  /** The command refuses the value, as `ValueSpec.refuses` says (`cut -d ab`). */
-  invalid?: true;
+  /** The command refuses the value: what `ValueSpec.refuses` says of it (`cut -d ab`). */
+  invalid?: Text;
   /** `readings`, as an operand's (`grep -e $p -e x f`: with `$p` empty, `x` is a file; `head -n $a f`: with `a='1 g'`, `g` is a file). */
   readings?: Readings;
 }
@@ -179,8 +179,10 @@ export interface ArgvParse {
   sole?: { option: Extract<ArgRole, { role: 'option' }>; text: ArgRole; env: string };
   /** Where an expression read by `operandParser` starts (`find . -name x`: the index of `-name`). */
   expression?: number;
-  /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`), or a value it refuses (`ValueSpec.refuses`: `cut -d ab`). */
+  /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`). */
   refused?: boolean;
+  /** The tool refuses the line for a value it refuses (`ValueSpec.refuses`: `cut -d ab`); its other words read as they do. */
+  refusedValue?: true;
   /**
    * The tool refuses the line and runs nothing, because the command of an option with `until` is wrong (`find . -exec rm {} ;`):
    * the first such command, with the option and the index of its word. The rest of the line is read as usual.
@@ -419,7 +421,8 @@ class Reader {
     }
     const first: { mode?: string; refused?: boolean } = {};
     for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(settled ? ignoring(role, settled.ignored) : role, parse.mode), first) });
-    if (first.refused || refusedValues(parse.roles, this.words)) parse.refused = true;
+    if (first.refused) parse.refused = true;
+    if (refusedValues(parse.roles, this.words)) parse.refusedValue = true;
     if (st.refusal) parse.refusal = st.refusal;
     const option = sole && spec.soleUnlessEnv ? parse.roles[0].role : undefined;
     // (Its role as text: read as when words follow it.)

@@ -1,5 +1,5 @@
 // What makes a command refuse its line, as the argument interpreter reads it (src/argv/interpret.ts): options that select
-// different modes (`grep -E -F`), and a value the command refuses (`cut -d ab`). The line is then `ArgvParse.refused`.
+// different modes (`grep -E -F`: `ArgvParse.refused`), and a value the command refuses (`cut -d ab`: `ArgvParse.refusedValue`).
 import type { ArgRole, ArgWord, RoleAt, ValueRole } from './interpret';
 import type { CommandSpec } from './spec';
 
@@ -10,8 +10,9 @@ import type { CommandSpec } from './spec';
 export function refusedValues(roles: readonly RoleAt[], words: readonly ArgWord[]): boolean {
   let found = false;
   const check = (v: ValueRole | undefined, text: string | undefined): void => {
-    if (!v?.spec?.refuses || text === undefined || !v.spec.refuses.when(text)) return;
-    v.invalid = true;
+    const why = v?.spec?.refuses && text !== undefined ? v.spec.refuses(text) : undefined;
+    if (!why) return;
+    v!.invalid = why;
     found = true;
   };
   for (const { word, role } of roles) {

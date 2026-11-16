@@ -184,7 +184,7 @@ export function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disabl
  * program refuses it.
  */
 function valueReadNote(cx: Explainer, v: ValueRole): string {
-  if (v.invalid) return cx.sep() + cx.t(v.spec!.refuses!.text);
+  if (v.invalid) return cx.sep() + cx.t(v.invalid);
   const program = cx.command!.cmd.split(' ')[0].split('/').pop()!;
   if (v.refused) {
     const at = v.refused.at;

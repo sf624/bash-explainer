@@ -48,8 +48,9 @@ describe('the references', () => {
     // (The pages of the sections, some shared by several, the one manual page, the two parts of Python's documentation and the node of the coreutils manual.)
     assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 4);
     const CHARACTER_ARRAYS = 'https://www.gnu.org/software/coreutils/manual/html_node/Character-arrays.html';
-    assert.deepStrictEqual(reference('coreutils-character-arrays'), { id: 'coreutils-character-arrays', kind: 'coreutils', text: 'tr', title: 'Character arrays', url: CHARACTER_ARRAYS });
-    assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('coreutils-character-arrays')!)), ['GNU coreutils manual tr', 'GNU coreutils マニュアル tr']);
+    assert.deepStrictEqual(reference('coreutils-character-arrays'), { id: 'coreutils-character-arrays', kind: 'coreutils', text: 'coreutils: Character arrays', title: 'Character arrays', url: CHARACTER_ARRAYS });
+    assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('coreutils-character-arrays')!)), ['GNU coreutils manual: Character arrays', 'GNU coreutils マニュアル: Character arrays']);
+    assert.strictEqual(refsText('en', ['coreutils-character-arrays']), ' (coreutils: Character arrays)');
     // (The panel makes a link of an https address only: media/panel.js, test/web-panel-origin.test.ts.)
     for (const url of REFERENCE_URLS) assert.strictEqual(new URL(url).protocol, 'https:', url);
   });
