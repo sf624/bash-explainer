@@ -20,6 +20,7 @@ const doc = (text: string): ShellDocument => ({ lines: text.split('\n'), tree: p
 
 /** The cases of each entry's params that its headline tells apart; the type makes the table complete. */
 const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
+  'command-refused': [{ program: 'cut', kind: 'needs', options: ['-f'], says: 'x', status: 1 }, { program: 'grep', kind: 'modes', word: '-F', after: '-E', says: 'x', status: 2, gnu: true }],
   'exit-refused': [{ why: 'too-many', word: 'a' }, { why: 'not-numeric', word: 'a', exits: true }, { why: 'not-numeric', word: 'a', exits: false }],
   'declaration-masks-status': [{ kw: 'local', v: 'x' }],
   'pipefail-missing': [{ last: 'wc' }],

@@ -1,6 +1,9 @@
 import type { Condition, OperandAlt } from '../argv/spec';
 import { byCount, cmd, EXTRA_OPERAND, extraOperand, GNU_INFO, lackingOperand, pos } from './types';
 
+/** The node of the coreutils manual on tr's words (src/references.ts). */
+const TR_REF = 'coreutils-tr-invocation';
+
 /**
  * The operands of `tr`, by the options and the count (checked against GNU coreutils 9.4): the sets to delete (`-d`) or
  * to squeeze (`-s`), or to translate (neither); with `-d` alone only one set is taken (the second word is refused with
@@ -26,19 +29,19 @@ const TR_TRANSLATE = [pos('変換元の文字集合（例: `a-z`）', 'source ch
 // (`-c` complements the first set only: `-cds` keeps a set and squeezes another, and the labels follow.)
 const TR_OPERANDS: OperandAlt[] = [
   { when: withComplement(TR_BOTH), ...byCount(2, [TR_KEEP, pos('連続を1つにまとめる文字集合', 'character set whose repeats are squeezed')], { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }) },
-  { when: withComplement(TR_DELETING), ...byCount(1, [TR_KEEP], { langs: ['trset'], extra: extraOperand('extra operand', 1, { also: 'Only one string may be given when deleting without squeezing repeats.', once: true }) }) },
+  { when: withComplement(TR_DELETING), ...byCount(1, [TR_KEEP], { langs: ['trset'], extra: extraOperand("extra operand '%s'", 1, { also: 'Only one string may be given when deleting without squeezing repeats.', once: true, ref: TR_REF }) }) },
   { when: withComplement(TR_DELETING), ...byCount(1, [TR_KEEP], { langs: ['trset'], extra: EXTRA_OPERAND }) },
   { when: withComplement(TR_SQUEEZING), ...byCount(1, [TR_SQUEEZE_REST], { langs: ['trset'] }) },
   { when: withComplement({ all: [TR_TRUNCATE, { not: TR_DELETE_OPT }] }), ...byCount(2, TR_TRUNCATED_REST, { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }) },
   { when: withComplement(TR_SQUEEZING), ...byCount(2, TR_TRANSLATE_REST, { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }) },
   { when: withComplement(undefined), ...byCount(2, TR_TRANSLATE_REST, { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }) },
-  { when: TR_BOTH, ...byCount(0, [], { extra: lackingOperand('missing operand after', 'Two strings must be given when both deleting and squeezing repeats.', 1) }) },
+  { when: TR_BOTH, ...byCount(0, [], { extra: lackingOperand("missing operand after '%s'", 'Two strings must be given when both deleting and squeezing repeats.', 1, TR_REF) }) },
   { when: TR_BOTH, ...byCount(2, [TR_DELETE, pos('連続を1つにまとめる文字集合', 'character set whose repeats are squeezed')], { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }) },
-  byCount(1, [TR_DELETE], { when: '-d|--delete', langs: ['trset'], extra: extraOperand('extra operand', 1, { also: 'Only one string may be given when deleting without squeezing repeats.', once: true }) }),
+  byCount(1, [TR_DELETE], { when: '-d|--delete', langs: ['trset'], extra: extraOperand("extra operand '%s'", 1, { also: 'Only one string may be given when deleting without squeezing repeats.', once: true, ref: TR_REF }) }),
   byCount(1, [TR_DELETE], { when: '-d|--delete', langs: ['trset'], extra: EXTRA_OPERAND }),
   byCount(1, [pos('連続を1つにまとめる文字集合', 'character set whose repeats are squeezed')], { when: '-s|--squeeze-repeats', langs: ['trset'] }),
   byCount(2, TR_TRANSLATE, { when: '-s|--squeeze-repeats', langs: ['trset', 'trset'], extra: EXTRA_OPERAND }),
-  byCount(0, [], { extra: lackingOperand('missing operand after', 'Two strings must be given when translating.', 1) }),
+  byCount(0, [], { extra: lackingOperand("missing operand after '%s'", 'Two strings must be given when translating.', 1, TR_REF) }),
   byCount(2, TR_TRANSLATE, { langs: ['trset', 'trset'], extra: EXTRA_OPERAND }),
 ];
 

@@ -1,0 +1,8 @@
+{
+  "uses": [
+    {"file":"src/argv/interpret.ts","fn":"placeOperands","kind":"field","count":1,"reason":"the operand matcher's own rule (`extra.knownOnly`: only a word of known text is an extra operand of find's late path), which places the roles `refusalOf` reads"},
+    {"file":"src/embedded/bazelquery.ts","fn":"call","kind":"field","count":1,"reason":"another field of the same name: the query functions bazel refuses in a command (`refuses` of its own table), not a spec's"},
+    {"file":"src/examples/textfilters.ts","fn":"parseOptions","kind":"field","count":1,"reason":"the runner gives up on an extra operand: no example runs a refused line (`refusedIn`), so it is reached where no refusal is said (words not all known, `basename a b \"$x\"`)"},
+    {"file":"src/explain/examples.ts","fn":"dateRun","kind":"field","count":1,"reason":"the same for date (`date +%F \"$x\"`): no example where a word may be an extra operand date refuses"}
+  ]
+}

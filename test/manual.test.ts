@@ -45,8 +45,10 @@ describe('the references', () => {
     assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('python-re-functions')!)), ['Python documentation re', 'Python のドキュメント re']);
     assert.strictEqual(refsText('en', ['3.8', 'python-re-functions']), ' (Bash manual 3.8; re)');
     assert.deepStrictEqual(reference('python-string-escapes'), { id: 'python-string-escapes', kind: 'python', text: 'Lexical analysis', title: 'Escape sequences', url: 'https://docs.python.org/3.15/reference/lexical_analysis.html#escape-sequences' });
-    // (The pages of the sections, some shared by several, the one manual page, the two parts of Python's documentation and the node of the coreutils manual.)
-    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 4);
+    // (The pages of the sections, some shared by several, the one manual page, the two parts of Python's documentation and the
+    // seven nodes of the coreutils manual: Character arrays, and the invocation of the tools whose refusals the specs state.)
+    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 10);
+    assert.deepStrictEqual(reference('coreutils-cut-invocation'), { id: 'coreutils-cut-invocation', kind: 'coreutils', text: 'coreutils: cut invocation', title: 'cut invocation', url: 'https://www.gnu.org/software/coreutils/manual/html_node/cut-invocation.html' });
     const CHARACTER_ARRAYS = 'https://www.gnu.org/software/coreutils/manual/html_node/Character-arrays.html';
     assert.deepStrictEqual(reference('coreutils-character-arrays'), { id: 'coreutils-character-arrays', kind: 'coreutils', text: 'coreutils: Character arrays', title: 'Character arrays', url: CHARACTER_ARRAYS });
     assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('coreutils-character-arrays')!)), ['GNU coreutils manual: Character arrays', 'GNU coreutils マニュアル: Character arrays']);

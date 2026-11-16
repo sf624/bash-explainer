@@ -6,6 +6,7 @@
 import type { ExampleKind, Span, Token, ValueReading } from '../analyzer-types';
 import { rulesOf } from '../argv/parsers';
 import { givenOptions, inRecords, operands, roleLanguage, roleOfWord, values } from '../argv/query';
+import { readInNoLanguage } from '../argv/refusals';
 import { DEFAULT_BASH_VERSION } from '../bashversion';
 import { awkHasGnuEscapes } from '../dict/aliases';
 import { YQ_SPECS } from '../dict/yq';
@@ -98,7 +99,7 @@ export function valueReading(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): 
 
 /** `valueReading` of the word `a` of the command `c`, as the command's own line reads it, from any line. */
 function commandValueReading(cx: Explainer, c: CommandContext, a: SyntaxNode, lang: EmbeddedLang): ValueReadingMade | undefined {
-  if (!c.onModel || c.parse.refused || cx.state.noShell) return undefined;
+  if (!c.onModel || readInNoLanguage(c.parse.refused, c.nodes, a) || cx.state.noShell) return undefined;
   return keptValue(cx, a, lang, (line) => readValue(cx, c, a, lang, line));
 }
 
@@ -335,8 +336,8 @@ export function embeddedContext(c: CommandRead, a: SyntaxNode, model: StateModel
 }
 
 function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: SyntaxNode): EmbeddedReading | undefined {
-  // (A line the tool refuses runs no program: `grep -E -F PATTERN` reads the pattern in no flavour.)
-  if (cx.command?.parse.refused) return undefined;
+  // (A line the tool refuses reads no program: `grep -E -F PATTERN` reads the pattern in no flavour, and `cut -d ab` not `ab`.)
+  if (cx.command && readInNoLanguage(cx.command.parse.refused, cx.command.nodes, a)) return undefined;
   const ecx = embeddedContext(cx.command!, a, cx.state, { lang: cx.lang, shell: cx.shell, bashVersion: cx.opts.bashVersion }, { evidence: () => cx.documentEvidenceAt(a), stop: () => cx.documentStopAt(a) }, cx);
   const read = EMBEDDED[lang](lit.text, ecx);
   const holes = lit.holes ? readHoles(cx, lit, lang, a, read) : undefined;

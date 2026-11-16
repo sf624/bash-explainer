@@ -16,7 +16,7 @@ const NOT_FORMAT = /^(?!\+)/;
  * operand is refused first of all ("extra operand"), whatever the first is.
  */
 export const DATE_OPERANDS: OperandAlt[] = [
-  { when: { option: DATE_GIVEN }, pattern: [{ name: 'FORMAT', text: pos('ここには書けない: 日時を指定するオプション（`-d` `-f` `-r` `-s` `--resolution`）があると、`+` で始まる書式しか書けない（`date` は「lacks a leading \'+\'」と表示して何もせずに終了ステータス 1 で終わる）', 'not allowed here: with an option that gives the date (`-d`, `-f`, `-r`, `-s`, `--resolution`), the operand must be a format starting with `+` (`date` prints `lacks a leading \'+\'` and exits with status 1, doing nothing)'), matches: NOT_FORMAT, known: true, extra: { says: "lacks a leading '+'", status: 1 } }] },
+  { when: { option: DATE_GIVEN }, pattern: [{ name: 'FORMAT', text: pos('ここには書けない: 日時を指定するオプション（`-d` `-f` `-r` `-s` `--resolution`）があると、`+` で始まる書式しか書けない', 'not allowed here: with an option that gives the date (`-d`, `-f`, `-r`, `-s`, `--resolution`), the operand must be a format starting with `+`'), matches: NOT_FORMAT, known: true, extra: { says: "the argument '%s' lacks a leading '+';", status: 1, as: 'operand' } }] },
   { when: { option: DATE_GIVEN }, pattern: [{ name: 'FORMAT', text: pos('書式または日時（2つ目の語があるので、`date` はどちらとしても読まず、「extra operand」と表示して終わる）', 'format or date (with a second word, `date` reads neither and stops with `extra operand`)'), matches: NOT_FORMAT, known: true }, EXTRA_OPERAND] },
   { when: { not: { option: DATE_GIVEN } }, pattern: [{ name: 'DATE', text: pos('設定する日時（`MMDDhhmm[[CC]YY][.ss]` の形。書式ではなく日時として読み、時計を設定しようとする。root でなければ失敗する）', 'date to set (`MMDDhhmm[[CC]YY][.ss]`: read as a date, not as a format, and `date` tries to set the clock, which fails unless root)'), matches: NOT_FORMAT, known: true }, EXTRA_OPERAND] },
   { pattern: [{ name: 'FORMAT', repeat: '?', lang: 'date', matches: /^\+/, text: pos('表示書式（`+` で始まる。例: `+%Y-%m-%d`, `+%F` は年-月-日, `+%s` は UNIX 時刻）', 'output format starting with `+` (e.g. `+%Y-%m-%d`, `+%F`, `+%s`)') }, EXTRA_OPERAND] },
@@ -356,7 +356,7 @@ export const basic: Record<string, CommandSpec> = {
   look: cmd('ソート済みのファイルから、指定した文字列で始まる行を探す', 'Find lines of a sorted file that start with a string', [
     ['-f', '大文字と小文字を区別しない', 'ignore case'],
     ['-t', '区切り文字（ここまでを比べる）', 'termination character', 'arg'],
-  ], { positional: [pos('文字列', 'string'), files], atMost: { count: 2, extra: extraOperand('bad usage', 1) } }),
+  ], { positional: [pos('文字列', 'string'), files], atMost: { count: 2, extra: extraOperand('bad usage', 1, { impl: 'util-linux' }) } }),
   sdiff: cmd('2つのファイルを左右に並べて比べる', 'Compare two files side by side', [
     ['-s|--suppress-common-lines', '共通の行は表示しない', 'do not print common lines'],
     ['-w|--width', '出力の幅', 'output width', 'arg'],

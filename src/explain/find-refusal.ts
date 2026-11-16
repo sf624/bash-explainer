@@ -1,6 +1,6 @@
 // The note for an action that find refuses (`find . -exec rm {} ;`), apart from src/explain/argv.ts, which reads find's expression.
-import type { ArgvParse } from '../argv/interpret';
 import type { CommandSpec } from '../argv/spec';
+import type { UntilRefusal } from '../argv/until';
 import { fact } from '../messages';
 import type { SlotLink } from '../semantics/env';
 import { replaceRange, textAfter } from '../rewrite';
@@ -14,11 +14,11 @@ import type { Explainer } from './context';
  * command. Where the word before a `+` is a string a shell runs (`sh -c 'echo {}' +`), the text passes the paths to it as arguments
  * (`shell`), not with `\\;`, which would paste each path into its code. It is noted on the option. None where bash rejects the line (`find . -exec rm {} ;;`): find never runs.
  */
-export function findRefusal(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec, refusal: NonNullable<ArgvParse['refusal']>): void {
+export function findRefusal(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpec, optionAt: number, refusal: UntilRefusal & { option: string }): void {
   const command = nodes[0].parent!;
   if (rejected(command)) return;
   // (`-exec ;`: no word after the option.)
-  const noCommand = refusal.why === 'missing' && refusal.at === nodes.length - 1;
+  const noCommand = refusal.why === 'missing' && optionAt === nodes.length - 1;
   const semicolon = refusal.why === 'missing' ? /^([ \t]*);(?![;&])([ \t]*)(#.*)?(?:\n|$)/.exec(textAfter(command)) : null;
   const at = semicolon ? command.endIndex + semicolon[1].length : 0;
   // (`{};` is the word `{}` and the operator `;`: `{}\;` would be the one word `{};`. `;#` starts a comment, `\;#` a word.)
@@ -35,7 +35,7 @@ export function findRefusal(cx: Explainer, nodes: SyntaxNode[], spec: CommandSpe
     plus: !!spec.options!.find((o) => o.names.includes(refusal.option))?.until?.terminators.includes('+'),
     bare: !!semicolon, noCommand,
     rewrite: semicolon && !noCommand ? [replaceRange(command, from, at + (hash ? 2 : 1), code)] : [],
-  }), nodes[refusal.at]);
+  }), nodes[optionAt]);
 }
 
 /** Whether bash rejects the line of `n` before it runs any of it: a syntax error in the statement that holds `n`, or on its lines. */

@@ -225,9 +225,9 @@ export interface Explainer {
   examplesAt<T>(n: SyntaxNode, f: () => T): T;
   /**
    * The examples added inside `f` give way to the example `whole` gives, if it gives one (a pipeline's), but for those
-   * `keeps` keeps, which stay before it.
+   * `keeps` keeps, which stay before it; without it, those `drops` says are gone.
    */
-  examplesReplaced<T>(f: () => T, whole: () => Example | undefined, keeps: (e: Example) => boolean): T;
+  examplesReplaced<T>(f: () => T, whole: () => Example | undefined, keeps: (e: Example) => boolean, drops: (e: Example) => boolean): T;
   /**
    * The examples the words read inside `f` add themselves are dropped (read with a spec that may not be the program's:
    * `hash -p`), those `drops` says from what `f` gives; those of the commands inside them, which those commands have
@@ -527,16 +527,15 @@ export class LineExplainer implements Explainer, LineOutput {
     return value;
   }
 
-  examplesReplaced<T>(f: () => T, whole: () => Example | undefined, keeps: (e: Example) => boolean): T {
+  examplesReplaced<T>(f: () => T, whole: () => Example | undefined, keeps: (e: Example) => boolean, drops: (e: Example) => boolean): T {
     const before = this.examples.length;
     const value = f();
     const one = whole();
-    if (one) {
-      const kept = this.examples.slice(before).filter(keeps);
-      this.examples.length = before;
-      pushAll(this.examples, kept);
-      this.examples.push(one);
-    }
+    // (Without the whole one, those `drops` says are gone: the stages after one its tool refuses.)
+    const kept = this.examples.slice(before).filter(one ? keeps : (e) => !drops(e));
+    this.examples.length = before;
+    pushAll(this.examples, kept);
+    if (one) this.examples.push(one);
     return value;
   }
 

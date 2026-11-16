@@ -3,6 +3,7 @@ import type { BashVersion } from '../bashversion';
 import type { EmbeddedLang } from '../embedded/types';
 import { Text, tx } from '../i18n';
 export { wordTable } from '../wordtable';
+export { countRefused, sortKeyRefused, tabRefused } from './refusals';
 
 /**
  * `[names, ja, en, flags]` where names is `-r|--recursive` and flags may contain `arg` (a value; `arg2` for two
@@ -12,7 +13,7 @@ export { wordTable } from '../wordtable';
  * `-i.bak`), `next:<regexp>` (an optional value, taken from the next word when it matches: `journalctl -b -1`),
  * `lang:<name>` (the value's language), `io:<use>` (what the command does with the file the value names, `IoUse`:
  * `sort -o` writes it), `each:<how>` (how the command works on its input files when the option is given, `EachFile`:
- * `sed -i` rewrites each), `persistent` (subcommands take it too), `signless` (`+x` is `-x`: `OptionSpec.signless`) and `since:<release>` (the bash release that brought
+ * `sed -i` rewrites each), `informs` (it prints and exits at once: `--help`, `OptionSpec.informs`), `persistent` (subcommands take it too), `signless` (`+x` is `-x`: `OptionSpec.signless`) and `since:<release>` (the bash release that brought
  * a builtin's option: `OptionSpec.since`). The fifth item gives the meaning of particular
  * values (`set -o pipefail`).
  */
@@ -26,7 +27,7 @@ const FIND_PLACEHOLDER: PlaceholderSpec = { text: FIND_BRACES, with: 'path', any
 export function optionOf([names, ja, en, flags = '', values]: OptSpec): OptionSpec {
   const each = /each:([\w-]+)/.exec(flags)?.[1] as EachFile | undefined;
   const since = /since:([\d.]+)/.exec(flags)?.[1] as BashVersion | undefined;
-  const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}), ...(flags.includes('signless') ? { signless: true } : {}), ...(each ? { eachFile: each } : {}), ...(flags.includes('records') ? { records: true as const } : {}), ...(since ? { since } : {}) };
+  const opt: OptionSpec = { names: names.split('|'), text: tx(ja, en), ...(flags.includes('persistent') ? { persistent: true } : {}), ...(flags.includes('signless') ? { signless: true } : {}), ...(each ? { eachFile: each } : {}), ...(flags.includes('records') ? { records: true as const } : {}), ...(flags.includes('informs') ? { informs: true as const } : {}), ...(since ? { since } : {}) };
   const lang = /lang:(\w+)/.exec(flags)?.[1] as EmbeddedLang | undefined;
   const io = /io:(\w+)/.exec(flags)?.[1] as IoUse | undefined;
   const setsEnv = /\bsetenv\b/.test(flags) ? 'variable' : flags.includes('envfile') ? 'file' : undefined;
@@ -87,34 +88,36 @@ export interface CmdRest extends Omit<Partial<CommandSpec>, 'summary' | 'options
 
 /**
  * The item for the words past the operands a command takes (`OperandSpec.extra`): it refuses them before doing
- * anything, printing `says` (and `also`, a second line) and exiting with `status` (coreutils `extra operand`, status 1).
- * With `once`, it is one word, not any number (`tr -d a b` prints the second line for the second word, `tr -d a b c` does not).
+ * anything, printing `says` (`%s`: the first such word; `also`, a second line; `bare`: without the program's name) and
+ * exiting with `status` (coreutils `extra operand 'x'`, status 1). The row says it is refused, also in the readings of a word
+ * that may give several; what the tool prints is the line's note (`ArgvParse.refused`). With
+ * `once`, it is one word, not any number (`tr -d a b` prints the second line for the second word, `tr -d a b c` does not).
  */
-export function extraOperand(says: string, status: number, o: { also?: string; once?: boolean } = {}): OperandSpec {
-  const printed = o.also ? `\`${says}\` and \`${o.also}\`` : `\`${says}\``;
-  const printedJa = o.also ? `\`${says}\` と \`${o.also}\` を` : `\`${says}\` と`;
+export function extraOperand(says: string, status: number, o: { also?: string; once?: boolean; bare?: true; impl?: string; ref?: string } = {}): OperandSpec {
+  const { once, ...said } = o;
   return {
-    name: 'EXTRA', ...(o.once ? {} : { repeat: '*' as const }), extra: { says, status },
-    text: tx(`余分なオペランド（コマンドは受け付けず、${printedJa}表示して何もせずに終了ステータス ${status} で終わる）`,
-      `extra operand, which the command refuses (it prints ${printed} and exits with status ${status}, doing nothing)`),
+    name: 'EXTRA', ...(once ? {} : { repeat: '*' as const }), extra: { says, status, ...said },
+    text: tx('余分なオペランド（コマンドは受け付けない）', 'extra operand, which the command refuses'),
   };
 }
 
 /**
  * The item for an operand alone where the command needs one more (`OperandSpec.extra`, as for an extra operand;
- * `tr a`: the command refuses it): it prints `says` with the operand, then `why`, and exits with `status`.
+ * `tr a`: the command refuses it): it prints `says` (`%s`: the operand), then `also`, and exits with `status`.
  */
-export function lackingOperand(says: string, why: string, status: number): OperandSpec {
-  return {
-    name: 'LONE', extra: { says, status },
-    text: tx(`1つだけの文字集合（コマンドは受け付けず、\`${says}\` とそのオペランド、\`${why}\` を表示して何もせずに終了ステータス ${status} で終わる）`,
-      `lone character set, which the command refuses (it prints \`${says}\` and the operand, then \`${why}\`, and exits with status ${status}, doing nothing)`),
-  };
+export function lackingOperand(says: string, also: string, status: number, ref?: string): OperandSpec {
+  return { name: 'LONE', extra: { says, status, also, as: 'alone', ...(ref ? { ref } : {}) }, text: tx('1つだけの文字集合（コマンドは受け付けない）', 'lone character set, which the command refuses') };
 }
 
 /** The extra operands of GNU coreutils and of GNU diffutils (`cmp`, `diff`, `sdiff`, `diff3`: status 2). */
-export const EXTRA_OPERAND = extraOperand('extra operand', 1);
-export const DIFF_EXTRA_OPERAND = extraOperand('extra operand', 2);
+export const EXTRA_OPERAND = extraOperand("extra operand '%s'", 1);
+export const DIFF_EXTRA_OPERAND = extraOperand("extra operand '%s'", 2);
+
+/** The option of a tuple (`OptSpec`) whose one value the command may refuse (`ValueSpec.refuses`: `head -n x`). */
+export function refusing(o: OptSpec, refuses: NonNullable<ValueSpec['refuses']>): OptionSpec {
+  const opt = optionOf(o);
+  return { ...opt, value: { ...(opt.value as ValueSpec), refuses } };
+}
 
 /**
  * A dictionary entry: the spec of a command (src/argv/spec.ts). Options are tuples (`OptSpec`) or option specs;
@@ -211,7 +214,7 @@ export function args(...items: OperandSpec[]): Pick<CommandSpec, 'operands'> {
  * The options every GNU program has. An entry read with the `getopt_long` parser lists them, so that a prefix
  * (`--ver`) is ambiguous where the tool finds it so (`--verbose`, `--version`).
  */
-export const GNU_INFO: OptSpec[] = [['--help', 'ヘルプを表示する', 'show help'], ['--version', 'バージョンを表示する', 'print the version']];
+export const GNU_INFO: OptSpec[] = [['--help', 'ヘルプを表示する', 'show help', 'informs'], ['--version', 'バージョンを表示する', 'print the version', 'informs']];
 
 export const COMMAND_TEXT = tx('実行するコマンド', 'command to run');
 

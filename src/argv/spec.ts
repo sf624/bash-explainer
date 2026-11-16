@@ -60,11 +60,14 @@ export interface CommandSpec {
    */
   lastModeWins?: boolean;
   /**
-   * Options that select different modes refuse the line, and the text says so (GNU grep: `-E -F` is "conflicting
-   * matchers specified", GNU tar: `-c -x` is "You may not specify more than one…", status 2); it is added to the
-   * option that selects a mode other than the first one's, and the parse is `refused`.
+   * Options that select different modes refuse the line (GNU grep: `-E -F` is "conflicting matchers specified", GNU tar:
+   * `-c -x` is "You may not specify more than one…", status 2): the option that selects a mode other than the first
+   * one's is at fault (`ArgvParse.refused`). With `once`, a second option of the same mode too, as it says (GNU cut: `-f1
+   * -f2`, "only one list may be specified").
    */
-  conflictingModes?: Text;
+  conflictingModes?: Refused & { once?: Refused };
+  /** No option selects a mode, and the tool refuses the line (GNU cut: no `-b`, `-c` or `-f`, "you must specify a list…"). */
+  needsMode?: Refused;
   /** Dashless letters in the first word (`tar cvzf`, `ps aux`), or in any word (`ps -p 1 u`). */
   oldStyle?: OldStyleSpec;
   /**
@@ -351,6 +354,11 @@ export interface OptionSpec {
   /** The command reads the option and then refuses the line (sudo's `-a` and `-c` on Linux: it prints its usage and fails): the reading is refused (`Outcome`). */
   refused?: true;
   /**
+   * The program prints something and exits with status 0 as soon as it reads the option (GNU `--help`, `--version`): a
+   * refusal it would report after it, or once it has read all its options, does not come (`ArgvParse.refused`).
+   */
+  informs?: true;
+  /**
    * Written with `+` instead of `-`, it is the same option, not undone (bash's `+c`, `+l`, `+s`, `+D` when it starts:
    * shell.c reads the sign only for the letters of `set`). (bash's invocation only.)
    */
@@ -451,11 +459,12 @@ export interface ValueSpec {
    */
   sendsEnv?: (value: string) => readonly string[];
   /**
-   * The command refuses a value of known text for which this gives a text, before it does anything (GNU `cut -d`: a delimiter
-   * of more than one byte, "the delimiter must be a single character"): the text says so, and why, on the value
-   * (`ValueRole.invalid`), and the line is refused (`ArgvParse.refusedValue`), so no example runs it.
+   * The command refuses a value of known text for which this gives what it prints, before it does anything (GNU `cut -d`:
+   * a delimiter of more than one byte, "the delimiter must be a single character"): the line is refused at the value
+   * (`ArgvParse.refused`). `late`: the tool checks it once it has read all its options (cut's lists), not when it reads
+   * the option.
    */
-  refuses?: (value: string) => Text | undefined;
+  refuses?: (value: string) => (Refused & { late?: true }) | undefined;
   /**
    * The program reads the value as soon as it reads the option, with the options given so far: an option given after
    * it does not apply to it (sed compiles each `-e` script at once, so `sed -e 's/a+/x/' -E` reads a BRE).
@@ -505,6 +514,23 @@ export interface PatternOption {
   unlessMarked?: string;
   /** Its text in a mode, as for `OptionSpec.inMode` (`kill -l -15`: the signal is not sent). */
   inMode?: Record<string, Text>;
+}
+
+/**
+ * What a tool does when it refuses its command line (`ArgvParse.refused`): the first line it prints on its standard error,
+ * in English, as GNU's tool prints it in the C locale (`'x'` quotes; or the tool `impl` names), after the program's name and
+ * `: ` unless `bare` (`Usage: getconf …`), with `%s` where it quotes the word at fault; the second line, where it says more
+ * (`also`: tr's "Two strings must be given when translating."); and its exit status. Other implementations may refuse the
+ * line with other words. `gnu`: they take it (BSD cut, a delimiter of two bytes of one character; BSD grep, `-E -F`: the
+ * last one wins), so the texts name GNU, and the line is no error (a warning: it runs elsewhere). `why`: what is wrong with
+ * the word and what to write instead, where the spec knows it (`cut -d '\t'`: `$'\t'`).
+ */
+export interface Refused {
+  says: string; status: number; bare?: true; also?: string; gnu?: true; why?: Text;
+  /** Whose tool prints `says`, where it is not GNU's (`procps`: pgrep; `util-linux`: look, mountpoint; `Vim`: xxd). */
+  impl?: string;
+  /** The node of a manual that describes the tool's words (an id of src/references.ts: `coreutils-cut-invocation`). */
+  ref?: string;
 }
 
 export interface ModeSpec {
@@ -588,11 +614,12 @@ export interface OperandSpec {
   repeat?: '?' | '*' | '+';
   /**
    * The words here are more operands than the command takes, which it refuses before doing anything (`cmp a b 1 2 x`,
-   * `diff a b c`: "extra operand"), printing `says` and exiting with `status`; the item ends the pattern of a form with
+   * `diff a b c`: "extra operand"), as `Refused` says, its `%s` the first such word; the item ends the pattern of a form with
    * a limit (src/dict/types.ts, `extraOperand`). `knownOnly`: only a word of known text is one (find's late path: a word of
-   * unknown text may be a test or an action, `find . -name a $more`).
+   * unknown text may be a test or an action, `find . -name a $more`). `as`: what the word is to the tool where it is no extra
+   * one: alone where it needs another (`tr a`), or an operand it refuses for its text (`date -d now x`).
    */
-  extra?: { says: string; status: number; knownOnly?: true };
+  extra?: Refused & { knownOnly?: true; as?: 'alone' | 'operand' };
   /** As for a value (`ValueSpec.type`, `ValueSpec.sets`): `getopts OPTSTRING NAME` sets the variable NAME. */
   type?: ValueType;
   sets?: VariableSet;

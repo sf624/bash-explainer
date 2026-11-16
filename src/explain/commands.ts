@@ -37,6 +37,7 @@ import { bashTest, readArgs, testArgs, testCondition } from './argv';
 import { type Explainer, memoKey, STATEMENT_READ, type StatementRead, WORD_READ } from './context';
 import { PROGRAMS } from './embedded';
 import { commandExampleFor, unreadStdin, wordExample } from './examples';
+import { refusalNote } from './refused';
 import { same, skeletal, sortTokens, summaryOf } from './nodes';
 import { redirectionNotes, redirectParts } from './redirections';
 import { lookupOf, programBasis, resolve, restrictedAt, restrictedCall, specFor } from './reads';
@@ -256,6 +257,8 @@ function commandTail(cx: Explainer, n: SyntaxNode, nameNode: SyntaxNode, prefix:
   // (`test` and `[` read their words again below as an expression and drop this reading's tokens: what its holes said stays unsaid.)
   const holesBefore = head.test ? new Map(cx.holesSaid) : undefined;
   const read = cx.examplesDropped(reading, (r, e) => (other && !!head.spec) || (readsFields(r.parse) && e.kind !== 'glob' && e.kind !== 'expansion'));
+  // (The tool refuses the line, `cut -d ab`: said once, and no example runs it, `commandExampleFor`.)
+  if (!other) refusalNote(cx, read.parse, args, n);
   if (holesBefore) {
     cx.holesSaid.clear();
     for (const [k, v] of holesBefore) cx.holesSaid.set(k, v);

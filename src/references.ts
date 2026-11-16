@@ -22,6 +22,12 @@ const MAN_PAGES: Readonly<Record<string, ManPage>> = {
   'python-re-functions': { kind: 'python', page: 're', anchor: 'Functions', url: pythonDocs('library/re.html#functions') },
   'python-string-escapes': { kind: 'python', page: 'Lexical analysis', anchor: 'Escape sequences', url: pythonDocs('reference/lexical_analysis.html#escape-sequences') },
   'coreutils-character-arrays': { kind: 'coreutils', page: 'Character arrays', anchor: 'Character arrays', url: 'https://www.gnu.org/software/coreutils/manual/html_node/Character-arrays.html' },
+  'coreutils-cut-invocation': { kind: 'coreutils', page: 'cut invocation', anchor: 'cut invocation', url: 'https://www.gnu.org/software/coreutils/manual/html_node/cut-invocation.html' },
+  'coreutils-sort-invocation': { kind: 'coreutils', page: 'sort invocation', anchor: 'sort invocation', url: 'https://www.gnu.org/software/coreutils/manual/html_node/sort-invocation.html' },
+  'coreutils-head-invocation': { kind: 'coreutils', page: 'head invocation', anchor: 'head invocation', url: 'https://www.gnu.org/software/coreutils/manual/html_node/head-invocation.html' },
+  'coreutils-tail-invocation': { kind: 'coreutils', page: 'tail invocation', anchor: 'tail invocation', url: 'https://www.gnu.org/software/coreutils/manual/html_node/tail-invocation.html' },
+  'coreutils-tr-invocation': { kind: 'coreutils', page: 'tr invocation', anchor: 'tr invocation', url: 'https://www.gnu.org/software/coreutils/manual/html_node/tr-invocation.html' },
+  'coreutils-join-invocation': { kind: 'coreutils', page: 'join invocation', anchor: 'join invocation', url: 'https://www.gnu.org/software/coreutils/manual/html_node/join-invocation.html' },
 };
 
 /** A reference as every output names it: `text`, its link's text (§3.8, execve(2), re); `title`, what it is about; `url`, its page. */

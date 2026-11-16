@@ -43,6 +43,17 @@ describe('the command-line tool', function () {
     assert.strictEqual(run(['--check', '--strict', '--no-config', '-'], { input: '#!/usr/bin/python3\nx = 1\n' }).code, 0);
   });
 
+  it('fails --check on a command line its tool refuses, with the tool\'s message, and not on the line it takes (#852)', () => {
+    const refused = run(['--check', '--no-config', '-'], { input: "cut -d '\\t' -f2 f\n" });
+    assert.strictEqual(refused.code, 1);
+    assert.match(refused.out + refused.err, /^-:1:8: error: cut refuses the value \\t of -d\. GNU cut prints cut: the delimiter must be a single character \(its message in English\) and exits with status 1, doing nothing\. .*write -d \$'\\t' \[command-refused\]$/m);
+    assert.strictEqual(run(['--check', '--no-config', '-'], { input: "cut -d $'\\t' -f2 f\n" }).code, 0);
+    // (Only GNU's grep refuses `-E -F`: a warning, which fails only `--strict`.)
+    const gnu = run(['--check', '--no-config', '-'], { input: 'grep -E -F a f\n' });
+    assert.deepStrictEqual([gnu.code, /warning: Pitfall: GNU grep refuses -F with -E: it prints grep: conflicting matchers specified/.test(gnu.out + gnu.err)], [0, true]);
+    assert.strictEqual(run(['--check', '--strict', '--no-config', '-'], { input: 'grep -E -F a f\n' }).code, 1);
+  });
+
   it('writes the words of a brace expansion on one line, each in backticks, then what echo prints', () => {
     const text = run(['-e', 'echo {1..10..3}', '--no-color']).out;
     assert.match(text, /^ {4}Resulting words \(4 separate arguments of `echo`\)\n {6}`1` `4` `7` `10`\n {4}Output\n {6}1 4 7 10$/m);

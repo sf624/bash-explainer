@@ -75,14 +75,14 @@ describe('positional arguments described by their number', () => {
   });
 
   it('marks the words past the operands a tool takes as extra operands, which it refuses (test/extra-operands-real.test.ts)', () => {
-    const extra = 'extra operand, which the command refuses (it prints `extra operand` and exits with status 1, doing nothing)';
+    const extra = 'extra operand, which the command refuses';
     assert.deepStrictEqual(operands('seq 1 2 3 4').map((o) => o[1]), ['first', 'increment', 'last', extra]);
     assert.deepStrictEqual(operands('basename /a/b .txt c').map((o) => o[1]), ['path', 'suffix to remove', extra]);
     assert.deepStrictEqual(operands('diff a b c').map((o) => o[1]), ['first file', 'second file', extra.replace('status 1', 'status 2')]);
     assert.deepStrictEqual(operands('diff --to-file=d a b c').map((o) => o[1]), ['first file', 'second file', 'second file']);
     assert.deepStrictEqual(operands('tr -d a b').map((o) => o[1]), ['character set to delete', extra.replace('`extra operand` and', '`extra operand` and `Only one string may be given when deleting without squeezing repeats.` and')]);
     assert.deepStrictEqual(operands('tr -d a b c').map((o) => o[1]), ['character set to delete', extra, extra]);
-    assert.deepStrictEqual(operands('mktemp a.XXX b', 'ja')[1], ['b', '余分なオペランド（コマンドは受け付けず、`too many templates` と表示して何もせずに終了ステータス 1 で終わる）']);
+    assert.deepStrictEqual(operands('mktemp a.XXX b', 'ja')[1], ['b', '余分なオペランド（コマンドは受け付けない）']);
   });
 
   it('keeps what follows the description (glob notes) and leaves quoted words described', () => {
