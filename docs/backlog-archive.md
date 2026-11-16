@@ -1394,13 +1394,17 @@ Rare corners, dropped (YAGNI). Kind: `bug`, and `performance` for the last. Each
 Checked with GNU coreutils 9.4, gawk, mawk, util-linux rev and bash 5.2, in `C` and `C.UTF-8`. The examples take a UTF-8 locale where a tool reads characters (rev, gawk, bash), and bytes where GNU coreutils does in every locale (tr, cut, head, tail).
 
 - **A tr set in `$'…'` gets no pitfall.** `tr $'é\t' x` shows the right example (`abc xx xyz xx`), but the set is not read (no word in `$'…'` is read by a language's reader: "A program written in `$'…'` … is still not read", docs/changes/unreleased.md), so the pitfall `tr-multibyte-set` is not said.
-- **`tr '[=é=]' x` says the pitfall.** tr refuses the line ("equivalence class operand must be a single character"), and there is no example; the pitfall says each byte is a member of the set.
+- **`tr '[=é=]' x` is read as five characters.** tr refuses the line ("equivalence class operand must be a single character"), and there is no example; the rows read `[=é=]` as `[`, `=`, the bytes of `é`, `=` and `]`, and the pitfall says each byte is a member of the set.
 - **`tr -d '\200-\377'` shows a sample of ASCII only.** The sample takes the whole characters of the set, and a set of bytes past ASCII has none: the example's input and output are the same.
 - **`tr 'a' '\400'`.** No example: GNU tr warns that `\400` is the 2-byte sequence `\040`, `0`.
 - **`cut -d '' -f1`.** GNU cut takes the NUL byte as the delimiter; there is no example.
-- **`cut -c` in a distribution's patched coreutils.** The row of `-c` says GNU cut counts bytes; the i18n patch of some distributions (Fedora, SUSE) is said to count characters in a UTF-8 locale. Not checked.
+- **`cut -c` in a distribution's patched coreutils.** The row of `-c` names the assumption (GNU coreutils as released counts bytes, as its manual says of 9.4: "The same as ‘-b’ for now"; some distributions count characters), and the example follows the released coreutils. The i18n patch of some distributions (Fedora, RHEL, SUSE) is said to count characters in a UTF-8 locale; not checked here.
 - **`echo 'あいう' | rev` in the C locale.** util-linux rev 2.39 runs at 100% CPU and does not end; in `C.UTF-8` it prints `ういあ`, which the example shows.
 - **`awk '{print length($0)}'` is gawk's.** The example of `echo 'あいう' | awk '{print length($0), substr($0,1,1)}'` shows `3 あ` (gawk in a UTF-8 locale); mawk, and gawk in `C`, print `9` and the first byte.
 - **`${#x}` and `${x:0:1}` say "characters".** True in a UTF-8 locale (`x=あいう`: `3`, `あ`); in `C`, bash counts bytes (`9`, a byte). The examples use ASCII values.
 - **`wc -L`, `fold -w`, `expr length` have no example.** `fold -w 6` breaks `あいうえお` by bytes (`あい`, `うえ`, `お`); `expr length あいう` is `3` in `C.UTF-8`, `9` in `C`; `wc -L` gives the width (`6`). `printf '[%5s]' あ` pads by bytes in bash and coreutils (`[  あ]`), as the example shows.
+- **`tr a b <<< $'\ud800'`.** The example shows `�`; bash in a UTF-8 locale gives tr the bytes `ED A0 80`, and in `C` the text `\uD800`.
+- **A stage after one whose bytes are no text is not shown.** `echo 'あいう' | tr -d 'い' | wc -l` and `echo 'あいう' | head -c 2 | wc -c` say "Not shown", where the tools print `1` and `2` (main showed `1` for the first by accident). Never wrong, but it shows nothing.
+- **`head -c 3 | wc -c` shows 4.** The tool prints 3: the stage after `head -c` gets the text with a final newline it does not have. With ASCII text too, and on main.
+- **`tr -s '　'` alone gets a sample whose output is "Not shown".** Squeezing the bytes of `　` (`\343 \200 \200`) in the sample leaves bytes that are no text: true, but it teaches little.
 - **sed reads `s/\xe3/x/` by character** (listed above, "PCRE and `tr` gaps"): not covered by this fix, which is about coreutils.

@@ -11,7 +11,7 @@ import { pythonDocs } from './python-reference';
 
 /**
  * A page of another document: a manual page (`man`: its name and section, 'execve', '2'), a part of Python's documentation of the
- * reference release (`python`: its module, 're'), or a node of the GNU coreutils manual (`coreutils`: the tool, 'tr'); the heading
+ * reference release (`python`: its module, 're'), or a node of the GNU coreutils manual (`coreutils`: the node, 'Character arrays', shown as `coreutils: Character arrays`); the heading
  * of the part cited, and its URL.
  */
 export interface ManPage { kind: 'man' | 'python' | 'coreutils'; page: string; section?: string; anchor: string; url: string }
@@ -21,7 +21,7 @@ const MAN_PAGES: Readonly<Record<string, ManPage>> = {
   'execve(2)': { kind: 'man', page: 'execve', section: '2', anchor: 'Interpreter scripts', url: 'https://man7.org/linux/man-pages/man2/execve.2.html' },
   'python-re-functions': { kind: 'python', page: 're', anchor: 'Functions', url: pythonDocs('library/re.html#functions') },
   'python-string-escapes': { kind: 'python', page: 'Lexical analysis', anchor: 'Escape sequences', url: pythonDocs('reference/lexical_analysis.html#escape-sequences') },
-  'coreutils-character-arrays': { kind: 'coreutils', page: 'tr', anchor: 'Character arrays', url: 'https://www.gnu.org/software/coreutils/manual/html_node/Character-arrays.html' },
+  'coreutils-character-arrays': { kind: 'coreutils', page: 'Character arrays', anchor: 'Character arrays', url: 'https://www.gnu.org/software/coreutils/manual/html_node/Character-arrays.html' },
 };
 
 /** A reference as every output names it: `text`, its link's text (§3.8, execve(2), re); `title`, what it is about; `url`, its page. */
@@ -32,7 +32,7 @@ export function reference(id: string): Reference | undefined {
   const s = SECTIONS.get(id);
   if (s) return { id, kind: 'bash', text: `§${id}`, title: s.title, url: s.url };
   const m = MAN_PAGES[id];
-  return m && { id, kind: m.kind, text: m.section ? `${m.page}(${m.section})` : m.page, title: m.anchor, url: m.url };
+  return m && { id, kind: m.kind, text: m.section ? `${m.page}(${m.section})` : m.kind === 'coreutils' ? `coreutils: ${m.page}` : m.page, title: m.anchor, url: m.url };
 }
 
 /** Every page an explanation can link to: the manual's sections, the manual pages and Python's documentation. */
@@ -46,13 +46,15 @@ const DOCUMENTS: Readonly<Record<ManPage['kind'], readonly [string, string]>> = 
 };
 
 /** "Linux manual page execve(2)", "Python documentation re": how a link to another document is labelled (its title, beside the part's heading). */
-function manLabel(lang: Lang, kind: ManPage['kind'], text: string): string {
-  return `${DOCUMENTS[kind][lang === 'ja' ? 0 : 1]} ${text}`;
+function manLabel(lang: Lang, kind: ManPage['kind'], text: string, title: string): string {
+  const what = DOCUMENTS[kind][lang === 'ja' ? 0 : 1];
+  // (A node of the coreutils manual is named by its heading: "GNU coreutils manual: Character arrays".)
+  return kind === 'coreutils' ? `${what}: ${title}` : `${what} ${text}`;
 }
 
 /** The label a link's tooltip gives a reference: "Bash manual 3.8", "Linux manual page execve(2)". */
 export function referenceLabel(lang: Lang, r: Reference): string {
-  return r.kind === 'bash' ? manualLabel(lang, [r.id]) : manLabel(lang, r.kind, r.text);
+  return r.kind === 'bash' ? manualLabel(lang, [r.id]) : manLabel(lang, r.kind, r.text, r.title);
 }
 
 /**

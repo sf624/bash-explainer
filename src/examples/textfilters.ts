@@ -3,7 +3,7 @@
  * (seq, basename, dirname), simulated with GNU semantics in the C locale. tr, cut's `-c` and `-b`, and `head -c` and
  * `tail -c` work on bytes, as GNU coreutils does in every locale: a character beyond ASCII is several bytes of UTF-8.
  */
-import { utf8Bytes, utf8Lossy, utf8Text } from './bytes';
+import { isAscii, utf8Bytes, utf8Length, utf8Lossy, utf8Offset, utf8Text } from './bytes';
 import type { LineMarks } from './marks';
 import { chargeSize, chargeWalk, MAX_SAMPLE_COLUMNS, Refused, sampleColumns } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
@@ -58,8 +58,8 @@ export function parseOptions(cmd: string, words: (string | undefined)[], support
     out.opts.push([key, r.value ? words[word]!.slice(r.value.attached) : '']);
   };
   const skipped = new Set<number>();
-  // (A line the tool refuses, `grep -E -F`, runs nothing.)
-  if (parse.refused) throw new Unsupported('refused');
+  // (A line the tool refuses, `grep -E -F` or `cut -d ab`, runs nothing.)
+  if (parse.refused || parse.refusedValue) throw new Unsupported('refused');
   for (const { word, role } of parse.roles) {
     switch (role.role) {
       case 'operand':
@@ -91,18 +91,34 @@ const has = (p: Parsed, c: string) => p.opts.some(([n]) => n === c);
 const value = (p: Parsed, c: string) => [...p.opts].reverse().find(([n]) => n === c)?.[1];
 const values = (p: Parsed, c: string) => p.opts.filter(([n]) => n === c).map(([, v]) => v);
 
-/** The UTF-8 bytes of a text a tool reads, one character each (`utf8Bytes`), charged before they are made: up to three a UTF-16 unit. */
+/** The UTF-8 bytes of a text a tool reads, one character each (`utf8Bytes`): an ASCII text as it is; else charged before they are made. */
 const bytesOf = (text: string): string => {
-  chargeSize(3 * text.length);
+  if (isAscii(text)) return text;
+  chargeSize(utf8Length(text));
   return utf8Bytes(text);
 };
 
-/** The text of the bytes a tool printed; where they are not UTF-8 (a character cut in two), the example cannot show it. */
-const textOf = (bytes: string): string => {
-  const text = utf8Text(bytes);
-  if (text === undefined) throw new Refused('bytes-not-computed');
-  return text;
+/** What a tool that cuts bytes leaves where they are not UTF-8 (a character cut in two): the example cannot show it. */
+const notText = (): never => {
+  throw new Refused('bytes-not-computed');
 };
+
+/** The text of the bytes a tool printed (an ASCII one as it is), or `notText`. */
+const textOf = (bytes: string): string => (isAscii(bytes) ? bytes : utf8Text(bytes) ?? notText());
+
+/** The UTF-16 offset where the first `n` bytes of `text` end (`utf8Offset`), or `notText` where that is inside a character. */
+const offsetOf = (text: string, n: number): number => utf8Offset(text, n) ?? notText();
+
+/** What each suffix of a size multiplies by (GNU head and tail: `b` 512, `K` 1024, `kB` 1000, `MiB` 1024²…), by its letter. */
+const SIZE_POWER: Record<string, number> = wordTable({ k: 1, K: 1, m: 2, M: 2, G: 3 });
+
+/** A count of bytes of `head -c` and `tail -c` (`5`, `-5`, `+5`, `1K`, `2kB`, `1MiB`): its sign and its number. */
+function byteCount(c: string): { sign: string; n: number } {
+  const m = /^([+-]?)(\d+)(?:(b)|([kKmMG])(B|iB)?)?$/.exec(c);
+  if (!m) throw new Unsupported('-c');
+  const unit = m[3] ? 512 : m[4] ? (m[5] === 'B' ? 1000 : 1024) ** SIZE_POWER[m[4]] : 1;
+  return { sign: m[1], n: Number(m[2]) * unit };
+}
 
 // ---------------------------------------------------------------- sort
 
@@ -498,7 +514,11 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
   const comp = has(p, 'c');
   const del = has(p, 'd');
   const squeeze = has(p, 's');
-  const text = bytesOf(input.map((l) => l + '\n').join(''));
+  // (Where no member is a byte past ASCII, and none is complemented, the bytes of a character beyond ASCII are left as
+  // they are: tr works on the characters as it does on their bytes, which are not made.)
+  const raw = input.map((l) => l + '\n').join('');
+  const wide = comp || sets.some((s) => expandSet(s!).some((b) => b > '\x7f'));
+  const text = wide ? bytesOf(raw) : raw;
   const [info1, info2]: SetInfo[] = [{ indefinite: false, cases: [] }, { indefinite: false, cases: [] }];
   const set1 = expandSet(sets[0]!, undefined, info1);
   // (tr refuses `[c*]` in string1, whatever the options.)
@@ -541,7 +561,7 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
     squeezeSet = in1;
   }
   if (squeeze) out = out.filter((c, i) => !(i > 0 && c === out[i - 1] && squeezeSet(c)));
-  const joined = textOf(out.join(''));
+  const joined = wide ? textOf(out.join('')) : out.join('');
   if (joined === '') return [];
   const lines = joined.split('\n');
   if (lines[lines.length - 1] === '') lines.pop();
@@ -567,9 +587,10 @@ function headText(words: (string | undefined)[], input: string[]): string {
   const p = countOptions('head', words);
   const c = value(p, 'c');
   if (c !== undefined) {
-    const bytes = bytesOf(input.map((l) => l + '\n').join(''));
-    const n = Number(c);
-    return textOf(n < 0 || c.startsWith('-') ? bytes.slice(0, Math.max(0, bytes.length - Math.abs(n))) : bytes.slice(0, n));
+    // (Only where the bytes are cut is a character looked at: nothing is made of the others.)
+    const text = input.map((l) => l + '\n').join('');
+    const { sign, n } = byteCount(c);
+    return text.slice(0, offsetOf(text, sign === '-' ? Math.max(0, utf8Length(text) - n) : n));
   }
   const n = value(p, 'n') ?? '10';
   const k = Number(n);
@@ -582,9 +603,10 @@ function tailText(words: (string | undefined)[], input: string[]): string {
   const p = countOptions('tail', words);
   const c = value(p, 'c');
   if (c !== undefined) {
-    const bytes = bytesOf(input.map((l) => l + '\n').join(''));
-    const n = Math.abs(Number(c));
-    return textOf(c.startsWith('+') ? bytes.slice(n - 1) : bytes.slice(Math.max(0, bytes.length - n)));
+    // (`+N` starts at byte N, and `+0` at the first, as `+1`.)
+    const text = input.map((l) => l + '\n').join('');
+    const { sign, n } = byteCount(c);
+    return text.slice(offsetOf(text, sign === '+' ? Math.max(0, n - 1) : Math.max(0, utf8Length(text) - n)));
   }
   const n = value(p, 'n') ?? '10';
   const k = Math.abs(Number(n));

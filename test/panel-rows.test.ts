@@ -30,6 +30,8 @@ const explain = (src: string, line = 0, lang: Lang = 'en'): LineExplanation => n
 const all = (rows: readonly ModelRow[]): ModelRow[] => rows.flatMap((r) => [r, ...all(r.children)]);
 // (With the tokens of the reading of a known value, which the panel shows under the value: docs/design/known-values.md, 4.1.)
 const tokens = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...tokens(t.children), ...tokens(t.value?.reading?.tokens ?? [])]);
+/** The tokens of the line and their parts, without those of a known value's reading. */
+const lineTokens = (ts: readonly Token[]): Token[] => ts.flatMap((t) => [t, ...lineTokens(t.children)]);
 const within = (a: Token['span'], b: Token['span']): boolean => (a.start.line < b.start.line || (a.start.line === b.start.line && a.start.character <= b.start.character))
   && (a.end.line > b.end.line || (a.end.line === b.end.line && a.end.character >= b.end.character));
 /** The rows of `src` at depth 2, after `touch` changes its tokens. */
@@ -407,7 +409,8 @@ describe('the panel\'s row model', () => {
         const ex = explain(text);
         for (const options of [D1, D2]) {
           const { rows, places } = rowModel(ex, options, 'en');
-          for (const t of tokens(ex.items)) assert.ok(at(rows, places.get(t)!), `${t.label} in ${text}`);
+          // (The tokens of the line: those of a known value's reading have no place of their own, `valueRows`.)
+          for (const t of lineTokens(ex.items)) assert.ok(at(rows, places.get(t)!), `${t.label} in ${text}`);
         }
       }
     });

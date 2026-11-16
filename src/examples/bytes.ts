@@ -1,8 +1,44 @@
 // UTF-8 and base64 helpers that work in Node.js and in browsers alike (no Buffer).
 
-/** Length of a string in UTF-8 bytes. */
+/** The UTF-8 bytes of the code point whose first UTF-16 unit is at `i` (a lone surrogate is U+FFFD, 3 bytes, as TextEncoder makes it), and its units. */
+function pointAt(text: string, i: number): [bytes: number, units: number] {
+  const c = text.charCodeAt(i);
+  if (c < 0x80) return [1, 1];
+  if (c < 0x800) return [2, 1];
+  const low = text.charCodeAt(i + 1);
+  return c >= 0xd800 && c < 0xdc00 && low >= 0xdc00 && low < 0xe000 ? [4, 2] : [3, 1];
+}
+
+/** Length of a string in UTF-8 bytes, worked out without making them. */
 export function utf8Length(text: string): number {
-  return new TextEncoder().encode(text).length;
+  let n = 0;
+  for (let i = 0; i < text.length;) {
+    const [b, u] = pointAt(text, i);
+    n += b;
+    i += u;
+  }
+  return n;
+}
+
+/**
+ * The offset in `text`, in UTF-16 units, where its first `n` bytes of UTF-8 end (the whole text when it has no more), or
+ * undefined where they end inside a character: what a tool that cuts bytes (`head -c`) leaves of it is no text there.
+ */
+export function utf8Offset(text: string, n: number): number | undefined {
+  let bytes = 0;
+  for (let i = 0; i < text.length;) {
+    if (bytes >= n) return bytes === n ? i : undefined;
+    const [b, u] = pointAt(text, i);
+    bytes += b;
+    i += u;
+  }
+  return n >= bytes ? text.length : undefined;
+}
+
+/** Whether a string is ASCII only: its UTF-8 bytes are its characters. */
+export function isAscii(text: string): boolean {
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) > 0x7f) return false;
+  return true;
 }
 
 /**

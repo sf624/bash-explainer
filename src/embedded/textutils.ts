@@ -51,11 +51,11 @@ export function explainSortKey(src: string, lang: Lang): Explained | undefined {
   return { tokens, note };
 }
 
-/** `cut -f LIST` / `cut -c LIST`: comma-separated numbers and ranges. */
-export function explainCutList(src: string, unit: 'field' | 'char', lang: Lang): Explained | undefined {
+/** `cut -f LIST` / `cut -b LIST` / `cut -c LIST`: comma-separated numbers and ranges, of fields or of bytes (GNU cut's `-c` counts bytes, as `-b`). */
+export function explainCutList(src: string, unit: 'field' | 'byte', lang: Lang): Explained | undefined {
   const s = pick(lang);
   if (!/^(\d+|\d+-\d*|-\d+)(,(\d+|\d+-\d*|-\d+))*$/.test(src)) return undefined;
-  const [uja, uen] = unit === 'field' ? ['列目', 'field'] : ['文字目', 'character'];
+  const [uja, uen] = unit === 'field' ? ['列目', 'field'] : ['バイト目', 'byte'];
   const tokens: EmbeddedToken[] = [];
   const words: string[] = [];
   let pos = 0;
@@ -94,24 +94,65 @@ function trCharName(c: string): [string, string] {
   return ch === ' ' ? [blankWord(' ', true), blankWord(' ', false)] : [`「${ch}」`, `"${ch}"`];
 }
 
-/** The character a `tr` set writes at the start of `rest` (`a`, `\n`, `\101`, `\\`), as written: its length and its name; undefined for none. */
-function trCharAt(rest: string): { length: number; name: [string, string]; plain: string | undefined } | undefined {
+/** The byte of each escape of a `tr` set that names a control character or a backslash (`TR_ESCAPES`). */
+const TR_ESCAPE_BYTES: Record<string, number> = { n: 10, t: 9, r: 13, '\\': 92, a: 7, b: 8, f: 12, v: 11 };
+
+/** The bytes of a character in UTF-8. */
+const utf8Of = (c: string): number[] => [...new TextEncoder().encode(c)];
+
+/** Bytes as tr's escapes write them, in one code span: `` `\343 \201 \204` ``. */
+const octals = (bytes: readonly number[]): string => `\`${bytes.map((b) => '\\' + b.toString(8).padStart(3, '0')).join(' ')}\``;
+
+/** The character (a code point) at the start of `rest`. */
+const charAt = (rest: string): string => String.fromCodePoint(rest.codePointAt(0)!);
+
+/**
+ * The character a `tr` set writes at the start of `rest` (`a`, `\n`, `\101`, `\\`, `é`), as written: its length, its name,
+ * and the bytes tr reads of it (GNU tr reads a character beyond ASCII as its bytes of UTF-8); undefined for none.
+ */
+function trCharAt(rest: string): { length: number; name: [string, string]; plain: string | undefined; bytes: number[] } | undefined {
   if (!rest) return undefined;
-  if (rest[0] !== '\\' || rest.length === 1) return { length: 1, name: trCharName(rest[0]), plain: rest[0] };
+  if (rest[0] !== '\\' || rest.length === 1) {
+    const c = charAt(rest);
+    return { length: c.length, name: trCharName(c), plain: c, bytes: utf8Of(c) };
+  }
   const octal = /^\\[0-7]{1,3}/.exec(rest);
-  const length = octal ? octal[0].length : 2;
+  const c = octal ? '' : charAt(rest.slice(1));
+  const length = octal ? octal[0].length : 1 + c.length;
   // (The end of a range is named briefly: `octal 177`, not "the character with octal code 177".)
-  const name: [string, string] = octal ? [`8進数 ${octal[0].slice(1)}`, `octal ${octal[0].slice(1)}`] : rest[1] === 'r' ? ['復帰文字(CR)', 'carriage return'] : trCharName(rest);
-  return { length, name, plain: undefined };
+  const name: [string, string] = octal ? [`8進数 ${octal[0].slice(1)}`, `octal ${octal[0].slice(1)}`] : rest[1] === 'r' ? ['復帰文字(CR)', 'carriage return'] : trCharName(rest.slice(0, length));
+  const bytes = octal ? [parseInt(octal[0].slice(1), 8)] : TR_ESCAPE_BYTES[c] !== undefined ? [TR_ESCAPE_BYTES[c]] : utf8Of(c);
+  return { length, name, plain: undefined, bytes };
 }
 
 /** A range `x-y` at the start of `rest`: both ends as `trCharAt` reads them, and their names. */
-function trRange(rest: string): { length: number; from: [string, string]; to: [string, string]; plain?: [string, string] } | undefined {
+function trRange(rest: string): { length: number; from: [string, string]; to: [string, string]; plain?: [string, string]; bytes: [number[], number[]] } | undefined {
   const a = trCharAt(rest);
   if (!a || rest[a.length] !== '-') return undefined;
   const b = trCharAt(rest.slice(a.length + 1));
-  return b ? { length: a.length + 1 + b.length, from: a.name, to: b.name, ...(a.plain !== undefined && b.plain !== undefined ? { plain: [a.plain, b.plain] as [string, string] } : {}) } : undefined;
+  return b ? { length: a.length + 1 + b.length, from: a.name, to: b.name, ...(a.plain !== undefined && b.plain !== undefined ? { plain: [a.plain, b.plain] as [string, string] } : {}), bytes: [a.bytes, b.bytes] } : undefined;
 }
+
+/**
+ * A range one of whose ends is several bytes (`ａ-ｚ`): not the characters from one to the other, but the bytes tr reads of
+ * it, the first end's but its last, the range from that byte to the first of the second end, and the second end's other bytes.
+ */
+function wideRange(s: (ja: string, en: string) => string, from: [string, string], to: [string, string], [a, b]: [number[], number[]]): string {
+  const lo = a[a.length - 1];
+  const hi = b[0];
+  // (No space after a closing 「」: `「ａ」〜「ｚ」の範囲`.)
+  const not = s(`${from[0]}〜${to[0]}${to[0].endsWith('」') ? '' : ' '}の範囲の文字ではない`, `not the characters from ${from[1]} to ${to[1]}`);
+  if (lo > hi) return not + s(`: 端のバイトの範囲 ${octals([lo])}〜${octals([hi])} が逆順なので、tr は受け付けない`, `: the range of the bytes at its ends, ${octals([lo])} to ${octals([hi])}, is reversed, and tr refuses it`);
+  const before = a.slice(0, -1);
+  const after = b.slice(1);
+  const ja = [...(before.length ? [`バイト ${octals(before)}`] : []), `${octals([lo])}〜${octals([hi])} の範囲のバイト`, ...(after.length ? [`バイト ${octals(after)}`] : [])].join('、');
+  const en = [...(before.length ? [`the bytes ${octals(before)}`] : []), `the bytes from ${octals([lo])} to ${octals([hi])}`, ...(after.length ? [`the bytes ${octals(after)}`] : [])].join(', ');
+  return not + s(`: ${ja}`, `: ${en}`);
+}
+
+/** A character of several bytes in a set (`い`): tr reads each of its bytes as a member. */
+const wideChar = (s: (ja: string, en: string) => string, c: string, bytes: readonly number[]): string =>
+  s(`「${c}」の${bytes.length}バイト ${octals(bytes)}（それぞれが要素）`, `the ${bytes.length} bytes ${octals(bytes)} of "${c}", each a member`);
 
 /** One `tr` character set. `role` says how tr uses it. */
 export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'squeeze', lang: Lang, complement = false, truncate = false): Explained | undefined {
@@ -137,14 +178,16 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
     if ((m = /^\[:(\w+):\]/.exec(rest)) && TR_CLASSES[m[1]]) {
       len = m[0].length;
       text = s(TR_CLASSES[m[1]][0], TR_CLASSES[m[1]][1]);
-    } else if ((m = /^\[(\\[0-7]{1,3}|\\.|.)\*(\d*)\]/.exec(rest))) {
+    // (Of one byte: tr reads `[é*3]` as `[`, the bytes of `é`, `*`, `3` and `]`.)
+    } else if ((m = /^\[(\\[0-7]{1,3}|\\[\x00-\x7f]|[\x00-\x7f])\*(\d*)\]/.exec(rest))) {
       len = m[0].length;
       const [ja, en] = trCharName(m[1]);
       text = m[2] ? s(`${ja}を ${m[2]} 個`, `${en} ${m[2]} times`) : s(`${ja}を必要なだけ繰り返す`, `${en} repeated as needed`);
     } else if ((range = trRange(rest))) {
       // (A range of two characters, each written plainly or as an escape: `a-z`, `\000-\177`, `\t-\r`.)
       len = range.length;
-      text = range.plain ? s(`${range.plain[0]}〜${range.plain[1]}`, `${range.plain[0]}-${range.plain[1]}`) : s(`${range.from[0]}〜${range.to[0]} の範囲の文字`, `the characters from ${range.from[1]} to ${range.to[1]}`);
+      text = range.bytes.some((b) => b.length > 1) ? wideRange(s, range.from, range.to, range.bytes)
+        : range.plain ? s(`${range.plain[0]}〜${range.plain[1]}`, `${range.plain[0]}-${range.plain[1]}`) : s(`${range.from[0]}〜${range.to[0]} の範囲の文字`, `the characters from ${range.from[1]} to ${range.to[1]}`);
     } else if ((m = /^\\([0-7]{1,3})/.exec(rest))) {
       len = m[0].length;
       text = s(`8進数 ${m[1]} の文字${controlSuffix(parseInt(m[1], 8), s)}`, `the character with octal code ${m[1]}${controlSuffix(parseInt(m[1], 8), s)}`);
@@ -152,9 +195,11 @@ export function explainTrSet(src: string, role: 'from' | 'to' | 'delete' | 'sque
       len = 2;
       text = s(TR_ESCAPES[rest[1]][0], TR_ESCAPES[rest[1]][1]);
     } else {
-      len = rest[0] === '\\' && rest.length > 1 ? 2 : 1;
-      const c = rest[len - 1];
-      text = c === ' ' ? s(blankWord(' ', true), blankWord(' ', false)) : s(`「${c}」`, `"${c}"`);
+      const escaped = rest[0] === '\\' && rest.length > 1;
+      const c = charAt(escaped ? rest.slice(1) : rest);
+      len = (escaped ? 1 : 0) + c.length;
+      const bytes = utf8Of(c);
+      text = bytes.length > 1 ? wideChar(s, c, bytes) : c === ' ' ? s(blankWord(' ', true), blankWord(' ', false)) : s(`「${c}」`, `"${c}"`);
     }
     tokens.push({ start: i, end: i + len, kind: 'pattern', explanation: `\`${src.slice(i, i + len)}\`: ${text}`, children: [] });
     names.push(text);

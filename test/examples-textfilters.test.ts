@@ -223,6 +223,11 @@ describe('tr, cut -c and -b, head -c and tail -c work on bytes beyond ASCII, as 
     { words: ['cut', '--delimiter=、', '-f1'], lines: ['a、b'] },
     { words: ['head', '-c', '3'], lines: ['あいう'] }, { words: ['head', '-c', '2'], lines: ['あいう'] }, { words: ['head', '-c', '-4'], lines: ['あいう'] },
     { words: ['tail', '-c', '4'], lines: ['あいう'] }, { words: ['tail', '-c', '+4'], lines: ['あいう'] }, { words: ['tail', '-c', '3'], lines: ['あいう'] },
+    { words: ['tr', 'ｚ-ａ', 'x'], lines: ['ａｂｃ'] }, { words: ['tr', 'é-a', 'x'], lines: ['abc'] }, { words: ['tr', 'a-é', 'x'], lines: ['abc é'] },
+    // (Sizes with a suffix, as GNU head and tail read them, and `tail -c +0`, which is all of it.)
+    { words: ['head', '-c', '1K'], lines: ['abcdef'] }, { words: ['head', '-c', '1kB'], lines: ['abcdef'] }, { words: ['head', '-c', '1KiB'], lines: ['abcdef'] },
+    { words: ['head', '-c', '1b'], lines: ['abcdef'] }, { words: ['head', '-c', '-1K'], lines: ['abcdef'] }, { words: ['head', '-c', '1x'], lines: ['abcdef'] },
+    { words: ['tail', '-c', '+0'], lines: ['abc', 'de'] }, { words: ['tail', '-c', '1M'], lines: ['abc'] }, { words: ['tail', '-c', '+1'], lines: ['abc'] },
   ];
   const locales = ['C', 'C.UTF-8'].map((l) => realBytes(CASES, l));
   const utf8 = new TextDecoder('utf-8', { fatal: true });
@@ -276,7 +281,8 @@ describe('a line of tr or cut with text beyond ASCII says what GNU tr and cut do
   it('says the pitfall once for a command, by the first set with such characters, in either language', () => {
     const said = (line: string) => (explain(line).facts ?? []).filter((f) => f.id === 'tr-multibyte-set').map((f) => f.body);
     assert.deepStrictEqual(said("tr 'ａ-ｚ' 'a-z'"), [fact('en', 'tr-multibyte-set', { chars: [{ char: 'ａ', bytes: 3 }, { char: 'ｚ', bytes: 3 }] }).body]);
-    assert.match(said("tr 'あ' 'い'").join('\n'), /^GNU tr works on bytes, not characters: in UTF-8 `あ` is 3 bytes, and each byte/);
+    assert.deepStrictEqual(said("tr 'あ' 'い'"), ["GNU tr works on bytes: in UTF-8 `あ` is 3 bytes, so it is 3 members of the set, and bytes of other characters may change too. For characters beyond ASCII, use `sed` in a UTF-8 locale: `sed 'y/ａｂ/ab/'`"]);
+    assert.strictEqual(runBash("printf 'ａｂ\\n' | sed 'y/ａｂ/ab/'", { env: { LC_ALL: 'C.UTF-8' } }).stdout, 'ab\n');
     assert.deepStrictEqual(said("tr a 'é'").length, 1);
     assert.deepStrictEqual(said("tr -ds a 'é'").length, 1);
     assert.deepStrictEqual(said("tr -ds 'é' 'é'").length, 1);
@@ -284,7 +290,8 @@ describe('a line of tr or cut with text beyond ASCII says what GNU tr and cut do
     assert.deepStrictEqual(said('tr a-z A-Z'), []);
     assert.deepStrictEqual(said("tr -d '\\343'"), []);
     const ja = explain("echo 'a　b' | tr '　' ' '", 'ja').facts!.find((f) => f.id === 'tr-multibyte-set')!;
-    assert.match(ja.body, /^GNU の tr は文字ではなくバイト単位で働く: UTF-8 では `　` は3バイトで、/);
+    assert.strictEqual(ja.body, "GNU の tr はバイト単位で働く: UTF-8 では `　` は3バイトなので集合の3つの要素になり、ほかの文字のバイトも変わることがある。ASCII 以外の文字には、UTF-8 のロケールで `sed` を使う: `sed 'y/ａｂ/ab/'`");
+    assert.match(explain("tr 'ａ-ｚ' 'a-z'", 'ja').facts!.find((f) => f.id === 'tr-multibyte-set')!.body, /UTF-8 では `ａ`（3バイト）・`ｚ`（3バイト）はそれぞれ集合の複数の要素になり、/);
     // (The value of a variable read as a set says it too.)
     assert.deepStrictEqual((explain("s='あ'; tr \"$s\" x").facts ?? []).filter((f) => f.id === 'tr-multibyte-set').length, 1);
   });
@@ -298,8 +305,60 @@ describe('a line of tr or cut with text beyond ASCII says what GNU tr and cut do
     assert.match(allTokens(explain('cut -dé -f1', 'ja').items).map((t) => t.explanation).join('\n'), /cut は1バイトより長い区切り文字を受け付けない/);
     assert.notStrictEqual(run('cut', ['-dé', '-f1'], { input: 'a,b\n' }).status, 0);
     // (A delimiter whose text is not known is not refused.)
-    for (const words of [['-d', undefined, '-f1'], ['-d', '\t', '-f1']]) assert.ok(!parseWords('cut', words).refused, String(words));
-    assert.ok(!parseWords('cut', [undefined, '-f1']).refused);
+    for (const words of [['-d', undefined, '-f1'], ['-d', '\t', '-f1']]) assert.ok(!parseWords('cut', words).refusedValue, String(words));
+    assert.ok(!parseWords('cut', [undefined, '-f1']).refusedValue);
+    assert.deepStrictEqual([parseWords('cut', ['-dé', '-f1']).refusedValue, parseWords('cut', ['-dé', '-f1']).refused], [true, undefined]);
+  });
+  it('says why cut refuses the delimiter: several characters, one of several bytes, or `\\t` that is no tab', () => {
+    const why = (line: string, lang: 'en' | 'ja' = 'en') => allTokens(explain(line, lang).items).find((t) => t.valueFor === '-d')!.explanation;
+    const base = 'cut refuses a delimiter of more than one byte: it says `the delimiter must be a single character`, and exits with status 1, doing nothing. ';
+    const baseJa = 'cut は1バイトより長い区切り文字を受け付けない: `the delimiter must be a single character` と表示し、何もせずに終了ステータス 1 で終わる。';
+    assert.strictEqual(why('cut -d ab -f1 f'), 'Value for `-d`. ' + base + '`ab` is 2 characters');
+    assert.strictEqual(why('cut -d ab -f1 f', 'ja'), '`-d` オプションの値。' + baseJa + '`ab` は2文字');
+    assert.strictEqual(why('cut -dé -f1 f'), 'Value for `-d`. ' + base + '`é` is one character, but 2 bytes in UTF-8');
+    assert.strictEqual(why('cut -dé -f1 f', 'ja'), '`-d` の値。' + baseJa + '`é` は1文字だが、UTF-8 では2バイトになる');
+    assert.strictEqual(why("cut -d '\\t' -f2 f"), 'Value for `-d`. ' + base + "cut does not read `\\t` as a tab: it is a backslash and `t`. Tab is the default delimiter: leave out `-d`, or write `-d $'\\t'`");
+    assert.strictEqual(why("cut -d '\\t' -f2 f", 'ja'), '`-d` オプションの値。' + baseJa + "cut は `\\t` をタブとして読まない（バックスラッシュと `t` の2文字）。タブは既定の区切り文字なので、`-d` を書かないか、`-d $'\\t'` と書く");
+    // (What the hint says, with GNU cut: `-d '\t'` is refused, and both ways out take the field after a tab.)
+    assert.deepStrictEqual(["cut -d '\\t' -f2", "cut -d $'\\t' -f2", 'cut -f2'].map((c) => runBash(`printf 'a\\tb\\n' | ${c}`)).map((r) => [r.status, r.stdout]), [[1, ''], [0, 'b\n'], [0, 'b\n']]);
+    // (The other words of a refused line read as they do: `-f1` is a field list.)
+    assert.ok(allTokens(explain('cut -dé -f1 f').items).some((t) => t.explanation === 'field 1'));
+  });
+  it('says the bytes a tr set holds beyond ASCII, as GNU tr reads them', () => {
+    const rows = (line: string, lang: 'en' | 'ja' = 'en') => allTokens(explain(line, lang).items).filter((t) => t.kind === 'pattern').map((t) => `\`${t.label}\`: ${t.explanation.replace(/^`[^`]*`: /, '')}`);
+    assert.deepStrictEqual(rows("tr -d 'い'"), ['`い`: the 3 bytes `\\343 \\201 \\204` of "い", each a member']);
+    assert.deepStrictEqual(rows("tr -d 'い'", 'ja'), ['`い`: 「い」の3バイト `\\343 \\201 \\204`（それぞれが要素）']);
+    assert.deepStrictEqual(rows("tr 'ａ-ｚ' 'a-z'")[0], '`ａ-ｚ`: not the characters from "ａ" to "ｚ": the bytes `\\357 \\275`, the bytes from `\\201` to `\\357`, the bytes `\\275 \\232`');
+    assert.deepStrictEqual(rows("tr 'ａ-ｚ' 'a-z'", 'ja')[0], '`ａ-ｚ`: 「ａ」〜「ｚ」の範囲の文字ではない: バイト `\\357 \\275`、`\\201`〜`\\357` の範囲のバイト、バイト `\\275 \\232`');
+    assert.deepStrictEqual(rows("tr 'a-é' x")[0], '`a-é`: not the characters from "a" to "é": the bytes from `\\141` to `\\303`, the bytes `\\251`');
+    assert.deepStrictEqual(rows("tr 'é-a' x")[0], '`é-a`: not the characters from "é" to "a": the range of the bytes at its ends, `\\251` to `\\141`, is reversed, and tr refuses it');
+    assert.deepStrictEqual(rows("tr 'é-a' x", 'ja')[0], '`é-a`: 「é」〜「a」の範囲の文字ではない: 端のバイトの範囲 `\\251`〜`\\141` が逆順なので、tr は受け付けない');
+    assert.deepStrictEqual(rows("tr '\\101-é' x")[0], '`\\101-é`: not the characters from octal 101 to "é": the bytes from `\\101` to `\\303`, the bytes `\\251`');
+    assert.deepStrictEqual(rows("tr 'é-\\377' x")[0], '`é-\\377`: not the characters from "é" to octal 377: the bytes `\\303`, the bytes from `\\251` to `\\377`');
+    assert.deepStrictEqual(rows("tr '\\n-é' x")[0], '`\\n-é`: not the characters from newline to "é": the bytes from `\\012` to `\\303`, the bytes `\\251`');
+    assert.deepStrictEqual(rows("tr '\\q-é' x")[0], '`\\q-é`: not the characters from "q" to "é": the bytes from `\\161` to `\\303`, the bytes `\\251`');
+    assert.deepStrictEqual(rows("tr '\\é' x")[0], '`\\é`: the 2 bytes `\\303 \\251` of "é", each a member');
+    assert.deepStrictEqual(rows("tr 'Ａ-Ｚａ-ｚ' 'A-Za-z'").length, 4);
+    // (`[é*3]` is no repeat: tr reads `[`, the bytes of `é`, `*`, `3` and `]`.)
+    assert.deepStrictEqual(rows("tr '[é*3]' x").slice(0, 2), ['`[`: "["', '`é`: the 2 bytes `\\303 \\251` of "é", each a member']);
+    assert.deepStrictEqual(rows("tr '\\n-\\r' x").slice(0, 1), ['`\\n-\\r`: the characters from newline to carriage return']);
+    assert.notStrictEqual(runBash("echo a | tr 'é-a' x").status, 0);
+  });
+  it('says cut counts bytes, for -c as for -b, and names the assumption', () => {
+    const rows = (line: string, lang: 'en' | 'ja' = 'en') => allTokens(explain(line, lang).items).map((t) => t.explanation);
+    for (const line of ['cut -c1-3 f', 'cut -b1-3 f']) {
+      assert.ok(rows(line).includes('bytes 1 to 3'), line);
+      assert.ok(rows(line, 'ja').includes('1〜3 バイト目'), line);
+    }
+    assert.ok(rows('cut -c1-3 f').some((t) => t.startsWith('character positions to select; GNU coreutils as released counts bytes, as for `-b` (some distributions count characters in a UTF-8 locale)')));
+  });
+  it('shows the examples of large inputs it showed before (each byte is not made where the text is ASCII)', () => {
+    const ascii = Array.from({ length: 10000 }, (_, i) => `line ${i} of some ascii text`);
+    const japanese = Array.from({ length: 1000 }, (_, i) => `日本語のテキストの行 ${i} です。`);
+    for (const [cmd, lines] of [['head -c 300', ascii], ['tail -c 300', ascii], ['cut -c1-6', ascii], ['tr a-z A-Z', japanese]] as const) {
+      const ex = new Analyzer('en').explainLine(parser.parse(`${cmd} <<'EOF'\n${lines.join('\n')}\nEOF\n`), 0).examples;
+      assert.ok(ex.length && !ex[0].note && ex[0].sections.length === 2, `${cmd}: ${ex[0]?.note}`);
+    }
   });
   it('marks what cut -c takes by bytes, each character where its first byte is', () => {
     assert.deepStrictEqual(cutMarks(['-c1-3'], ['あいう']).ranges, [[[0, 1]]]);
