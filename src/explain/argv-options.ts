@@ -107,7 +107,7 @@ function equalsToken(cx: Explainer, a: SyntaxNode, role: Extract<ArgRole, { role
   const extra = emb?.note ? ` — ${emb.note}` : '';
   const text = role.role === 'option' ? onOrOff(cx, role) : unknownOption(cx, parse, spec, role.ambiguous);
   // (`--jobs=$(nproc)`: what bash expands in the value has its row, as in a separate value: a command runs there.)
-  return cx.tok(a, 'option', text + cx.text('option-equals-value', { val, ...(known ? { known: cx.t(known) } : {}) }) + extra + splicedNote(cx, value), emb?.tokens ?? cx.subs(written?.nodes ?? []));
+  return cx.tok(a, 'option', text + cx.text('option-equals-value', { val, ...(known ? { known: cx.t(known) } : {}) }) + extra + valueReadNote(cx, value), emb?.tokens ?? cx.subs(written?.nodes ?? []));
 }
 
 /** The tokens of one letter of a cluster: the option, and the value written after it (`-n5`, `-i.bak`, `-F'|'`). */
@@ -142,7 +142,7 @@ function letterParts(cx: Explainer, a: SyntaxNode, l: ArgRole, spec: CommandSpec
   }
   const known = own(value.spec?.values, val);
   const glued = lit && !isPlainWord(a);
-  raw.explanation = (known ? `${val}: ${cx.t(known)}` : cx.text('option-value-for', { flag }) + (glued ? cx.text('option-value-unquoted', { val }) : '')) + splicedNote(cx, value);
+  raw.explanation = (known ? `${val}: ${cx.t(known)}` : cx.text('option-value-for', { flag }) + (glued ? cx.text('option-value-unquoted', { val }) : '')) + valueReadNote(cx, value);
   // `-k3,3nr`, `-f2-4`: the attached value can be broken down like a separate one.
   const lang = value.spec?.lang;
   const emb = lang && lit ? embeddedText(cx, literalFrom(lit, value.attached!), lang, a) : undefined;
@@ -173,16 +173,18 @@ export function valueToken(cx: Explainer, v: SyntaxNode, role: ValueRole, disabl
   if (Array.isArray(role.option?.value) && role.option.value.length === 2) {
     t.explanation = (role.index === 0 ? cx.text('option-name-for', { flag }) + cx.text('option-name-filter-hint') : cx.text('option-value-for', { flag }));
   }
-  t.explanation += splicedNote(cx, role);
+  t.explanation += valueReadNote(cx, role);
   t.valueFor = flag;
   return t;
 }
 
 /**
- * A value whose words the program reads in its place (`env -S'-i bash -e'`): the words and what each is, or
- * why the program refuses it.
+ * What the program makes of a value as it reads it: that it refuses it (`ValueSpec.refuses`: `cut -d ab`); or, for a
+ * value whose words the program reads in its place (`env -S'-i bash -e'`), the words and what each is, or why the
+ * program refuses it.
  */
-function splicedNote(cx: Explainer, v: ValueRole): string {
+function valueReadNote(cx: Explainer, v: ValueRole): string {
+  if (v.invalid) return cx.sep() + cx.t(v.spec!.refuses!.text);
   const program = cx.command!.cmd.split(' ')[0].split('/').pop()!;
   if (v.refused) {
     const at = v.refused.at;

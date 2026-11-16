@@ -16,7 +16,7 @@ import { inRanges, LINE_ENDS, type Node, Parser, type Ranges, WORD } from './reg
  * The note of the catalog (src/messages.ts) that an example says in place of its result: the reason, for what it is true of.
  * `budget-…`: a limit made smaller by what ran before it on the line, or by the size of the document.
  */
-export type NotComputedId = 'regex-not-computed' | 'digits-not-computed' | 'size-not-computed' | 'steps-not-computed' | 'budget-not-computed' | 'python-text-not-computed';
+export type NotComputedId = 'regex-not-computed' | 'digits-not-computed' | 'size-not-computed' | 'steps-not-computed' | 'budget-not-computed' | 'python-text-not-computed' | 'bytes-not-computed';
 
 /** Thrown instead of a result that would cost too much: not a match, nor no match, nor no output. `why` says what ran out. */
 export class Refused extends Error {

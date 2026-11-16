@@ -1388,3 +1388,19 @@ Rare corners, dropped (YAGNI). Kind: `bug`, and `performance` for the last. Each
 - **`command export x=~/c` trusts nothing.** Also `builtin export x=~/c`, `command declare x=~/c`, `command local x=~/c`, `command printf x=~`: since step 3a, deferred.ts's `expands` reads the word model, which sees the tilde after `=` that bash expands there, so the scan reads the word's fields and does not know them ("a builtin is given a word whose fields the trust read, which are not known here"). Main said `$x` is `~/c` after it; bash and dash give `$HOME/c`. A false text gone, decisions lost.
 - **`export x={a,b}` shows `$x` as `a`.** Also with `declare`, `local`, `readonly`, `typeset`, and `declare x={a,b}c` (`ac`). bash brace-expands the word into `x=a x=b`, and the last one stays: `b` (`bc`). The model takes the first field of the value's word (`sourceValue`, src/semantics/words.ts); the last would be right only where the braces are the one step, since each word braces give is then an argument, split and globbed. Same on main.
 - **A long command explained in seconds.** `echo` with 40,000 words (8,000 of them `$(:)a`) takes about 14 s to explain on main, and 20,000 words (4,000 of them `$(:)a`) about 6 s, on main as with step 3a. Where the time goes was not measured.
+
+## Bytes and characters beyond ASCII (found fixing #850, 2026-11-16)
+
+Checked with GNU coreutils 9.4, gawk, mawk, util-linux rev and bash 5.2, in `C` and `C.UTF-8`. The examples take a UTF-8 locale where a tool reads characters (rev, gawk, bash), and bytes where GNU coreutils does in every locale (tr, cut, head, tail).
+
+- **A tr set in `$'…'` gets no pitfall.** `tr $'é\t' x` shows the right example (`abc xx xyz xx`), but the set is not read (no word in `$'…'` is read by a language's reader: "A program written in `$'…'` … is still not read", docs/changes/unreleased.md), so the pitfall `tr-multibyte-set` is not said.
+- **`tr '[=é=]' x` says the pitfall.** tr refuses the line ("equivalence class operand must be a single character"), and there is no example; the pitfall says each byte is a member of the set.
+- **`tr -d '\200-\377'` shows a sample of ASCII only.** The sample takes the whole characters of the set, and a set of bytes past ASCII has none: the example's input and output are the same.
+- **`tr 'a' '\400'`.** No example: GNU tr warns that `\400` is the 2-byte sequence `\040`, `0`.
+- **`cut -d '' -f1`.** GNU cut takes the NUL byte as the delimiter; there is no example.
+- **`cut -c` in a distribution's patched coreutils.** The row of `-c` says GNU cut counts bytes; the i18n patch of some distributions (Fedora, SUSE) is said to count characters in a UTF-8 locale. Not checked.
+- **`echo 'あいう' | rev` in the C locale.** util-linux rev 2.39 runs at 100% CPU and does not end; in `C.UTF-8` it prints `ういあ`, which the example shows.
+- **`awk '{print length($0)}'` is gawk's.** The example of `echo 'あいう' | awk '{print length($0), substr($0,1,1)}'` shows `3 あ` (gawk in a UTF-8 locale); mawk, and gawk in `C`, print `9` and the first byte.
+- **`${#x}` and `${x:0:1}` say "characters".** True in a UTF-8 locale (`x=あいう`: `3`, `あ`); in `C`, bash counts bytes (`9`, a byte). The examples use ASCII values.
+- **`wc -L`, `fold -w`, `expr length` have no example.** `fold -w 6` breaks `あいうえお` by bytes (`あい`, `うえ`, `お`); `expr length あいう` is `3` in `C.UTF-8`, `9` in `C`; `wc -L` gives the width (`6`). `printf '[%5s]' あ` pads by bytes in bash and coreutils (`[  あ]`), as the example shows.
+- **sed reads `s/\xe3/x/` by character** (listed above, "PCRE and `tr` gaps"): not covered by this fix, which is about coreutils.

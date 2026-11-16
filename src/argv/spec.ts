@@ -451,6 +451,12 @@ export interface ValueSpec {
    */
   sendsEnv?: (value: string) => readonly string[];
   /**
+   * The command refuses a value of known text for which `when` holds, before it does anything (GNU `cut -d`: a delimiter of
+   * more than one byte, "the delimiter must be a single character"): `text` says so on the value (`ValueRole.refused`), and
+   * the line is refused (`ArgvParse.refused`), so no example runs it.
+   */
+  refuses?: { when: (value: string) => boolean; text: Text };
+  /**
    * The program reads the value as soon as it reads the option, with the options given so far: an option given after
    * it does not apply to it (sed compiles each `-e` script at once, so `sed -e 's/a+/x/' -E` reads a BRE).
    */

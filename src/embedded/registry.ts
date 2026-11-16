@@ -5,6 +5,7 @@ import type { BashVersion } from '../bashversion';
 import type { Lang } from '../i18n';
 import type { Shell } from '../shellfeatures';
 import type { InvalidHow } from '../arith';
+import type { FactSpec } from '../messages';
 import { explainArith } from './arith';
 import { explainAwk } from './awk';
 import { explainTargetPattern, TARGET_FLAVORS } from './bazel';
@@ -24,11 +25,11 @@ import { explainRegex, type ShellFlavor } from './regex';
 import { explainSed } from './sed';
 import { explainCutList, explainSortKey, explainTrSet, trSummary } from './textutils';
 import { explainPrompt, promptNote } from './prompt';
-import { EmbeddedLang, EmbeddedToken, hasHole, pick } from './types';
+import { EmbeddedLang, EmbeddedToken, hasHole, isHole, pick } from './types';
 import { explainYq3Path } from './yq';
 
-/** An embedded text explained: its tokens (offsets in the text), and a note on the whole. */
-export interface Embedded { tokens: EmbeddedToken[]; note?: string }
+/** An embedded text explained: its tokens (offsets in the text), a note on the whole, and facts of the catalog about it, said on its line (`facts`). */
+export interface Embedded { tokens: EmbeddedToken[]; note?: string; facts?: readonly FactSpec[] }
 
 /** What the command around the text says about it, asked only by the languages that need it. */
 export interface EmbeddedContext {
@@ -75,6 +76,20 @@ const query = (command: QueryCommand, lang: 'bazelquery' | 'bazelcquery' | 'baze
   ? explainQueryWord(text, cx.lang, TARGET_FLAVORS[lang])
   : explainQuery(text, command, { universe: cx.given('--universe_scope', '--infer_universe_scope'), reached: cx.reached() }, cx.lang, TARGET_FLAVORS[lang]));
 
+/** The most characters `tr-multibyte-set` names. */
+const TR_NAMED = 3;
+
+/**
+ * `tr-multibyte-set`, where a tr set holds characters beyond ASCII (GNU tr reads each as its bytes of UTF-8): the first
+ * of them, with their bytes; once for a command, by the first such set (`before`, the first set, when this is the second).
+ */
+function trBytes(text: string, before: string | undefined): readonly FactSpec[] | undefined {
+  const wide = (t: string) => [...t].filter((c) => c > '\x7f' && !isHole(c));
+  if (before !== undefined && wide(before).length) return undefined;
+  const chars = [...new Set(wide(text))].slice(0, TR_NAMED).map((char) => ({ char, bytes: new TextEncoder().encode(char).length }));
+  return chars.length ? [{ id: 'tr-multibyte-set', params: { chars } }] : undefined;
+}
+
 /** One explainer per embedded language; undefined when the text is not one of that language (`date` without `+`). */
 export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
   regex,
@@ -99,7 +114,8 @@ export const EMBEDDED: Readonly<Record<EmbeddedLang, Explainer>> = {
     const r = explainTrSet(text, role, cx.lang, complement, truncate);
     if (!r) return undefined;
     const summary = role === 'to' && !complement && sets[0] !== undefined ? trSummary(sets[0], text, cx.lang) : undefined;
-    return { tokens: r.tokens, note: summary ? `${r.note}${pick(cx.lang)('。つまり', '; that is, it ')}${summary}` : r.note };
+    const facts = trBytes(text, role === 'to' || (role === 'squeeze' && sets.length > 1) ? sets[0] : undefined);
+    return { tokens: r.tokens, note: summary ? `${r.note}${pick(cx.lang)('。つまり', '; that is, it ')}${summary}` : r.note, ...(facts ? { facts } : {}) };
   },
   getoptshort: (text, cx) => explainGetoptShort(text, cx.lang),
   getoptlong: (text, cx) => explainGetoptLong(text, cx.lang),

@@ -171,4 +171,22 @@ export const COMMAND_MESSAGES = {
   'posix-special-builtin-error-maybe': caveat<PosixExitParams>(['4.4', '6.11'], (p) => posixExitText(p, true),
     ({ name }) => [`POSIX モードが有効な経路では、この \`${name}\` のエラーで非対話シェルが終わる。`, `Where POSIX mode is on, this error of \`${name}\` ends a shell that is not interactive.`]),
 
+  // ---------------------------------------------------------------- tools that work on bytes
+  // (GNU tr reads its sets by byte in every locale, coreutils 9.4: `tr 'ａ-ｚ' 'a-z'` makes `ａｂｃ` `zzczzdzze`, and
+  // `tr -d 'い'` deletes the bytes of `い` from every character. GNU sed reads `y` and `s` by character in a UTF-8 locale,
+  // and `s/　/ /g` replaces the bytes in the C locale too: test/examples-textfilters.test.ts.)
+  'tr-multibyte-set': pitfall<{ chars: readonly { char: string; bytes: number }[] }>(['coreutils-character-arrays'], ({ chars }) => [
+    `GNU の tr は文字ではなくバイト単位で働く: UTF-8 では ${trBytesJa(chars)}で、その1バイトずつが集合の別々の要素になる。そのため、ほかの文字のバイトまで変わり、出力が壊れた文字になることがある。ASCII 以外の文字を変換するなら、UTF-8 のロケールで \`sed\` を使う。GNU sed はそこでは文字単位に読む: \`sed 'y/ａｂ/ab/'\`、\`sed 's/　/ /g'\``,
+    `GNU tr works on bytes, not characters: in UTF-8 ${trBytesEn(chars)}, and each byte is a member of the set of its own. So tr changes bytes of other characters too, and its output may be broken text. To change characters beyond ASCII, use \`sed\` in a UTF-8 locale, where GNU sed reads by character: \`sed 'y/ａｂ/ab/'\`, \`sed 's/　/ /g'\``],
+    () => ['tr はバイト単位で働くので、ASCII 以外の文字は集合の複数の要素になる。', 'tr works on bytes, so a character beyond ASCII is several members of the set.']),
 } satisfies Catalog;
+
+/** `` `ａ` は3バイト、`é` は2バイト ``: the characters of a set and their bytes in UTF-8. */
+function trBytesJa(chars: readonly { char: string; bytes: number }[]): string {
+  return chars.map(({ char, bytes }) => `\`${char}\` は${bytes}バイト`).join('、');
+}
+
+/** `` `ａ` is 3 bytes, `é` is 2 bytes ``. */
+function trBytesEn(chars: readonly { char: string; bytes: number }[]): string {
+  return chars.map(({ char, bytes }) => `\`${char}\` is ${bytes} bytes`).join(', ');
+}

@@ -1,9 +1,11 @@
 /**
  * Line-oriented coreutils (sort, uniq, cut, tr, head, tail) and argument-only commands
- * (seq, basename, dirname), simulated with GNU semantics in the C locale.
+ * (seq, basename, dirname), simulated with GNU semantics in the C locale. tr, cut's `-c` and `-b`, and `head -c` and
+ * `tail -c` work on bytes, as GNU coreutils does in every locale: a character beyond ASCII is several bytes of UTF-8.
  */
+import { utf8Bytes, utf8Lossy, utf8Text } from './bytes';
 import type { LineMarks } from './marks';
-import { chargeSize, chargeWalk, MAX_SAMPLE_COLUMNS, sampleColumns } from './regexguard';
+import { chargeSize, chargeWalk, MAX_SAMPLE_COLUMNS, Refused, sampleColumns } from './regexguard';
 import { Unsupported as RunnerUnsupported } from './unsupported';
 
 import { type ArgRole, type ArgvParse, interpret } from '../argv/interpret';
@@ -88,6 +90,19 @@ export const shortKeys = (letters: string, more: Supported = {}): Supported => (
 const has = (p: Parsed, c: string) => p.opts.some(([n]) => n === c);
 const value = (p: Parsed, c: string) => [...p.opts].reverse().find(([n]) => n === c)?.[1];
 const values = (p: Parsed, c: string) => p.opts.filter(([n]) => n === c).map(([, v]) => v);
+
+/** The UTF-8 bytes of a text a tool reads, one character each (`utf8Bytes`), charged before they are made: up to three a UTF-16 unit. */
+const bytesOf = (text: string): string => {
+  chargeSize(3 * text.length);
+  return utf8Bytes(text);
+};
+
+/** The text of the bytes a tool printed; where they are not UTF-8 (a character cut in two), the example cannot show it. */
+const textOf = (bytes: string): string => {
+  const text = utf8Text(bytes);
+  if (text === undefined) throw new Refused('bytes-not-computed');
+  return text;
+};
 
 // ---------------------------------------------------------------- sort
 
@@ -318,7 +333,8 @@ function cutOptions(words: (string | undefined)[]): { p: Parsed; sel: (i: number
   const sel = has(p, 'C') ? (i: number) => !listed(i) : listed;
   if (fields === undefined) return { p, sel };
   const d = value(p, 'd') ?? '\t';
-  if ([...d].length !== 1) throw new Unsupported('-d');
+  // (A delimiter of more bytes the spec refuses, and the line with it, `ValueSpec.refuses`; `-d ''` is the NUL byte, left out.)
+  if (d === '') throw new Unsupported('-d');
   return { p, sel, d };
 }
 
@@ -331,18 +347,20 @@ export function runCut(words: (string | undefined)[], input: string[]): string[]
       return [l.split(d).filter((_, i) => sel(i + 1)).join(od)];
     });
   }
+  // (`-c` counts bytes too, as `-b`: GNU cut has no characters of more bytes.)
   const od = value(p, 'O');
+  const odBytes = od === undefined ? undefined : bytesOf(od);
   return input.map((l) => {
-    const cs = [...l];
-    if (od === undefined) return cs.filter((_, i) => sel(i + 1)).join('');
-    // With --output-delimiter, separate ranges of selected characters.
+    const bs = [...bytesOf(l)];
+    if (odBytes === undefined) return textOf(bs.filter((_, i) => sel(i + 1)).join(''));
+    // With --output-delimiter, separate ranges of selected bytes.
     let out = '';
-    cs.forEach((c, i) => {
+    bs.forEach((c, i) => {
       if (!sel(i + 1)) return;
-      if (out && !sel(i)) out += od;
+      if (out && !sel(i)) out += odBytes;
       out += c;
     });
-    return out;
+    return textOf(out);
   });
 }
 
@@ -355,17 +373,28 @@ export function cutMarks(words: (string | undefined)[], input: string[]): LineMa
   const ranges: [number, number][][] = [];
   const dropped: number[] = [];
   input.forEach((l, k) => {
-    // (Each character of `-c` is a code point: its offsets are counted in UTF-16 units, as the line is shown.)
-    const parts = d === undefined ? [...l] : l.split(d);
     const out: [number, number][] = [];
-    if (d !== undefined && parts.length === 1) {
+    if (d === undefined) {
+      // (`-c` and `-b` count bytes: a character is marked where its first byte is taken, at its offsets in UTF-16 units, as the line is shown.)
+      let at = 0;
+      let byte = 1;
+      for (const c of l) {
+        if (sel(byte)) out.push([at, at + c.length]);
+        at += c.length;
+        byte += utf8Bytes(c).length;
+      }
+      ranges.push(out);
+      return;
+    }
+    const parts = l.split(d);
+    if (parts.length === 1) {
       if (has(p, 's')) dropped.push(k);
       else if (l) out.push([0, l.length]);
     } else {
       let at = 0;
       parts.forEach((part, i) => {
         if (sel(i + 1) && part) out.push([at, at + part.length]);
-        at += part.length + (d?.length ?? 0);
+        at += part.length + d.length;
       });
     }
     ranges.push(out);
@@ -384,7 +413,7 @@ const TR_CLASSES: Record<string, string> = wordTable({
   punct: '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~', xdigit: '0123456789ABCDEFabcdef',
 });
 
-/** Expand a tr set to its characters; `[c*n]` repeats (n omitted: fill to `fillTo`). */
+/** What `expandSet` found of a set besides its bytes. */
 export interface SetInfo {
   /** A `[c*]` (or `[c*0]`) that fills the set to the length of the other. */
   indefinite: boolean;
@@ -392,12 +421,20 @@ export interface SetInfo {
   cases: number[];
 }
 
-export function expandSet(set: string, fillTo?: number, info: SetInfo = { indefinite: false, cases: [] }): string[] {
+/**
+ * Expand a tr set, as written, to its bytes (each a character U+0000 to U+00FF, `utf8Bytes`), as GNU tr reads it in every
+ * locale: a character beyond ASCII is its bytes of UTF-8, each a member of its own (`ａ-ｚ` is `\357`, `\275`, the range
+ * `\201-\357`, `\275`, `\232`); the classes hold ASCII only. `[c*n]` repeats (n omitted: fill to `fillTo`).
+ */
+export function expandSet(written: string, fillTo?: number, info: SetInfo = { indefinite: false, cases: [] }): string[] {
+  const set = bytesOf(written);
   const out: string[] = [];
   let fillAt = -1;
   let fillChar = '';
   const esc = (s: string, i: number): [string, number] => {
     const m = /^\\([0-7]{1,3})/.exec(s.slice(i));
+    // (Past `\377` tr warns, and reads two bytes: `\400` is `\040` and `0`.)
+    if (m && parseInt(m[1], 8) > 0o377) throw new Unsupported('octal escape past a byte');
     if (m) return [String.fromCharCode(parseInt(m[1], 8)), m[0].length];
     const map: Record<string, string> = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', f: '\f', v: '\v', '\\': '\\' };
     if (s[i] === '\\' && i + 1 < s.length) return [map[s[i + 1]] ?? s[i + 1], 2];
@@ -424,8 +461,14 @@ export function expandSet(set: string, fillTo?: number, info: SetInfo = { indefi
       i += rep[0].length;
       continue;
     }
-    const eqv = /^\[=(.)=\]/.exec(set.slice(i));
-    if (eqv) { out.push(eqv[1]); i += eqv[0].length; continue; }
+    // (tr refuses an equivalence class of other than one byte: `[=é=]`, `[=ab=]`, `[==]`.)
+    const eqvEnd = set.startsWith('[=', i) ? set.indexOf('=]', i + 2) : -1;
+    if (eqvEnd >= 0) {
+      if (eqvEnd !== i + 3) throw new Unsupported('equivalence class');
+      out.push(set[i + 2]);
+      i += 5;
+      continue;
+    }
     const [c, n] = esc(set, i);
     if (set[i + n] === '-' && i + n + 1 < set.length) {
       const [d, m] = esc(set, i + n + 1);
@@ -446,7 +489,7 @@ export function expandSet(set: string, fillTo?: number, info: SetInfo = { indefi
 /** The options of tr the simulation follows. */
 const TR = shortKeys('cdst');
 
-/** tr over the whole text (lines joined with \n), so sets containing \n behave as in tr. */
+/** tr over the bytes of the whole text (lines joined with \n), so sets containing \n behave as in tr. */
 export function runTr(words: (string | undefined)[], input: string[]): string[] {
   const p = parseOptions('tr', words, TR);
   const sets = p.operands;
@@ -455,7 +498,7 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
   const comp = has(p, 'c');
   const del = has(p, 'd');
   const squeeze = has(p, 's');
-  const text = input.map((l) => l + '\n').join('');
+  const text = bytesOf(input.map((l) => l + '\n').join(''));
   const [info1, info2]: SetInfo[] = [{ indefinite: false, cases: [] }, { indefinite: false, cases: [] }];
   const set1 = expandSet(sets[0]!, undefined, info1);
   // (tr refuses `[c*]` in string1, whatever the options.)
@@ -474,9 +517,7 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
       squeezeSet = (c) => s2.includes(c);
     }
   } else if (sets.length === 2) {
-    // (With -c, the first set is every byte not in the set, in ascending order, as tr takes it; tr works on bytes, so
-    // text or sets beyond ASCII are left to the real tool.)
-    if (comp && ([...text, ...sets[0]!, ...sets[1]!].some((c) => c.charCodeAt(0) > 127))) throw new Unsupported('-c with non-ASCII text');
+    // (With -c, the first set is every byte not in the set, in ascending order, as tr takes it.)
     let from = comp ? Array.from({ length: 256 }, (_, i) => String.fromCharCode(i)).filter((c) => !set1.includes(c)) : set1;
     let to = expandSet(sets[1]!, from.length, info2);
     // tr: "when not truncating set1, string2 must be non-empty".
@@ -500,7 +541,7 @@ export function runTr(words: (string | undefined)[], input: string[]): string[] 
     squeezeSet = in1;
   }
   if (squeeze) out = out.filter((c, i) => !(i > 0 && c === out[i - 1] && squeezeSet(c)));
-  const joined = out.join('');
+  const joined = textOf(out.join(''));
   if (joined === '') return [];
   const lines = joined.split('\n');
   if (lines[lines.length - 1] === '') lines.pop();
@@ -521,14 +562,14 @@ const countOptions = (cmd: 'head' | 'tail', words: (string | undefined)[]): Pars
 /** The lines of a text, the last one with or without its newline. */
 const linesOf = (text: string): string[] => text.split('\n').filter((l, i, a) => i < a.length - 1 || l !== '');
 
-/** The text `head` prints for the input lines: with `-c`, bytes, which may end without a newline. */
+/** The text `head` prints for the input lines: with `-c`, bytes of UTF-8, which may end without a newline. */
 function headText(words: (string | undefined)[], input: string[]): string {
   const p = countOptions('head', words);
   const c = value(p, 'c');
-  const text = input.map((l) => l + '\n').join('');
   if (c !== undefined) {
+    const bytes = bytesOf(input.map((l) => l + '\n').join(''));
     const n = Number(c);
-    return n < 0 || c.startsWith('-') ? text.slice(0, Math.max(0, text.length - Math.abs(n))) : text.slice(0, n);
+    return textOf(n < 0 || c.startsWith('-') ? bytes.slice(0, Math.max(0, bytes.length - Math.abs(n))) : bytes.slice(0, n));
   }
   const n = value(p, 'n') ?? '10';
   const k = Number(n);
@@ -540,10 +581,10 @@ function headText(words: (string | undefined)[], input: string[]): string {
 function tailText(words: (string | undefined)[], input: string[]): string {
   const p = countOptions('tail', words);
   const c = value(p, 'c');
-  const text = input.map((l) => l + '\n').join('');
   if (c !== undefined) {
+    const bytes = bytesOf(input.map((l) => l + '\n').join(''));
     const n = Math.abs(Number(c));
-    return c.startsWith('+') ? text.slice(n - 1) : text.slice(Math.max(0, text.length - n));
+    return textOf(c.startsWith('+') ? bytes.slice(n - 1) : bytes.slice(Math.max(0, bytes.length - n)));
   }
   const n = value(p, 'n') ?? '10';
   const k = Math.abs(Number(n));
@@ -730,6 +771,8 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
       case 'tr': {
         const p = parseOptions('tr', words, TR);
         const set1 = p.operands[0] !== undefined ? expandSet(p.operands[0]) : [];
+        // (The characters of the set, whole: the bytes of `ａ-ｚ` give `ａ` and `ｚ`.)
+        const chars = [...utf8Lossy(set1.join(''))];
         // A complement keeps the set and changes everything else, so include other characters.
         if (has(p, 'c')) return ['Hello, World! #123'];
         if (set1.includes('\n')) return ['one', 'two', 'three'];
@@ -738,7 +781,7 @@ export function sampleInput(cmd: string, words: (string | undefined)[], more = 0
         const letters = set1.every((c) => /[A-Za-z]/.test(c));
         if (letters && set1.length >= 10) return ['Hello World 123'];
         // Make sure characters of the set appear in the text.
-        const picks = [...new Set(set1)].filter((c) => c >= ' ').slice(0, 3).join('');
+        const picks = [...new Set(chars)].filter((c) => c >= ' ').slice(0, 3).join('');
         return [`abc ${picks} xyz ${picks.slice(0, 1)}`];
       }
       case 'head':

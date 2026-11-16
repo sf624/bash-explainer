@@ -1,4 +1,5 @@
 import { shells } from './shells';
+import { cut } from './cut';
 import { tr } from './tr';
 import { ops } from './ops';
 import { distro } from './distro';
@@ -489,18 +490,7 @@ export const core: Record<string, CommandSpec> = {
     ['--help', 'ヘルプを表示する', 'show help'],
     ['--version', 'バージョンを表示する', 'print the version'],
   ], { example: 'xargs', parser: 'getopt_long', optionsFirst: true, modes: [{ name: 'replace', cancels: ['lines', 'args'] }, { name: 'lines', cancels: ['replace', 'args'] }, { name: 'args', cancels: ['lines', 'replace'], agreesWith: { modes: ['replace'], value: 1 } }], operands: [{ when: { mode: 'replace' }, pattern: [runs({ run: 'exec', placeholder: { text: { mode: 'replace', default: '{}' }, with: 'item', anywhere: true } })] }, { pattern: [runs({ run: 'exec', appends: true })] }] }),
-  cut: cmd('各行から指定した列（フィールド）や文字位置を切り出す', 'Cut out selected fields or characters from each line', [
-    ['-s|--only-delimited', '区切り文字のない行は出力しない', 'do not print lines without the delimiter'],
-    ['--complement', '指定した以外を出力する', 'select everything except the given fields'],
-    ['--output-delimiter', '出力の区切り文字', 'output delimiter', 'arg'],
-    ['-z|--zero-terminated', '行の区切りを改行でなく NUL にする', 'lines end with NUL, not newline'],
-    ['-d|--delimiter', '区切り文字（既定はタブ）', 'field delimiter (default: tab)', 'arg'],
-    ['-f|--fields', '取り出すフィールド番号（例: `1,3` や `2-`）', 'fields to select (e.g. `1,3`, `2-`)', 'arg lang:cutfields'],
-    ['-c|--characters', '取り出す文字位置', 'character positions to select', 'arg lang:cutchars'],
-    ['-b|--bytes', '取り出すバイト位置', 'byte positions to select', 'arg lang:cutchars'],
-    ['-n', '何もしない（互換のため受け付ける）', 'ignored (accepted for compatibility)'],
-    ...GNU_INFO,
-  ], { example: 'cut', parser: 'getopt_long', positional: [files], positionalIo: ['input'] }),
+  cut,
   sort: cmd('行を並べ替える', 'Sort lines', [
     ['-b|--ignore-leading-blanks', '先頭の空白を無視する', 'ignore leading blanks'],
     ['-d|--dictionary-order', '英数字と空白だけで比べる', 'consider only blanks and alphanumerics'],

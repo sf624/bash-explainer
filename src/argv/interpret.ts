@@ -15,6 +15,7 @@ import { flexible, readingsOf, type ReadingsTable } from './readings';
 import { type Group, optionFields, regroup, withParse } from './regroup';
 import type { CommandSlot, CommandSpec, Condition, OperandAlt, OperandSpec, OptionSpec, PatternOption, SubcommandSpec, ValueSpec } from './spec';
 import { pushAll } from '../lists';
+import { conflicting, refusedValues } from './refusals';
 
 /** A word of the command line, as the program will see it. */
 export interface ArgWord {
@@ -143,6 +144,8 @@ export interface ValueRole {
   split?: { words: ArgWord[]; roles: RoleAt[] };
   /** Why the program refuses to split it (`env -S'"a'`: no closing quote), with the text at fault. */
   refused?: { error: EnvSplitError; at: string };
+  /** The command refuses the value, as `ValueSpec.refuses` says (`cut -d ab`). */
+  invalid?: true;
   /** `readings`, as an operand's (`grep -e $p -e x f`: with `$p` empty, `x` is a file; `head -n $a f`: with `a='1 g'`, `g` is a file). */
   readings?: Readings;
 }
@@ -176,7 +179,7 @@ export interface ArgvParse {
   sole?: { option: Extract<ArgRole, { role: 'option' }>; text: ArgRole; env: string };
   /** Where an expression read by `operandParser` starts (`find . -name x`: the index of `-name`). */
   expression?: number;
-  /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`). */
+  /** The tool refuses the line: options that select different modes (`grep -E -F`, see `conflictingModes`), or a value it refuses (`ValueSpec.refuses`: `cut -d ab`). */
   refused?: boolean;
   /**
    * The tool refuses the line and runs nothing, because the command of an option with `until` is wrong (`find . -exec rm {} ;`):
@@ -416,7 +419,7 @@ class Reader {
     }
     const first: { mode?: string; refused?: boolean } = {};
     for (const [word, role] of [...roles].sort((a, b) => a[0] - b[0])) parse.roles.push({ word, role: conflicting(spec, inMode(settled ? ignoring(role, settled.ignored) : role, parse.mode), first) });
-    if (first.refused) parse.refused = true;
+    if (first.refused || refusedValues(parse.roles, this.words)) parse.refused = true;
     if (st.refusal) parse.refusal = st.refusal;
     const option = sole && spec.soleUnlessEnv ? parse.roles[0].role : undefined;
     // (Its role as text: read as when words follow it.)
@@ -932,22 +935,6 @@ function inMode(role: ArgRole, mode: string | undefined): ArgRole {
   if (role.role === 'pattern-option') return role.pattern.inMode?.[mode] ? { ...role, text: role.pattern.inMode[mode] } : role;
   if (role.role !== 'option' || !role.spec.inMode?.[mode]) return role;
   return { ...role, text: role.spec.inMode[mode] };
-}
-
-/**
- * `grep -E -F`: with `conflictingModes`, an option that selects another mode than the first one given says that
- * the tool refuses the line. `first` holds the mode of the first such option, over the words in order, and
- * whether the line is refused.
- */
-function conflicting(spec: CommandSpec, role: ArgRole, first: { mode?: string; refused?: boolean }): ArgRole {
-  if (!spec.conflictingModes) return role;
-  if (role.role === 'cluster' || role.role === 'old-style') return { ...role, letters: role.letters.map((l) => conflicting(spec, l, first)) };
-  if (role.role !== 'option' || !role.spec.selects) return role;
-  first.mode ??= role.spec.selects;
-  if (role.spec.selects === first.mode) return role;
-  const why = spec.conflictingModes;
-  first.refused = true;
-  return { ...role, text: { ja: `${role.text.ja}。${why.ja}`, en: `${role.text.en}. ${why.en}` } };
 }
 
 export interface MatchResult {

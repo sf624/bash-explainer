@@ -7,6 +7,7 @@ Details and examples: [docs/changes/unreleased.md](https://github.com/sf624/bash
 ### Fixed
 
 - A command's text is read as bash gives it in more words: `grep foo$ f` explains its regex, and `awk -F$'\t'` runs its example with a tab. A word whose tilde bash expands, `grep ~/a.b f` or `tr ~ x`, is no longer read as the text `~/a.b` or `~`.
+- The examples of tr, `cut -c`, `cut -b`, `head -c` and `tail -c` work on bytes, as GNU coreutils does: `echo 'ａｂｃ' | tr 'ａ-ｚ' 'a-z'` shows `zzczzdzze`, not `abc`. A tr set with a character beyond ASCII gets a pitfall that points to `sed`, and `cut -dé` says that cut refuses the delimiter.
 - The values a loop or a declaration gives are shown in more forms: after `for f in $'a'`, or `export x={a,b}` under `set +B`, the explanation says what `$f` or `$x` holds. After `:() { …; }`, `$(:)echo hi` is no longer said to print its arguments.
 
 ## 0.15.0

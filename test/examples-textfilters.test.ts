@@ -6,8 +6,10 @@ import { runBash } from './support/bash';
 import { run } from './support/run';
 import { Analyzer, Token } from '../src/analyzer';
 import { createUnbashParser } from '../src/syntax/adapters/unbash';
-import { commandExample, expandSet, filterOf, parseOptions, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
+import { commandExample, cutMarks, expandSet, filterOf, parseOptions, parseWords, runCut, runHead, runSeq, runSort, runTail, runTr, runUniq, sampleInput, Unsupported } from '../src/examples/textfilters';
 import { SYSTEM_FILES } from '../src/examples/systemfiles';
+import { Refused } from '../src/examples/regexguard';
+import { fact } from '../src/messages';
 import { allTokens } from './support/explain';
 
 /** The real command's output (GNU coreutils, C locale). */
@@ -154,10 +156,10 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
   it('gives up on what it does not run', () => {
     const fails: [() => unknown, string][] = [
       [() => runSort(['-t', 'ab'], []), '-t'], [() => runSort(['--key'], []), 'missing'], [() => runSort(['-k'], []), 'missing'], [() => runSort(['--nope'], []), '--nope'],
-      [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
-      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['-c', 'a', 'é'], ['x']), '-c with'], [() => runTr(['-tc', '[:digit:]', 'x'], ['x']), 'class'], [() => runTr(['[:lower:]', '[:upper:][x*]'], ['x']), 'misaligned'],
+      [() => runUniq(['-z'], []), '-z'], [() => runCut(['-f', 'x'], []), 'list'], [() => runCut(['-d', 'ab', '-f', '1'], []), 'refused'], [() => runCut(['-d', '', '-f', '1'], []), '-d'], [() => runCut([], []), 'cut needs'],
+      [() => expandSet('[:foo:]'), 'class'], [() => expandSet('z-a'), 'reverse'], [() => runTr(['a', 'b', 'c'], []), 'extra operand'], [() => runTr(['-d', undefined as unknown as string], []), 'sets'], [() => runTr(['[=é=]', 'x'], ['x']), 'equivalence class'], [() => expandSet('\\400'), 'octal escape'], [() => runTr(['-tc', '[:digit:]', 'x'], ['x']), 'class'], [() => runTr(['[:lower:]', '[:upper:][x*]'], ['x']), 'misaligned'],
        [() => runTr(['-d', 'a', '-s', 'b'], ['x']), 'extra operand'], [() => runTr(['a', 'b', '-d'], ['x']), 'extra operand'], [() => runTr(['-c', '[:digit:]', 'xy'], ['x']), 'class'],
-      [() => runTr(['a', '[=b=]'], ['x']), 'class in set2'], [() => runTr(['a', '[:digit:]'], ['x']), 'class in set2'], [() => runTr(['-c', '0-9', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-C', 'a-z', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-c', 'a', 'x'], ['é']), '-c with'],
+      [() => runTr(['a', '[=b=]'], ['x']), 'class in set2'], [() => runTr(['a', '[:digit:]'], ['x']), 'class in set2'], [() => runTr(['-c', '0-9', '[:upper:]'], ['x']), 'ends with a class'], [() => runTr(['-C', 'a-z', '[:upper:]'], ['x']), 'ends with a class'],
       [() => runTr(['a', ''], []), 'empty set2'], [() => runTr(['-ds', 'a'], []), 'extra operand'], [() => runTr(['a'], []), 'extra operand'], [() => runHead(['-n', 'x'], []), '-n'], [() => runTail(['-n', 'x'], []), '-n'],
       [() => runSeq(['1', '0', '3']), 'zero'], [() => runSeq(['1', '100000']), 'too long'], [() => runSeq(['-f', '%g', '3']), '-f'],
     ];
@@ -173,6 +175,142 @@ describe('coreutils filters agree with GNU coreutils on fixed input', () => {
   });
 });
 
+/** Single quotes for bash around a word. */
+const shq = (w: string): string => `'${w.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * What GNU coreutils prints for each case, in one bash run in the locale `locale`: its stdout as bytes, and its status. Each
+ * case's input is a file of its own (`run`'s rule: no pipe), and a byte that no case prints, \x1e, separates them.
+ */
+function realBytes(cases: readonly { words: string[]; lines: string[] }[], locale: string): { out: Buffer; status: number }[] {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'explain-bash-bytes-'));
+  try {
+    const script = cases.map(({ words, lines }, i) => {
+      fs.writeFileSync(path.join(dir, `in${i}`), lines.join('\n') + '\n');
+      return `${words.map(shq).join(' ')} < ${shq(path.join(dir, `in${i}`))} 2>/dev/null; printf '\\036%d\\036' $?`;
+    }).join('\n');
+    const out = run('bash', ['-c', script], { env: { ...process.env, LC_ALL: locale } }).stdout;
+    const parts: { out: Buffer; status: number }[] = [];
+    let from = 0;
+    for (let i = 0; i < cases.length; i++) {
+      const sep = out.indexOf(0x1e, from);
+      const end = out.indexOf(0x1e, sep + 1);
+      parts.push({ out: out.subarray(from, sep), status: Number(out.subarray(sep + 1, end).toString()) });
+      from = end + 1;
+    }
+    return parts;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('tr, cut -c and -b, head -c and tail -c work on bytes beyond ASCII, as GNU coreutils does in every locale', () => {
+  // [words, input lines]. A character beyond ASCII is its bytes of UTF-8: each is a member of a tr set, and cut, head and
+  // tail count them. Where the bytes printed are not UTF-8, the example says it does not show them; where the tool refuses
+  // the line (`[=é=]`, `cut -dé`), there is no example.
+  const CASES: { words: string[]; lines: string[] }[] = [
+    { words: ['tr', 'ａ-ｚ', 'a-z'], lines: ['ａｂｃ'] }, { words: ['tr', '　', ' '], lines: ['a　b'] }, { words: ['tr', '-d', 'い'], lines: ['あいう'] },
+    { words: ['tr', 'é', 'x'], lines: ['abc é xyz é'] }, { words: ['tr', 'a-z', 'A-Z'], lines: ['あ a'] }, { words: ['tr', 'あ', 'い'], lines: ['あいう', 'かきく'] },
+    { words: ['tr', '-d', '[:alpha:]'], lines: ['aéb'] }, { words: ['tr', '[:alnum:]', 'x'], lines: ['aé1'] }, { words: ['tr', '-d', '[:punct:]'], lines: ['a,é!'] },
+    { words: ['tr', '-cd', '[:alpha:]\\n'], lines: ['aéb'] }, { words: ['tr', '-c', 'a-z\\n', '_'], lines: ['aéb'] }, { words: ['tr', '-cs', 'a-z\\n', '_'], lines: ['aééb'] },
+    { words: ['tr', '-C', 'a-z\\n', '_'], lines: ['aéb'] }, { words: ['tr', '-s', 'あ'], lines: ['ああいい'] }, { words: ['tr', '-s', '　'], lines: ['a  　　b'] },
+    { words: ['tr', '-d', '\\343'], lines: ['あいう'] }, { words: ['tr', '\\343\\201\\202', 'xyz'], lines: ['あい'] }, { words: ['tr', 'a', '[é*3]'], lines: ['aéb'] },
+    { words: ['tr', '[é*2]', 'xy'], lines: ['aéb'] }, { words: ['tr', '[=é=]', 'xy'], lines: ['aéb'] }, { words: ['tr', '-t', 'éa', 'x'], lines: ['aéb'] },
+    { words: ['tr', 'é-ê', 'x'], lines: ['é'] }, { words: ['tr', '-ds', 'é', 'a'], lines: ['aaéb'] }, { words: ['tr', 'a', 'é'], lines: ['abc'] },
+    { words: ['cut', '-c1-3'], lines: ['あいう', 'abcdef'] }, { words: ['cut', '-b1-2'], lines: ['あいう'] }, { words: ['cut', '-c4-6'], lines: ['あいう'] },
+    { words: ['cut', '-c1-3', '--complement'], lines: ['あいう'] }, { words: ['cut', '-c1-3,7-9', '--output-delimiter=、'], lines: ['あいう'] },
+    { words: ['cut', '-d,', '-f2'], lines: ['あ,い,う'] }, { words: ['cut', '-dé', '-f1'], lines: ['a,b'] }, { words: ['cut', '-dab', '-f1'], lines: ['a,b'] },
+    { words: ['cut', '--delimiter=、', '-f1'], lines: ['a、b'] },
+    { words: ['head', '-c', '3'], lines: ['あいう'] }, { words: ['head', '-c', '2'], lines: ['あいう'] }, { words: ['head', '-c', '-4'], lines: ['あいう'] },
+    { words: ['tail', '-c', '4'], lines: ['あいう'] }, { words: ['tail', '-c', '+4'], lines: ['あいう'] }, { words: ['tail', '-c', '3'], lines: ['あいう'] },
+  ];
+  const locales = ['C', 'C.UTF-8'].map((l) => realBytes(CASES, l));
+  const utf8 = new TextDecoder('utf-8', { fatal: true });
+  CASES.forEach(({ words, lines }, i) => {
+    it(`${words.join(' ')} on ${JSON.stringify(lines)}`, () => {
+      const [cmd, ...args] = words;
+      const [c, u] = locales.map((l) => l[i]);
+      // (The same in both locales: GNU tr, cut and head have no characters of more bytes.)
+      assert.deepStrictEqual(u, c, 'the same in C and C.UTF-8');
+      const ours = () => filterOf(cmd)!(args, lines);
+      if (c.status !== 0) {
+        assert.throws(ours, Unsupported);
+        return;
+      }
+      let text: string | undefined;
+      try {
+        text = utf8.decode(c.out);
+      } catch {
+        assert.throws(ours, (e: Error) => e instanceof Refused && e.why === 'bytes-not-computed');
+        return;
+      }
+      assert.deepStrictEqual(ours(), text === '' ? [] : text.replace(/\n$/, '').split('\n'));
+    });
+  });
+});
+
+describe('a line of tr or cut with text beyond ASCII says what GNU tr and cut do with it', () => {
+  const parser = createUnbashParser();
+  const explain = (line: string, lang: 'en' | 'ja' = 'en') => new Analyzer(lang).explainLine(parser.parse(line), 0);
+  const output = (line: string) => explain(line).examples[0]?.sections.at(-1)?.lines;
+  it('shows what GNU tr prints, where it is text', () => {
+    assert.deepStrictEqual(output("echo 'ａｂｃ' | tr 'ａ-ｚ' 'a-z'"), ['zzczzdzze']);
+    assert.deepStrictEqual(output("echo 'a　b' | tr '　' ' '"), ['a   b']);
+    assert.deepStrictEqual(output("echo 'abc é xyz é' | tr é x"), ['abc xx xyz xx']);
+    assert.deepStrictEqual(output("echo 'あ a' | tr a-z A-Z"), ['あ A']);
+    assert.deepStrictEqual(output("echo 'あいう' | cut -c1-3"), ['あ']);
+    assert.deepStrictEqual(output("echo 'あいう' | head -c 3"), ['あ']);
+    // (A set from `$'…'`: bash gives tr the bytes of `é` and a tab.)
+    const ansi = explain("tr $'é\\t' x").examples[0].sections.map((x) => x.lines);
+    assert.deepStrictEqual(ansi, [['abc é xyz é'], ['abc xx xyz xx']]);
+    assert.strictEqual(runBash("printf '%s\\n' 'abc é xyz é' | tr $'é\\t' x").stdout, 'abc xx xyz xx\n');
+    // (Alone, tr's sample holds the characters of its set, whole.)
+    assert.deepStrictEqual(explain("tr 'ａ-ｚ' 'a-z'").examples[0].sections.map((x) => x.lines), [['abc ａｚ xyz ａ'], ['abc zzczzz xyz zzc']]);
+  });
+  it('says it does not show bytes that are not text', () => {
+    for (const lang of ['en', 'ja'] as const) {
+      const ex = explain("echo 'あいう' | tr -d 'い'", lang).examples[0];
+      assert.deepStrictEqual([ex.sections, ex.note], [[], fact(lang, 'bytes-not-computed').text]);
+    }
+  });
+  it('says the pitfall once for a command, by the first set with such characters, in either language', () => {
+    const said = (line: string) => (explain(line).facts ?? []).filter((f) => f.id === 'tr-multibyte-set').map((f) => f.body);
+    assert.deepStrictEqual(said("tr 'ａ-ｚ' 'a-z'"), [fact('en', 'tr-multibyte-set', { chars: [{ char: 'ａ', bytes: 3 }, { char: 'ｚ', bytes: 3 }] }).body]);
+    assert.match(said("tr 'あ' 'い'").join('\n'), /^GNU tr works on bytes, not characters: in UTF-8 `あ` is 3 bytes, and each byte/);
+    assert.deepStrictEqual(said("tr a 'é'").length, 1);
+    assert.deepStrictEqual(said("tr -ds a 'é'").length, 1);
+    assert.deepStrictEqual(said("tr -ds 'é' 'é'").length, 1);
+    assert.deepStrictEqual(said("tr -s 'あ'").length, 1);
+    assert.deepStrictEqual(said('tr a-z A-Z'), []);
+    assert.deepStrictEqual(said("tr -d '\\343'"), []);
+    const ja = explain("echo 'a　b' | tr '　' ' '", 'ja').facts!.find((f) => f.id === 'tr-multibyte-set')!;
+    assert.match(ja.body, /^GNU の tr は文字ではなくバイト単位で働く: UTF-8 では `　` は3バイトで、/);
+    // (The value of a variable read as a set says it too.)
+    assert.deepStrictEqual((explain("s='あ'; tr \"$s\" x").facts ?? []).filter((f) => f.id === 'tr-multibyte-set').length, 1);
+  });
+  it('says cut refuses a delimiter of more than one byte, and shows no output', () => {
+    for (const line of ["echo 'a,b' | cut -dé -f1", 'cut -d ab -f1 f', 'cut --delimiter=、 -f1 f']) {
+      const r = explain(line);
+      assert.deepStrictEqual(r.examples, [], line);
+      const value = allTokens(r.items).find((t) => /the delimiter must be a single character/.test(t.explanation));
+      assert.ok(value, line);
+    }
+    assert.match(allTokens(explain('cut -dé -f1', 'ja').items).map((t) => t.explanation).join('\n'), /cut は1バイトより長い区切り文字を受け付けない/);
+    assert.notStrictEqual(run('cut', ['-dé', '-f1'], { input: 'a,b\n' }).status, 0);
+    // (A delimiter whose text is not known is not refused.)
+    for (const words of [['-d', undefined, '-f1'], ['-d', '\t', '-f1']]) assert.ok(!parseWords('cut', words).refused, String(words));
+    assert.ok(!parseWords('cut', [undefined, '-f1']).refused);
+  });
+  it('marks what cut -c takes by bytes, each character where its first byte is', () => {
+    assert.deepStrictEqual(cutMarks(['-c1-3'], ['あいう']).ranges, [[[0, 1]]]);
+    assert.deepStrictEqual(cutMarks(['-c2-3'], ['あa']).ranges, [[]]);
+    assert.deepStrictEqual(cutMarks(['-c4'], ['あa']).ranges, [[[1, 2]]]);
+  });
+  it('names the characters of the set, not the value of a hole', () => {
+    const said = (explain('tr "é$x" y').facts ?? []).filter((f) => f.id === 'tr-multibyte-set');
+    assert.deepStrictEqual(said.map((f) => f.body), [fact('en', 'tr-multibyte-set', { chars: [{ char: 'é', bytes: 2 }] }).body]);
+  });
+});
 
 describe('the explanation of a tr set follows the options as GNU tr reads them', () => {
   // `--delete` is `-d` however it is written; a set is deleted when tr removes its characters.
