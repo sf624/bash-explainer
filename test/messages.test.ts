@@ -18,7 +18,9 @@ import { explain } from './support/explain';
 /** The notes about the tool itself (what it did not compute, its own bugs): they cite no section of the manual. */
 // (Facts about Python code, not bash: they cite Python's documentation, src/references.ts.)
 const ABOUT_PYTHON: readonly string[] = ['python-regex-flag-as-count', 'python-regex-string-backspace', 'python-regex-string-octal', 'python-template-string-octal'];
-const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'python-text-not-computed', 'example-failed', 'line-not-explained', 'line-too-deep', 'file-not-read'];
+/** The facts about what a tool of GNU coreutils does, not bash: they cite the coreutils manual. */
+const ABOUT_COREUTILS: readonly string[] = ['tr-multibyte-set'];
+const ABOUT_THE_TOOL: readonly string[] = ['size-not-computed', 'steps-not-computed', 'budget-not-computed', 'python-text-not-computed', 'bytes-not-computed', 'example-failed', 'line-not-explained', 'line-too-deep', 'file-not-read'];
 
 describe('the message catalog', () => {
   it('has each id in one module only (a spread takes the later one without a word; src/messages.ts also checks it as types)', () => {
@@ -29,11 +31,12 @@ describe('the message catalog', () => {
     assert.strictEqual(ids.length, Object.keys(MESSAGES).length);
   });
 
-  it('cites only known references (sections of the manual, manual pages), and at least one section, or Python\'s documentation for Python code', () => {
+  it('cites only known references (sections of the manual, manual pages), and at least one section, or Python\'s documentation for Python code, or the coreutils manual for a tool of coreutils', () => {
     for (const [id, e] of Object.entries(MESSAGES)) {
       if (ABOUT_THE_TOOL.includes(id)) { assert.deepStrictEqual(e.refs, [], id); continue; }
       assert.ok(e.refs.length >= 1 && e.refs.length <= 3, id);
-      assert.ok(ABOUT_PYTHON.includes(id) ? e.refs.every((r) => reference(r)?.kind === 'python') : e.refs.some((r) => SECTIONS.has(r)), id);
+      const other = ABOUT_PYTHON.includes(id) ? 'python' : ABOUT_COREUTILS.includes(id) ? 'coreutils' : undefined;
+      assert.ok(other ? e.refs.every((r) => reference(r)?.kind === other) : e.refs.some((r) => SECTIONS.has(r)), id);
       for (const r of e.refs) assert.ok(reference(r), `${id}: ${r}`);
     }
   });

@@ -44,6 +44,7 @@ const CASES: { [K in ProblemFactId]: readonly unknown[] } = {
   'posix-special-function-name': [{}],
   'posix-special-function-name-maybe': [{}],
   'posix-function-name': [{}],
+  'tr-multibyte-set': [{ chars: [{ char: 'ａ', bytes: 3 }] }],
   'posix-function-name-maybe': [{}],
   'posix-special-builtin-error': [{ name: 'set' }],
   'posix-special-builtin-error-maybe': [{ name: 'set' }],

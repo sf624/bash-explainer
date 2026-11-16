@@ -5,11 +5,33 @@ export function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
+/**
+ * A string's UTF-8 bytes as a string of one character per byte (U+0000 to U+00FF), for a tool that works on bytes
+ * (GNU `tr`, `cut`, `head -c`): an ASCII text is the same string.
+ */
+export function utf8Bytes(text: string): string {
+  let out = '';
+  for (const b of new TextEncoder().encode(text)) out += String.fromCharCode(b);
+  return out;
+}
+
+/** The text of bytes `utf8Bytes` gives (or a tool made of them), or undefined where they are not valid UTF-8. */
+export function utf8Text(bytes: string): string | undefined {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes, (c) => c.charCodeAt(0)));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The whole characters of such bytes, in order: the bytes of no character are left out. */
+export function utf8Lossy(bytes: string): string {
+  return new TextDecoder().decode(Uint8Array.from(bytes, (c) => c.charCodeAt(0))).split('\ufffd').join('');
+}
+
 /** Base64 of a string's UTF-8 bytes. */
 export function base64Encode(text: string): string {
-  let binary = '';
-  for (const b of new TextEncoder().encode(text)) binary += String.fromCharCode(b);
-  return btoa(binary);
+  return btoa(utf8Bytes(text));
 }
 
 /**

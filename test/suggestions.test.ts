@@ -77,6 +77,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'posix-special-function-name-maybe': 'prose',
   'posix-function-name': 'prose',
   'posix-function-name-maybe': 'prose',
+  'tr-multibyte-set': 'prose',
   'posix-special-builtin-error': 'none',
   'posix-special-builtin-error-maybe': 'none',
   // `((i++))` → `((++i))` or `i=$((i+1))`: same value of `i`, status 0.
@@ -167,6 +168,7 @@ const SUGGESTIONS: Record<FactId, Kind | Param> = {
   'steps-not-computed': 'none',
   'budget-not-computed': 'none',
   'python-text-not-computed': 'none',
+  'bytes-not-computed': 'none',
   'example-failed': 'none',
   'line-not-explained': 'none',
   'line-too-deep': 'none',
@@ -378,7 +380,7 @@ describe('the suggestions of the catalog (docs/design/oracles.md, B)', () => {
   it('counts them', () => {
     const count = (kind: Kind) => Object.values(SUGGESTIONS).filter((k) => (typeof k === 'string' ? k : k.kind) === kind).length;
     assert.deepStrictEqual({ mechanical: count('mechanical'), scenario: count('scenario'), prose: count('prose'), none: count('none') },
-      { mechanical: 19, scenario: 26, prose: 26, none: 105 });
+      { mechanical: 19, scenario: 26, prose: 27, none: 106 });
     const style = (kind: Kind) => Object.values(STYLE_SUGGESTIONS).filter((k) => k === kind).length;
     assert.deepStrictEqual({ mechanical: style('mechanical'), scenario: style('scenario'), prose: style('prose') }, { mechanical: 11, scenario: 1, prose: 1 });
   });

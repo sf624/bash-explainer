@@ -40,6 +40,7 @@ import { invalidHow } from '../arith';
 import type { BashVersion } from '../bashversion';
 import type { Shell } from '../dialect';
 import type { Lang } from '../i18n';
+import { factOf, type FactSpec } from '../messages';
 import type { ReadKnown, Stop } from '../semantics/scriptstops';
 import { given, givenIn, givenLiteral, givenText, inArithmetic, lookupOf, optionValues, regexFlavor, regexFlavorOf, trContext } from './reads';
 import { hostString } from './hoststrings';
@@ -70,7 +71,7 @@ export function embedded(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): Embe
  * word; `read`, the reader's own tokens, at their offsets in the value (`text`), which the value's assignment places on its string
  * (`assignedReading`).
  */
-export interface ValueReadingMade { tokens: readonly Token[]; read: readonly EmbeddedToken[]; note?: string; part: SyntaxNode; assumes?: 'no-match'; text: string }
+export interface ValueReadingMade { tokens: readonly Token[]; read: readonly EmbeddedToken[]; note?: string; facts?: readonly FactSpec[]; part: SyntaxNode; assumes?: 'no-match'; text: string }
 
 /** The readings of known values, by the model of the script (which holds the commands' readings), by the other inputs they read, and by the word. */
 const keptValues = new WeakMap<StateModel, Map<string, WeakMap<SyntaxNode, ValueReadingMade | null>>>();
@@ -160,13 +161,14 @@ function readValue(cx: Explainer, c: CommandRead, a: SyntaxNode, lang: EmbeddedL
   const read = EMBEDDED[lang](value.text, ecx);
   // (A reading with no tokens may still say something of the whole: `grep -F`, a fixed string.)
   if (!read) return undefined;
-  return { tokens: finishedApart(placeValue(read.tokens, part, value.text, lang)), read: read.tokens, ...(read.note ? { note: read.note } : {}), part, ...(assumes ? { assumes } : {}), text: value.text };
+  return { tokens: finishedApart(placeValue(read.tokens, part, value.text, lang)), read: read.tokens, ...(read.note ? { note: read.note } : {}), ...(read.facts ? { facts: read.facts } : {}), part, ...(assumes ? { assumes } : {}), text: value.text };
 }
 
 /** `valueReading` as a reader's reading of the word, with the worked example of the value made on the asking line, as for a literal. */
 function knownValueRead(cx: Explainer, a: SyntaxNode, lang: EmbeddedLang): EmbeddedReading | undefined {
   const read = valueReading(cx, a, lang);
   if (!read) return undefined;
+  sayFacts(cx, read.facts, a);
   cx.examplesAt(a, () => guardedEmbeddedExample(cx, lang, read.text, a));
   return { tokens: [], ...(read.note ? { note: read.note } : {}), ...(read.tokens.length ? { value: { part: read.part, reading: { tokens: read.tokens, ...(read.assumes ? { assumes: read.assumes } : {}) } } } : {}) };
 }
@@ -341,6 +343,7 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
   if (holes?.stopped) return holes.reading;
   const r = holes ? holes.read : read;
   if (!r) return undefined;
+  sayFacts(cx, read!.facts, a);
   // (A worked example would need a value made up for the hole.)
   if (!lit.holes) guardedEmbeddedExample(cx, lang, lit.text, a);
   // (Where bash took a backslash away before the command read the text, `"a\\.b"`, it says what the command is given.)
@@ -351,6 +354,11 @@ function embeddedTextInner(cx: Explainer, lit: Literal, lang: EmbeddedLang, a: S
   const [only, ...more] = r.tokens;
   if (SCRIPTS[lang] && !lit.holes && !more.length && only?.reading !== undefined && !errorIn(only)) cx.memo(WORD_READ).set(a, only.reading);
   return { tokens: r.tokens.map((t) => ({ ...fromEmbedded(t, a, lit, 'embedded'), language: lang })), note, ...(holes ? { holes: holes.spans } : {}) };
+}
+
+/** The facts a reader found in the text of the word `a` (`Embedded.facts`), said on the line, about the word. */
+function sayFacts(cx: Explainer, facts: readonly FactSpec[] | undefined, a: SyntaxNode): void {
+  for (const f of facts ?? []) cx.note(factOf(cx.lang, f), a);
 }
 
 /** Whether a reader's token, or one under it, is an error. */

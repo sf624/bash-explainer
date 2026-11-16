@@ -13,6 +13,15 @@ A text a command reads in a language of its own (a regex, a sed or awk program, 
 - **A tilde bash expands is not text.** `grep ~/a.b f` no longer explains the regex `~/a.b` (with "Literal `~/a`") and its example, and `tr ~ x` no longer shows an example that turns `~` into `x`: bash gives the command the home directory's path. The tilde's own row stays.
 - **A pattern under nullglob.** `shopt -s nullglob; grep a*b f` no longer reads `a*b` as the regex, and `shopt -s nullglob; tr [:lower:] [:upper:]` shows no example: where no file matches, bash removes the word. The row says what nullglob does to the pattern.
 
+### Tools that work on bytes
+
+GNU tr, `cut -c` and `-b`, and `head -c` and `tail -c` work on bytes in every locale (coreutils 9.4): a character beyond ASCII is two to four bytes of UTF-8. Their examples now do the same. Before, they worked on characters, and showed what the real tool does not print.
+
+- **tr.** `echo 'ａｂｃ' | tr 'ａ-ｚ' 'a-z'` shows `zzczzdzze` (each byte of the range's ends is a member of the set), `echo 'a　b' | tr '　' ' '` shows `a   b` (three spaces, one per byte), and `echo 'abc é xyz é' | tr é x` shows `abc xx xyz xx`. Before, they showed `abc`, `a b` and `abc x xyz x`. Where the bytes tr prints are not UTF-8, as in `echo 'あいう' | tr -d 'い'`, the example says it does not show them. `-c` with text beyond ASCII has an example now: `echo 'aéb' | tr -c 'a-z\n' _` shows `a__b`. An equivalence class of more than one byte, `[=é=]`, has none: tr refuses it.
+- **A pitfall on the line.** A tr set with a character beyond ASCII (`tr 'ａ-ｚ' 'a-z'`, `tr -d 'い'`, also through a variable the script sets) says that tr works on bytes, how many bytes each character is, and that `sed 'y/ａｂ/ab/'` or `sed 's/　/ /g'` changes such characters in a UTF-8 locale. A set written as escapes (`tr -d '\200-\377'`) gets no pitfall.
+- **cut.** `echo 'あいう' | cut -c1-3` shows `あ`, and the row of `-c` says that GNU cut counts bytes. `cut -dé -f1` and `cut -d ab -f1` say that cut refuses a delimiter of more than one byte ("the delimiter must be a single character"), and show no example. Before, the first showed the line unchanged, and the second said nothing of it.
+- **head and tail.** `echo 'あいう' | head -c 3` shows `あ`, and `tail -c 4` shows `う`. Before, both showed `あいう`.
+
 ### The values of a script's words
 
 The model of the script (the variables a loop sets, the names a command runs, the words of `unset`, `trap`, `shopt`, `printf -v` and the like) reads a word's value from the view of the word, as bash expands it there.

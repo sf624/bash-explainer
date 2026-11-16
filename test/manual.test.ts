@@ -45,8 +45,11 @@ describe('the references', () => {
     assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('python-re-functions')!)), ['Python documentation re', 'Python のドキュメント re']);
     assert.strictEqual(refsText('en', ['3.8', 'python-re-functions']), ' (Bash manual 3.8; re)');
     assert.deepStrictEqual(reference('python-string-escapes'), { id: 'python-string-escapes', kind: 'python', text: 'Lexical analysis', title: 'Escape sequences', url: 'https://docs.python.org/3.15/reference/lexical_analysis.html#escape-sequences' });
-    // (The pages of the sections, some shared by several, the one manual page and the two parts of Python's documentation.)
-    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 3);
+    // (The pages of the sections, some shared by several, the one manual page, the two parts of Python's documentation and the node of the coreutils manual.)
+    assert.strictEqual(REFERENCE_URLS.size, new Set([...SECTIONS.values()].map((s) => s.url)).size + 4);
+    const CHARACTER_ARRAYS = 'https://www.gnu.org/software/coreutils/manual/html_node/Character-arrays.html';
+    assert.deepStrictEqual(reference('coreutils-character-arrays'), { id: 'coreutils-character-arrays', kind: 'coreutils', text: 'tr', title: 'Character arrays', url: CHARACTER_ARRAYS });
+    assert.deepStrictEqual(['en', 'ja'].map((l) => referenceLabel(l as 'en', reference('coreutils-character-arrays')!)), ['GNU coreutils manual tr', 'GNU coreutils マニュアル tr']);
     // (The panel makes a link of an https address only: media/panel.js, test/web-panel-origin.test.ts.)
     for (const url of REFERENCE_URLS) assert.strictEqual(new URL(url).protocol, 'https:', url);
   });
